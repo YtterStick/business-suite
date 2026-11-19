@@ -29,12 +29,22 @@ export function getMondayUtc(date: Date): Date {
 export interface ProjectsHomeDTO {
   todayIso: string;
   weekStartIso: string;
+  defaultCurrency: string;
   overdueTasks: Array<{
     id: string;
     title: string;
     projectId: string;
     projectName: string;
     dueDate: string;
+    priority: string;
+  }>;
+  todaysWorkItems: Array<{
+    id: string;
+    title: string;
+    projectId: string;
+    projectName: string;
+    dueDate: string | null;
+    status: TaskStatus;
     priority: string;
   }>;
   upcomingTasks: Array<{
@@ -52,6 +62,29 @@ export interface ProjectsHomeDTO {
     projectName: string;
     severity: string;
     status: IssueStatus;
+  }>;
+  milestonesDueSoon: Array<{
+    id: string;
+    name: string;
+    projectId: string;
+    projectName: string;
+    dueDate: string | null;
+    status: MilestoneStatus;
+    taskCount: number;
+    doneCount: number;
+  }>;
+  budgetProjects: Array<{
+    id: string;
+    name: string;
+    currency: string;
+    budget: number;
+    actualSpend: number;
+  }>;
+  weeklyDailyHours: Array<{
+    day: string;
+    dayIso: string;
+    billable: number;
+    nonBillable: number;
   }>;
   weeklyHours: number;
   weeklyBillableHours: number;
@@ -83,7 +116,7 @@ export async function getProjectsHome(ctx: TenantContext): Promise<ProjectsHomeD
   const weekStart = getMondayUtc(now);
   const weekEnd = addDays(weekStart, 6);
 
-  const [myTasks, myIssues, weekLogs, projects] = await Promise.all([
+  const [myTasks, myIssues, weekLogs, projects, milestones, approvedClaims] = await Promise.all([
     db.task.findMany({
       where: {
         organizationId,
@@ -107,15 +140,33 @@ export async function getProjectsHome(ctx: TenantContext): Promise<ProjectsHomeD
     db.timeLog.findMany({
       where: {
         organizationId,
-        userId,
         loggedDate: { gte: weekStart, lte: weekEnd },
       },
-      select: { hours: true, billable: true },
+      select: { userId: true, projectId: true, hours: true, billable: true, loggedDate: true },
     }),
     db.project.findMany({
       where: { organizationId, isArchived: false },
-      include: { tasks: { select: { status: true } } },
+      include: {
+        tasks: { select: { status: true } },
+        timeLogs: { select: { hours: true, billable: true } },
+      },
       orderBy: { updatedAt: "desc" },
+    }),
+    db.milestone.findMany({
+      where: {
+        organizationId,
+        status: { not: MilestoneStatus.COMPLETED },
+      },
+      orderBy: [{ dueDate: "asc" }, { position: "asc" }],
+      take: 8,
+      include: {
+        project: { select: { id: true, name: true } },
+        tasks: { select: { status: true } },
+      },
+    }),
+    db.expenseClaim.findMany({
+      where: { organizationId, status: ApprovalStatus.APPROVED },
+      select: { projectId: true, amount: true },
     }),
   ]);
 
@@ -127,6 +178,23 @@ export async function getProjectsHome(ctx: TenantContext): Promise<ProjectsHomeD
       projectId: t.project.id,
       projectName: t.project.name,
       dueDate: toIsoDate(t.dueDate!),
+      priority: t.priority,
+    }));
+
+  const todaysWorkItems = myTasks
+    .filter(
+      (t) =>
+        t.status === TaskStatus.IN_PROGRESS ||
+        (t.dueDate !== null && toIsoDate(t.dueDate) === todayIso),
+    )
+    .slice(0, 8)
+    .map((t) => ({
+      id: t.id,
+      title: t.title,
+      projectId: t.project.id,
+      projectName: t.project.name,
+      dueDate: t.dueDate ? toIsoDate(t.dueDate) : null,
+      status: t.status,
       priority: t.priority,
     }));
 
@@ -142,10 +210,43 @@ export async function getProjectsHome(ctx: TenantContext): Promise<ProjectsHomeD
       status: t.status,
     }));
 
-  const weeklyHours = weekLogs.reduce((sum, l) => sum + Number(l.hours), 0);
-  const weeklyBillableHours = weekLogs
+  const userWeekLogs = weekLogs.filter((l) => l.userId === userId);
+  const weeklyHours = userWeekLogs.reduce((sum, l) => sum + Number(l.hours), 0);
+  const weeklyBillableHours = userWeekLogs
     .filter((l) => l.billable)
     .reduce((sum, l) => sum + Number(l.hours), 0);
+
+  const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  const weeklyDailyHours = DAY_NAMES.map((day, idx) => {
+    const dayIso = toIsoDate(addDays(weekStart, idx));
+    const logsForDay = weekLogs.filter((l) => toIsoDate(l.loggedDate) === dayIso);
+    return {
+      day,
+      dayIso,
+      billable: logsForDay.filter((l) => l.billable).reduce((s, l) => s + Number(l.hours), 0),
+      nonBillable: logsForDay.filter((l) => !l.billable).reduce((s, l) => s + Number(l.hours), 0),
+    };
+  });
+
+  const budgetProjects = projects
+    .filter((p) => p.budget !== null)
+    .slice(0, 5)
+    .map((p) => {
+      const rate = p.currency === "PHP" ? 1500 : 50;
+      const labor = p.timeLogs
+        .filter((l) => l.billable)
+        .reduce((s, l) => s + Number(l.hours) * rate, 0);
+      const claims = approvedClaims
+        .filter((c) => c.projectId === p.id)
+        .reduce((s, c) => s + Number(c.amount), 0);
+      return {
+        id: p.id,
+        name: p.name,
+        currency: p.currency,
+        budget: Number(p.budget ?? 0),
+        actualSpend: labor + claims,
+      };
+    });
 
   let totalTasks = 0;
   let doneTasks = 0;
@@ -167,7 +268,9 @@ export async function getProjectsHome(ctx: TenantContext): Promise<ProjectsHomeD
   return {
     todayIso,
     weekStartIso: toIsoDate(weekStart),
+    defaultCurrency: ctx.organization.defaultCurrency,
     overdueTasks,
+    todaysWorkItems,
     upcomingTasks,
     openIssues: myIssues.map((i) => ({
       id: i.id,
@@ -177,6 +280,18 @@ export async function getProjectsHome(ctx: TenantContext): Promise<ProjectsHomeD
       severity: i.severity,
       status: i.status,
     })),
+    milestonesDueSoon: milestones.map((m) => ({
+      id: m.id,
+      name: m.name,
+      projectId: m.project.id,
+      projectName: m.project.name,
+      dueDate: m.dueDate ? toIsoDate(m.dueDate) : null,
+      status: m.status,
+      taskCount: m.tasks.length,
+      doneCount: m.tasks.filter((t) => t.status === TaskStatus.DONE).length,
+    })),
+    budgetProjects,
+    weeklyDailyHours,
     weeklyHours,
     weeklyBillableHours,
     projectHealth: {
@@ -235,6 +350,16 @@ export interface ProjectsReportsDTO {
     loggedLaborValue: number;
     variance: number;
   }>;
+  taskStatusDistribution: Array<{
+    status: string;
+    count: number;
+    color: string;
+  }>;
+  overdueTrends: Array<{
+    label: string;
+    overdueCount: number;
+    onTrackCount: number;
+  }>;
 }
 
 export async function getProjectsReports(ctx: TenantContext): Promise<ProjectsReportsDTO> {
@@ -249,7 +374,14 @@ export async function getProjectsReports(ctx: TenantContext): Promise<ProjectsRe
     }),
     db.task.findMany({
       where: { organizationId },
-      select: { id: true, projectId: true, assigneeId: true, status: true, completedAt: true },
+      select: {
+        id: true,
+        projectId: true,
+        assigneeId: true,
+        status: true,
+        dueDate: true,
+        completedAt: true,
+      },
     }),
     db.timeLog.findMany({
       where: { organizationId },
@@ -343,7 +475,67 @@ export async function getProjectsReports(ctx: TenantContext): Promise<ProjectsRe
     };
   });
 
-  return { burndown, resourceUtilization, plannedVsActual, budgetVariance };
+  const todayIso = toIsoDate(startOfUtcDay(now));
+
+  // 5. Task Status Distribution
+  const delayedCount = tasks.filter(
+    (t) => t.status !== TaskStatus.DONE && t.dueDate !== null && toIsoDate(t.dueDate) < todayIso,
+  ).length;
+  const taskStatusDistribution = [
+    { status: "Delayed / Overdue", count: delayedCount, color: "bg-rose-500" },
+    {
+      status: "Open / To Do",
+      count: tasks.filter(
+        (t) =>
+          t.status === TaskStatus.TODO && (!t.dueDate || toIsoDate(t.dueDate) >= todayIso),
+      ).length,
+      color: "bg-emerald-500",
+    },
+    {
+      status: "In Progress",
+      count: tasks.filter((t) => t.status === TaskStatus.IN_PROGRESS).length,
+      color: "bg-blue-500",
+    },
+    {
+      status: "In Review",
+      count: tasks.filter((t) => t.status === TaskStatus.IN_REVIEW).length,
+      color: "bg-amber-500",
+    },
+    {
+      status: "Closed / Done",
+      count: tasks.filter((t) => t.status === TaskStatus.DONE).length,
+      color: "bg-teal-500",
+    },
+  ];
+
+  // 6. Overdue Trends (7-day rolling view)
+  const overdueTrends = Array.from({ length: 7 }, (_, idx) => {
+    const day = startOfUtcDay(addDays(now, idx - 6));
+    const dayIso = toIsoDate(day);
+    const overdueCount = tasks.filter(
+      (t) =>
+        t.status !== TaskStatus.DONE &&
+        t.dueDate !== null &&
+        toIsoDate(t.dueDate) < dayIso,
+    ).length;
+    const onTrackCount = tasks.filter(
+      (t) => t.status === TaskStatus.DONE || !t.dueDate || toIsoDate(t.dueDate) >= dayIso,
+    ).length;
+    return {
+      label: dayIso.slice(5),
+      overdueCount,
+      onTrackCount,
+    };
+  });
+
+  return {
+    burndown,
+    resourceUtilization,
+    plannedVsActual,
+    budgetVariance,
+    taskStatusDistribution,
+    overdueTrends,
+  };
 }
 
 // ═════════════════════════════ Timesheets ═══════════════════════════════════

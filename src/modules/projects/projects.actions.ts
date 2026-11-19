@@ -26,17 +26,21 @@ import {
   deleteCommentItem,
   deleteProjects,
   importProjects,
+  importTasks,
   moveTaskStatus,
   postComment,
+  quickUpdateTask,
   toggleProjectArchive,
   updateCommentBody,
+  updateIssueDetails,
   updateIssueStatus,
+  updateMilestoneDetails,
   updateMilestoneStatus,
   updateProject,
   updateProjectStatus,
   updateTaskDetails,
 } from "@/modules/projects/projects.service";
-import type { TaskCardDTO } from "@/modules/projects/projects.types";
+import type { ExtendedTaskStatus, TaskCardDTO } from "@/modules/projects/projects.types";
 import { runAction } from "@/server/action";
 import { assertTenant } from "@/server/tenancy";
 
@@ -266,6 +270,15 @@ export async function updateMilestoneStatusAction(input: {
   });
 }
 
+const extendedTaskStatusSchema = z.enum([
+  "DELAYED",
+  "TODO",
+  "IN_PROGRESS",
+  "IN_REVIEW",
+  "DONE",
+  "CANCELLED",
+]);
+
 const createTaskSchema = z.object({
   orgSlug: z.string().min(1),
   projectId: z.string().min(1),
@@ -274,6 +287,8 @@ const createTaskSchema = z.object({
   description: z.string().max(2000).nullable().optional(),
   priority: z.nativeEnum(TaskPriority).default(TaskPriority.MEDIUM),
   status: z.nativeEnum(TaskStatus).default(TaskStatus.TODO),
+  extendedStatus: extendedTaskStatusSchema.optional(),
+  tags: z.array(z.string()).optional(),
   assigneeId: z.string().nullable().optional(),
   dueDate: z.string().nullable().optional(),
 });
@@ -298,6 +313,7 @@ export async function moveTaskStatusAction(input: {
   orgSlug: string;
   taskId: string;
   status: TaskStatus;
+  extendedStatus?: ExtendedTaskStatus;
   position?: number;
 }): Promise<ActionResult<null>> {
   return runAction(async () => {
@@ -305,6 +321,7 @@ export async function moveTaskStatusAction(input: {
     await moveTaskStatus(ctx, {
       taskId: input.taskId,
       status: input.status,
+      extendedStatus: input.extendedStatus,
       position: input.position,
     });
     revalidatePath(`/${input.orgSlug}/projects`, "layout");
@@ -318,6 +335,7 @@ const updateTaskDetailsSchema = z.object({
   title: z.string().trim().min(2, "Task title is required.").max(180),
   description: z.string().max(4000).nullable().optional(),
   status: z.nativeEnum(TaskStatus),
+  extendedStatus: extendedTaskStatusSchema.optional(),
   priority: z.nativeEnum(TaskPriority),
   assigneeId: z.string().nullable().optional(),
   dueDate: z.string().nullable().optional(),
@@ -336,6 +354,63 @@ export async function updateTaskDetailsAction(
     await updateTaskDetails(ctx, input);
     revalidatePath(`/${orgSlug}/projects`, "layout");
     return null;
+  });
+}
+
+export async function quickUpdateTaskAction(input: {
+  orgSlug: string;
+  taskId: string;
+  priority?: TaskPriority;
+  assigneeId?: string | null;
+  dueDate?: string | null;
+  tags?: string[];
+}): Promise<ActionResult<null>> {
+  return runAction(async () => {
+    const ctx = await assertTenant(input.orgSlug);
+    await quickUpdateTask(ctx, {
+      taskId: input.taskId,
+      priority: input.priority,
+      assigneeId: input.assigneeId,
+      dueDate: input.dueDate,
+      tags: input.tags,
+    });
+    revalidatePath(`/${input.orgSlug}/projects`, "layout");
+    return null;
+  });
+}
+
+const importTasksSchema = z.object({
+  orgSlug: z.string().min(1),
+  projectId: z.string().min(1),
+  rows: z
+    .array(
+      z.object({
+        title: z.string().trim().min(2).max(180),
+        priority: z.nativeEnum(TaskPriority).optional(),
+        status: z.nativeEnum(TaskStatus).optional(),
+        dueDate: z.string().nullable().optional(),
+        tags: z.array(z.string()).optional(),
+      }),
+    )
+    .min(1, "Provide at least one task row.")
+    .max(100),
+});
+
+export async function importTasksAction(
+  rawInput: z.input<typeof importTasksSchema>,
+): Promise<ActionResult<{ count: number }>> {
+  return runAction(async () => {
+    const parsed = importTasksSchema.safeParse(rawInput);
+    if (!parsed.success) {
+      throw new ValidationError(parsed.error.issues[0]?.message ?? "Invalid CSV tasks.");
+    }
+    const ctx = await assertTenant(parsed.data.orgSlug);
+    const res = await importTasks(ctx, {
+      projectId: parsed.data.projectId,
+      rows: parsed.data.rows,
+    });
+    revalidatePath(`/${parsed.data.orgSlug}/projects`, "layout");
+    return res;
   });
 }
 
@@ -426,6 +501,66 @@ export async function createMilestoneAction(
     const { orgSlug, ...input } = parsed.data;
     const ctx = await assertTenant(orgSlug);
     await createMilestone(ctx, input);
+    revalidatePath(`/${orgSlug}/projects`, "layout");
+    return null;
+  });
+}
+
+const updateMilestoneDetailsSchema = z.object({
+  orgSlug: z.string().min(1),
+  milestoneId: z.string().min(1),
+  name: z.string().trim().min(2).max(150).optional(),
+  description: z.string().max(4000).nullable().optional(),
+  status: z.nativeEnum(MilestoneStatus).optional(),
+  dueDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .nullable()
+    .optional(),
+});
+
+export async function updateMilestoneDetailsAction(
+  rawInput: z.input<typeof updateMilestoneDetailsSchema>,
+): Promise<ActionResult<null>> {
+  return runAction(async () => {
+    const parsed = updateMilestoneDetailsSchema.safeParse(rawInput);
+    if (!parsed.success) {
+      throw new ValidationError(parsed.error.issues[0]?.message ?? "Invalid phase update.");
+    }
+    const { orgSlug, ...input } = parsed.data;
+    const ctx = await assertTenant(orgSlug);
+    await updateMilestoneDetails(ctx, input);
+    revalidatePath(`/${orgSlug}/projects`, "layout");
+    return null;
+  });
+}
+
+const updateIssueDetailsSchema = z.object({
+  orgSlug: z.string().min(1),
+  issueId: z.string().min(1),
+  title: z.string().trim().min(2).max(200).optional(),
+  description: z.string().max(4000).nullable().optional(),
+  severity: z.nativeEnum(IssueSeverity).optional(),
+  status: z.nativeEnum(IssueStatus).optional(),
+  assigneeId: z.string().nullable().optional(),
+  dueDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .nullable()
+    .optional(),
+});
+
+export async function updateIssueDetailsAction(
+  rawInput: z.input<typeof updateIssueDetailsSchema>,
+): Promise<ActionResult<null>> {
+  return runAction(async () => {
+    const parsed = updateIssueDetailsSchema.safeParse(rawInput);
+    if (!parsed.success) {
+      throw new ValidationError(parsed.error.issues[0]?.message ?? "Invalid issue update.");
+    }
+    const { orgSlug, ...input } = parsed.data;
+    const ctx = await assertTenant(orgSlug);
+    await updateIssueDetails(ctx, input);
     revalidatePath(`/${orgSlug}/projects`, "layout");
     return null;
   });

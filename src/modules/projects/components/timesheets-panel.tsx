@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/table";
 import { addDays, toIsoDate } from "@/lib/dates";
 import { formatDate } from "@/lib/format";
+import { emitWorkspaceNotification } from "@/lib/notifications";
 import { saveWeeklyTimesheetAction } from "@/modules/projects/projects-suite.actions";
 import type { TimesheetGridDTO } from "@/modules/projects/projects-suite.service";
 
@@ -156,6 +157,17 @@ export function TimesheetsPanel({
         return;
       }
 
+      if (submitForApproval) {
+        emitWorkspaceNotification({
+          kind: "approval",
+          actorName: "Team Member",
+          title: `Timesheet submitted (${res.data.totalHours.toFixed(1)}h)`,
+          description: `Week of ${initialData.weekStartIso} awaiting manager approval.`,
+          entityKey: `TS-${initialData.weekStartIso.slice(5)}`,
+          href: `/${orgSlug}/projects/approvals`,
+          badgeLabel: "Approval",
+        });
+      }
       toast.success(
         submitForApproval
           ? `Submitted ${res.data.totalHours.toFixed(2)}h for manager approval`

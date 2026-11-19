@@ -1,7 +1,8 @@
 import { toIsoDate } from "@/lib/dates";
 import { db } from "@/lib/db";
 import { can } from "@/lib/rbac";
-import { MilestonesPanel } from "@/modules/projects/components/milestones-panel";
+import { MilestonesPanel, type PhaseRowDTO } from "@/modules/projects/components/milestones-panel";
+import { extractZohoMeta, type PhaseMeta } from "@/modules/projects/zoho-meta";
 import { authorize, requireTenant } from "@/server/tenancy";
 
 export default async function MilestonesPage({
@@ -12,17 +13,27 @@ export default async function MilestonesPage({
   searchParams: Promise<{ new?: string }>;
 }) {
   const { orgSlug } = await params;
-  const { new: newParam } = await searchParams;
+  const query = await searchParams;
   const tenant = await requireTenant(orgSlug);
   authorize(tenant, "projects.project.read");
 
-  const [milestones, projects] = await Promise.all([
+  const [milestones, projects, memberships] = await Promise.all([
     db.milestone.findMany({
       where: { organizationId: tenant.organization.id },
-      orderBy: [{ dueDate: "asc" }, { position: "asc" }],
+      orderBy: [{ project: { name: "asc" } }, { position: "asc" }],
       include: {
-        project: { select: { name: true } },
-        _count: { select: { tasks: true } },
+        project: {
+          select: {
+            id: true,
+            name: true,
+            startDate: true,
+            owner: { select: { id: true, name: true } },
+            company: { select: { name: true } },
+          },
+        },
+        tasks: {
+          select: { status: true },
+        },
       },
     }),
     db.project.findMany({
@@ -30,24 +41,64 @@ export default async function MilestonesPage({
       orderBy: { name: "asc" },
       select: { id: true, name: true },
     }),
+    db.membership.findMany({
+      where: { organizationId: tenant.organization.id },
+      include: { user: { select: { id: true, name: true } } },
+    }),
   ]);
+
+  const byIdName = new Map(milestones.map((m) => [m.id, m.name]));
+  const previousInProject = new Map<string, { id: string; name: string }>();
+
+  const rows: PhaseRowDTO[] = milestones.map((m, idx) => {
+    const { cleanDescription, meta } = extractZohoMeta<PhaseMeta>(m.description);
+    const totalTasks = m.tasks.length;
+    const doneTasks = m.tasks.filter((t) => t.status === "DONE").length;
+    const prev = previousInProject.get(m.projectId) ?? null;
+    previousInProject.set(m.projectId, { id: m.id, name: m.name });
+
+    const resolvedDependsOnId =
+      meta.dependsOnId !== undefined ? meta.dependsOnId : prev?.id ?? null;
+    const resolvedDependsOnName = resolvedDependsOnId
+      ? (byIdName.get(resolvedDependsOnId) ?? null)
+      : null;
+
+    const defaultFlag: "Internal" | "External" =
+      m.project.company && m.position > 0 ? "External" : "Internal";
+
+    return {
+      id: m.id,
+      phaseKey: `PH-${idx + 1}`,
+      projectId: m.projectId,
+      projectName: m.project.name,
+      name: m.name,
+      description: cleanDescription || null,
+      status: m.status,
+      startDate:
+        meta.startDate ??
+        (m.project.startDate ? toIsoDate(m.project.startDate) : toIsoDate(m.createdAt)),
+      dueDate: m.dueDate ? toIsoDate(m.dueDate) : null,
+      position: m.position,
+      flag: meta.flag ?? defaultFlag,
+      ownerId: meta.ownerId ?? m.project.owner?.id ?? null,
+      ownerName: meta.ownerName ?? m.project.owner?.name ?? "Unassigned",
+      dependsOnId: resolvedDependsOnId,
+      dependsOnName: resolvedDependsOnName,
+      totalTasks,
+      doneTasks,
+      signoffStatus: m.signoffStatus,
+    };
+  });
 
   return (
     <MilestonesPanel
       orgSlug={orgSlug}
-      orgName={tenant.organization.name}
-      milestones={milestones.map((m) => ({
-        id: m.id,
-        name: m.name,
-        description: m.description,
-        projectName: m.project.name,
-        status: m.status,
-        taskCount: m._count.tasks,
-        dueDateIso: m.dueDate ? toIsoDate(m.dueDate) : null,
-      }))}
+      todayIso={toIsoDate(new Date())}
+      milestones={rows}
       projects={projects}
+      members={memberships.map((m) => m.user)}
       canWrite={can(tenant.role, "projects.project.write")}
-      openCreateInitially={newParam === "1"}
+      openCreateInitially={query.new === "1"}
     />
   );
 }

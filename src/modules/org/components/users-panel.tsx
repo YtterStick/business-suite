@@ -980,12 +980,12 @@ export function UsersPanel({
               </div>
             )
           ) : (
-            <Card>
+            <Card className="overflow-hidden dark:border-zinc-800 dark:bg-zinc-900/70">
               <CardContent className="overflow-x-auto p-0">
-                <Table>
+                <Table className="w-full">
                   <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-10 text-center">
+                    <TableRow className="dark:border-zinc-800">
+                      <TableHead className="w-8 px-2 text-center">
                         <input
                           type="checkbox"
                           aria-label="Select all users on page"
@@ -994,7 +994,7 @@ export function UsersPanel({
                           className="size-4 cursor-pointer rounded border-input accent-primary"
                         />
                       </TableHead>
-                      <TableHead className="whitespace-nowrap">
+                      <TableHead className="px-2 whitespace-nowrap">
                         <button
                           type="button"
                           onClick={() => handleSort("name")}
@@ -1004,23 +1004,23 @@ export function UsersPanel({
                           {renderSortIcon("name")}
                         </button>
                       </TableHead>
-                      <TableHead className="whitespace-nowrap">
+                      <TableHead className="px-2 whitespace-nowrap">
                         <button
                           type="button"
                           onClick={() => handleSort("email")}
-                          className="inline-flex items-center gap-1.5 font-medium hover:text-foreground"
+                          className="inline-flex items-center gap-1 font-medium hover:text-foreground"
                         >
                           <Mail className="size-3.5 text-muted-foreground" />
                           Email ID
                           {renderSortIcon("email")}
                         </button>
                       </TableHead>
-                      <TableHead className="whitespace-nowrap">
+                      <TableHead className="px-1.5 whitespace-nowrap">
                         <div className="inline-flex items-center gap-1">
                           <button
                             type="button"
                             onClick={() => handleSort("role")}
-                            className="inline-flex items-center gap-1.5 font-medium hover:text-foreground"
+                            className="inline-flex items-center gap-1 font-medium hover:text-foreground"
                           >
                             <Shield className="size-3.5 text-muted-foreground" />
                             Role
@@ -1045,12 +1045,12 @@ export function UsersPanel({
                           </Tooltip>
                         </div>
                       </TableHead>
-                      <TableHead className="whitespace-nowrap">
+                      <TableHead className="px-1.5 whitespace-nowrap">
                         <div className="inline-flex items-center gap-1">
                           <button
                             type="button"
                             onClick={() => handleSort("portalProfile")}
-                            className="inline-flex items-center gap-1.5 font-medium hover:text-foreground"
+                            className="inline-flex items-center gap-1 font-medium hover:text-foreground"
                           >
                             <UserCog className="size-3.5 text-muted-foreground" />
                             Portal Profile
@@ -1077,18 +1077,26 @@ export function UsersPanel({
                         </div>
                       </TableHead>
                       {visibleCols.projectsAssigned && (
-                        <TableHead className="whitespace-nowrap">Projects Assigned</TableHead>
+                        <TableHead className="px-2 whitespace-nowrap">
+                          Projects Assigned
+                        </TableHead>
                       )}
                       {visibleCols.hourlyCostRate && (
-                        <TableHead className="whitespace-nowrap">Hourly Cost Rate</TableHead>
+                        <TableHead className="px-2 whitespace-nowrap">
+                          Hourly Cost Rate
+                        </TableHead>
                       )}
                       {visibleCols.lastActive && (
-                        <TableHead className="whitespace-nowrap">Last Active</TableHead>
+                        <TableHead className="px-2 whitespace-nowrap">
+                          Last Active
+                        </TableHead>
                       )}
                       {visibleCols.status && (
-                        <TableHead className="whitespace-nowrap">Status</TableHead>
+                        <TableHead className="px-2 whitespace-nowrap">
+                          Status
+                        </TableHead>
                       )}
-                      <TableHead className="text-right whitespace-nowrap">
+                      <TableHead className="sticky right-0 z-10 w-[82px] bg-card/95 px-2 text-right whitespace-nowrap shadow-[-6px_0_12px_-6px_rgba(0,0,0,0.08)] backdrop-blur-xs dark:bg-zinc-900/95">
                         <div className="inline-flex items-center justify-end gap-1">
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
@@ -1137,8 +1145,15 @@ export function UsersPanel({
                       </TableRow>
                     ) : (
                       pagedMembers.map((member) => (
-                        <TableRow key={member.membershipId} className="group">
-                          <TableCell className="text-center">
+                        <TableRow
+                          key={member.membershipId}
+                          onClick={() => setDetailMemberId(member.membershipId)}
+                          className="group cursor-pointer dark:border-zinc-800/80"
+                        >
+                          <TableCell
+                            onClick={(e) => e.stopPropagation()}
+                            className="px-2 text-center"
+                          >
                             <input
                               type="checkbox"
                               aria-label={`Select ${member.name}`}
@@ -1148,8 +1163,8 @@ export function UsersPanel({
                             />
                           </TableCell>
 
-                          <TableCell className="min-w-52">
-                            <div className="flex items-center gap-2.5">
+                          <TableCell className="max-w-[175px] px-2">
+                            <div className="flex items-center gap-2">
                               <div className="relative shrink-0">
                                 <Avatar className="size-8">
                                   {member.avatarUrl && (
@@ -1171,7 +1186,10 @@ export function UsersPanel({
                                 <div className="flex items-center gap-1.5 font-medium">
                                   <button
                                     type="button"
-                                    onClick={() => setDetailMemberId(member.membershipId)}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setDetailMemberId(member.membershipId);
+                                    }}
                                     className="truncate text-left hover:text-primary hover:underline"
                                   >
                                     {member.name}
@@ -1202,11 +1220,14 @@ export function UsersPanel({
                             </div>
                           </TableCell>
 
-                          <TableCell className="text-sm text-muted-foreground">
+                          <TableCell
+                            title={member.email}
+                            className="max-w-[140px] truncate px-2 text-xs text-muted-foreground"
+                          >
                             {member.email}
                           </TableCell>
 
-                          <TableCell>
+                          <TableCell onClick={(e) => e.stopPropagation()} className="px-1.5">
                             {canManage ? (
                               <select
                                 value={member.role}
@@ -1216,7 +1237,7 @@ export function UsersPanel({
                                     e.target.value as MembershipRole,
                                   )
                                 }
-                                className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+                                className="h-7 w-[98px] rounded-md border border-input bg-background px-1.5 text-xs dark:border-zinc-800 dark:bg-zinc-950"
                               >
                                 <option value="OWNER">Administrator</option>
                                 <option value="ADMIN">Manager</option>
@@ -1227,7 +1248,7 @@ export function UsersPanel({
                             )}
                           </TableCell>
 
-                          <TableCell>
+                          <TableCell onClick={(e) => e.stopPropagation()} className="px-1.5">
                             {canManage ? (
                               <select
                                 value={member.portalProfile}
@@ -1237,7 +1258,7 @@ export function UsersPanel({
                                     e.target.value as PortalProfile,
                                   )
                                 }
-                                className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+                                className="h-7 w-[102px] rounded-md border border-input bg-background px-1.5 text-xs dark:border-zinc-800 dark:bg-zinc-950"
                               >
                                 <option value="PORTAL_OWNER">Portal Owner</option>
                                 <option value="STANDARD">Standard</option>
@@ -1251,7 +1272,7 @@ export function UsersPanel({
                           </TableCell>
 
                           {visibleCols.projectsAssigned && (
-                            <TableCell className="text-sm tabular-nums">
+                            <TableCell className="px-2 text-xs tabular-nums whitespace-nowrap">
                               <Badge variant="outline" className="gap-1 text-xs font-medium">
                                 <FolderKanban className="size-3 text-violet-600" />
                                 {member.projectsAssignedCount}
@@ -1260,13 +1281,13 @@ export function UsersPanel({
                           )}
 
                           {visibleCols.hourlyCostRate && (
-                            <TableCell className="text-sm tabular-nums whitespace-nowrap">
+                            <TableCell className="px-2 text-xs tabular-nums whitespace-nowrap">
                               {formatCurrency(member.hourlyCostRate, team.defaultCurrency)}/hr
                             </TableCell>
                           )}
 
                           {visibleCols.lastActive && (
-                            <TableCell className="text-xs whitespace-nowrap text-muted-foreground">
+                            <TableCell className="px-2 text-xs whitespace-nowrap text-muted-foreground">
                               {member.lastActiveAt
                                 ? formatDate(member.lastActiveAt.slice(0, 10), { withYear: true })
                                 : "—"}
@@ -1274,16 +1295,19 @@ export function UsersPanel({
                           )}
 
                           {visibleCols.status && (
-                            <TableCell>
+                            <TableCell className="px-2 whitespace-nowrap">
                               <Badge variant={member.isActive ? "default" : "destructive"}>
                                 {member.isActive ? "Active" : "Deactivated"}
                               </Badge>
                             </TableCell>
                           )}
 
-                          {/* Hover Quick-Action Column */}
-                          <TableCell className="text-right whitespace-nowrap">
-                            <div className="inline-flex items-center justify-end gap-0.5 opacity-60 transition group-hover:opacity-100">
+                          {/* Sticky Hover Quick-Action Column */}
+                          <TableCell
+                            onClick={(e) => e.stopPropagation()}
+                            className="sticky right-0 z-10 w-[82px] bg-card/95 px-2 text-right whitespace-nowrap shadow-[-6px_0_12px_-6px_rgba(0,0,0,0.08)] backdrop-blur-xs group-hover:bg-muted/60 dark:bg-zinc-900/95 dark:group-hover:bg-zinc-800/80"
+                          >
+                            <div className="inline-flex items-center justify-end gap-0.5 opacity-80 transition group-hover:opacity-100">
                               <Button
                                 type="button"
                                 size="icon-xs"
@@ -1299,8 +1323,8 @@ export function UsersPanel({
                                 type="button"
                                 size="icon-xs"
                                 variant="ghost"
-                                title="User Detail"
-                                aria-label={`View details for ${member.name}`}
+                                title="View Profile"
+                                aria-label={`View profile for ${member.name}`}
                                 onClick={() => setDetailMemberId(member.membershipId)}
                               >
                                 <Eye className="size-3.5" />
@@ -1319,6 +1343,12 @@ export function UsersPanel({
                                     </Button>
                                   </DropdownMenuTrigger>
                                   <DropdownMenuContent align="end" className="w-48">
+                                    <DropdownMenuItem
+                                      onSelect={() => setDetailMemberId(member.membershipId)}
+                                    >
+                                      <Eye className="size-3.5" />
+                                      View Profile
+                                    </DropdownMenuItem>
                                     <DropdownMenuItem
                                       onSelect={() => setEditMemberId(member.membershipId)}
                                     >

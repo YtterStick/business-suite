@@ -3,25 +3,24 @@
 import * as React from "react";
 import type { MembershipRole } from "@prisma/client";
 import {
-  AtSign,
-  Bell,
   Bug,
-  CheckCheck,
-  CheckCircle2,
   CheckSquare,
   ChevronDown,
   Clock,
   Flag,
   FolderKanban,
+  Laptop,
   Menu,
+  Moon,
   Plus,
   Receipt,
   Settings,
-  Sparkles,
+  Sun,
   UserPlus,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { useTheme } from "@/components/theme-provider";
 import { toast } from "sonner";
 
 import {
@@ -30,10 +29,12 @@ import {
   type SidebarUserSummary,
 } from "@/components/shell/app-switcher-sidebar";
 import { GlobalSearchCommand } from "@/components/shell/global-search-command";
+import { NotificationCenter } from "@/components/shell/notification-center";
 import {
   PortalSetupDialog,
   type PortalConfigSummary,
 } from "@/components/shell/portal-setup-dialog";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -44,7 +45,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Sheet,
   SheetContent,
@@ -52,22 +52,13 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { getModuleHref, resolveActiveModule } from "@/config/modules";
-import { formatDateTimeUtc } from "@/lib/format";
+import { initials } from "@/lib/format";
+import type { TopBarNotificationItem } from "@/lib/notifications";
 import { can, ROLE_LABEL } from "@/lib/rbac";
 import { cn } from "@/lib/utils";
 import { InviteUsersDialog } from "@/modules/org/components/invite-users-dialog";
 
-export type NotificationKind = "mention" | "task" | "automation" | "approval";
-
-export interface TopBarNotificationItem {
-  id: string;
-  kind: NotificationKind;
-  title: string;
-  description: string;
-  createdAt: string;
-  href: string;
-  badgeLabel: string;
-}
+export type { NotificationKind, TopBarNotificationItem } from "@/lib/notifications";
 
 interface GlobalTopBarProps {
   orgSlug: string;
@@ -81,19 +72,7 @@ interface GlobalTopBarProps {
   organizations: SidebarOrgOption[];
   user: SidebarUserSummary;
   notifications: TopBarNotificationItem[];
-}
-
-function NotificationIcon({ kind }: { kind: NotificationKind }) {
-  switch (kind) {
-    case "mention":
-      return <AtSign className="size-3.5 text-violet-600" />;
-    case "task":
-      return <CheckSquare className="size-3.5 text-blue-600" />;
-    case "automation":
-      return <Sparkles className="size-3.5 text-emerald-600" />;
-    case "approval":
-      return <CheckCircle2 className="size-3.5 text-amber-600" />;
-  }
+  recentProjects?: Array<{ id: string; name: string }>;
 }
 
 export function GlobalTopBar({
@@ -104,42 +83,37 @@ export function GlobalTopBar({
   organizations,
   user,
   notifications,
+  recentProjects = [],
 }: GlobalTopBarProps) {
   const pathname = usePathname();
   const router = useRouter();
+  const { theme, setTheme } = useTheme();
   const activeModule = resolveActiveModule(pathname, orgSlug);
   const [mobileOpen, setMobileOpen] = React.useState(false);
   const [inviteOpen, setInviteOpen] = React.useState(false);
   const [setupOpen, setSetupOpen] = React.useState(false);
-  const [notifOpen, setNotifOpen] = React.useState(false);
-  const [lastReadAt, setLastReadAt] = React.useState<string>("");
   const canInvite = can(role, "org.members.manage");
 
-  const storageKey = `bs_notif_read_${orgSlug}_${user.id}`;
-
-  React.useEffect(() => {
-    try {
-      const saved = window.localStorage.getItem(storageKey);
-      if (saved) setLastReadAt(saved);
-    } catch {
-      // Ignore storage read error
+  const subPageBreadcrumb = React.useMemo(() => {
+    const prefix = `/${orgSlug}`;
+    const rel = pathname.startsWith(prefix) ? pathname.slice(prefix.length) : pathname;
+    const matchedNav = activeModule.items.find((item) => item.path === rel);
+    if (matchedNav) {
+      if (matchedNav.path === "/projects") return null;
+      return matchedNav.label;
     }
-  }, [storageKey]);
-
-  const unreadCount = React.useMemo(() => {
-    if (!lastReadAt) return notifications.length;
-    return notifications.filter((n) => n.createdAt > lastReadAt).length;
-  }, [notifications, lastReadAt]);
-
-  const markAllRead = () => {
-    const latest = notifications[0]?.createdAt || new Date().toISOString();
-    setLastReadAt(latest);
-    try {
-      window.localStorage.setItem(storageKey, latest);
-    } catch {
-      // Ignore storage write error
+    const parts = rel.split("/").filter(Boolean);
+    if (parts.length >= 2) {
+      const seg = parts[1]!;
+      const matchedProject = recentProjects.find((p) => p.id === seg);
+      if (matchedProject) return matchedProject.name;
+      return seg
+        .split("-")
+        .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+        .join(" ");
     }
-  };
+    return null;
+  }, [pathname, orgSlug, activeModule.items, recentProjects]);
 
   const triggerQuickCreate = (detail: string, targetPath?: string) => {
     if (detail === "users") {
@@ -160,7 +134,7 @@ export function GlobalTopBar({
     <>
       <header className="flex h-14 shrink-0 items-center justify-between gap-3 border-b bg-background px-4 lg:px-6">
         {/* Left: Mobile Drawer Toggle + Breadcrumb */}
-        <div className="flex min-w-0 items-center gap-2.5">
+        <div className="flex shrink-0 items-center gap-2.5">
           <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
             <SheetTrigger asChild>
               <Button
@@ -180,21 +154,44 @@ export function GlobalTopBar({
                 role={role}
                 organizations={organizations}
                 user={user}
+                recentProjects={recentProjects}
                 onNavigate={() => setMobileOpen(false)}
                 className="w-full border-r-0"
               />
             </SheetContent>
           </Sheet>
 
-          <div className="hidden min-w-0 items-center gap-2 text-sm sm:flex">
-            <span className="truncate font-semibold">{activeOrg.name}</span>
+          <nav
+            aria-label="Breadcrumb"
+            className="hidden items-center gap-1.5 text-sm whitespace-nowrap sm:flex"
+          >
+            <Link
+              href={getModuleHref(orgSlug, activeModule.defaultPath)}
+              className="font-semibold text-foreground hover:text-primary"
+            >
+              {activeOrg.name}
+            </Link>
             <span className="text-muted-foreground">/</span>
-            <span className="font-medium text-muted-foreground">{activeModule.name}</span>
-          </div>
+            <Link
+              href={getModuleHref(orgSlug, activeModule.defaultPath)}
+              className={cn(
+                "shrink-0 font-medium transition hover:text-foreground",
+                subPageBreadcrumb ? "text-muted-foreground" : "text-foreground",
+              )}
+            >
+              {activeModule.name}
+            </Link>
+            {subPageBreadcrumb && (
+              <>
+                <span className="text-muted-foreground">/</span>
+                <span className="font-medium text-foreground">{subPageBreadcrumb}</span>
+              </>
+            )}
+          </nav>
         </div>
 
         {/* Center: Global Cross-Module Search Bar */}
-        <div className="flex flex-1 items-center justify-center">
+        <div className="flex min-w-0 flex-1 items-center justify-center px-2">
           <GlobalSearchCommand orgSlug={orgSlug} />
         </div>
 
@@ -294,96 +291,46 @@ export function GlobalTopBar({
             </DropdownMenuContent>
           </DropdownMenu>
 
-          {/* Notifications Bell Icon + Unread Count + Feed Popover */}
-          <Popover open={notifOpen} onOpenChange={setNotifOpen}>
-            <PopoverTrigger asChild>
+          {/* Zoho-Style Notification Center */}
+          <NotificationCenter
+            orgSlug={orgSlug}
+            userId={user.id}
+            initialNotifications={notifications}
+          />
+
+          {/* Theme Switcher (Light / Dark / System) */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
               <Button
                 variant="ghost"
                 size="icon-sm"
-                aria-label="Notifications"
-                title="Notifications"
-                className="relative"
+                aria-label="Switch theme"
+                title="Switch Theme (Light / Dark / System)"
               >
-                <Bell className="size-4" />
-                {unreadCount > 0 && (
-                  <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-600 px-1 text-[10px] font-bold text-white tabular-nums">
-                    {unreadCount > 99 ? "99+" : unreadCount}
-                  </span>
-                )}
+                <Sun className="size-4 scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90" />
+                <Moon className="absolute size-4 scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0" />
               </Button>
-            </PopoverTrigger>
-            <PopoverContent align="end" className="w-96 p-0">
-              <div className="flex items-center justify-between border-b px-4 py-3">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-semibold">Notifications</span>
-                  {unreadCount > 0 && (
-                    <Badge variant="secondary" className="px-1.5 py-0 text-[10px] tabular-nums">
-                      {unreadCount} new
-                    </Badge>
-                  )}
-                </div>
-                {notifications.length > 0 && unreadCount > 0 && (
-                  <button
-                    type="button"
-                    onClick={markAllRead}
-                    className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
-                  >
-                    <CheckCheck className="size-3.5" />
-                    Mark all read
-                  </button>
-                )}
-              </div>
-
-              <div className="max-h-96 divide-y overflow-y-auto">
-                {notifications.length === 0 ? (
-                  <div className="px-4 py-8 text-center text-xs text-muted-foreground">
-                    All caught up — no recent mentions, automations, or pending approvals.
-                  </div>
-                ) : (
-                  notifications.map((item) => {
-                    const isUnread = !lastReadAt || item.createdAt > lastReadAt;
-                    return (
-                      <Link
-                        key={item.id}
-                        href={item.href}
-                        onClick={() => setNotifOpen(false)}
-                        className={cn(
-                          "flex items-start gap-3 px-4 py-3 transition hover:bg-muted/50",
-                          isUnread && "bg-violet-50/40",
-                        )}
-                      >
-                        <div className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full border bg-background">
-                          <NotificationIcon kind={item.kind} />
-                        </div>
-                        <div className="min-w-0 flex-1 space-y-1">
-                          <div className="flex items-center justify-between gap-2">
-                            <p className="truncate text-xs font-semibold text-foreground">
-                              {item.title}
-                            </p>
-                            <Badge variant="outline" className="shrink-0 px-1.5 py-0 text-[9px]">
-                              {item.badgeLabel}
-                            </Badge>
-                          </div>
-                          <p className="line-clamp-2 text-xs text-muted-foreground">
-                            {item.description}
-                          </p>
-                          <p className="text-[10px] text-muted-foreground">
-                            {formatDateTimeUtc(item.createdAt)}
-                          </p>
-                        </div>
-                        {isUnread && (
-                          <span
-                            aria-hidden="true"
-                            className="mt-2 size-2 shrink-0 rounded-full bg-rose-600"
-                          />
-                        )}
-                      </Link>
-                    );
-                  })
-                )}
-              </div>
-            </PopoverContent>
-          </Popover>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-40">
+              <DropdownMenuLabel className="text-xs">Appearance</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onSelect={() => setTheme("light")} className="gap-2 text-xs">
+                <Sun className="size-3.5" />
+                <span>Light</span>
+                {theme === "light" && <span className="ml-auto text-primary">●</span>}
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setTheme("dark")} className="gap-2 text-xs">
+                <Moon className="size-3.5" />
+                <span>Dark</span>
+                {theme === "dark" && <span className="ml-auto text-primary">●</span>}
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setTheme("system")} className="gap-2 text-xs">
+                <Laptop className="size-3.5" />
+                <span>System</span>
+                {theme === "system" && <span className="ml-auto text-primary">●</span>}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
 
           {/* Portal Setup / Settings Gear Icon */}
           <Button
@@ -395,6 +342,14 @@ export function GlobalTopBar({
           >
             <Settings className="size-4" />
           </Button>
+
+          {/* Synchronized Active User Avatar Badge */}
+          <Avatar className="hidden size-7 border sm:flex" title={`${user.name} (${ROLE_LABEL[role]})`}>
+            {user.avatarUrl && <AvatarImage src={user.avatarUrl} alt={user.name} />}
+            <AvatarFallback className="bg-zinc-900 text-[10px] font-semibold text-zinc-100 dark:bg-zinc-800">
+              {initials(user.name)}
+            </AvatarFallback>
+          </Avatar>
         </div>
       </header>
 

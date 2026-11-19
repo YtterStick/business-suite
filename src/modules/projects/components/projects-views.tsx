@@ -27,6 +27,7 @@ import {
   Workflow,
 } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -92,12 +93,17 @@ function ProjectBoardCardSurface({
   isOverlay?: boolean;
   dragProps?: React.HTMLAttributes<HTMLButtonElement>;
 }) {
+  const router = useRouter();
   const overdue = isProjectOverdue(project, todayIso);
 
   return (
     <article
+      onClick={(e) => {
+        if ((e.target as HTMLElement).closest("a,button")) return;
+        router.push(`/${orgSlug}/projects/${project.id}`);
+      }}
       className={cn(
-        "rounded-xl border bg-card p-3.5 shadow-2xs transition",
+        "cursor-pointer rounded-xl border bg-card p-3.5 shadow-2xs transition hover:border-primary/40 hover:shadow-md",
         isDragging && "opacity-35",
         isOverlay && "rotate-1 shadow-lg ring-2 ring-primary/40",
       )}

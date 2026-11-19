@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import type { MembershipRole, PortalProfile } from "@prisma/client";
-import { Crown, FolderKanban, Loader2, MessageSquare, Send } from "lucide-react";
+import { CheckSquare, Crown, FolderKanban, Loader2, MessageSquare, Send } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
 
@@ -62,9 +62,14 @@ export function UserDetailSheet({
 }) {
   if (!member) return null;
 
+  const capacityPct =
+    member.weeklyCapacityHours > 0
+      ? Math.round((member.loggedHours / member.weeklyCapacityHours) * 100)
+      : 0;
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-md">
+      <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-lg">
         <SheetHeader className="border-b pb-4">
           <div className="flex items-center gap-3">
             <div className="relative">
@@ -79,7 +84,7 @@ export function UserDetailSheet({
                 )}
               />
             </div>
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <SheetTitle className="flex items-center gap-1.5 truncate">
                 <span>{member.name}</span>
                 {member.portalProfile === "PORTAL_OWNER" && (
@@ -87,66 +92,106 @@ export function UserDetailSheet({
                 )}
               </SheetTitle>
               <SheetDescription className="truncate">{member.email}</SheetDescription>
+              <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                <Badge variant="outline" className="text-[10px]">
+                  {ROLE_LABELS[member.role]}
+                </Badge>
+                <Badge variant="secondary" className="text-[10px]">
+                  {PROFILE_LABELS[member.portalProfile]}
+                </Badge>
+                <Badge
+                  variant={member.isActive ? "default" : "destructive"}
+                  className="text-[10px]"
+                >
+                  {member.isActive ? "Active" : "Deactivated"}
+                </Badge>
+              </div>
             </div>
           </div>
         </SheetHeader>
 
         <div className="space-y-5 px-4 py-5 text-sm">
-          <div className="grid grid-cols-2 gap-3 rounded-lg border bg-muted/20 p-3 text-xs">
-            <div>
-              <p className="text-muted-foreground">Role</p>
-              <p className="mt-0.5 font-semibold">{ROLE_LABELS[member.role]}</p>
+          {/* Rate & Workload Capacity */}
+          <div className="space-y-3 rounded-lg border bg-muted/20 p-3.5 text-xs dark:border-zinc-800 dark:bg-zinc-900/60">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <p className="text-muted-foreground">Billable Cost Rate</p>
+                <p className="mt-0.5 text-sm font-semibold tabular-nums">
+                  {formatCurrency(member.hourlyCostRate, defaultCurrency)}/hr
+                </p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">Job Title</p>
+                <p className="mt-0.5 font-medium">{member.jobTitle ?? "—"}</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">Weekly Capacity</p>
+                <p className="mt-0.5 font-semibold tabular-nums">
+                  {member.weeklyCapacityHours}h/wk
+                </p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">Last Active</p>
+                <p className="mt-0.5 font-medium">
+                  {member.lastActiveAt
+                    ? formatDate(member.lastActiveAt.slice(0, 10), { withYear: true })
+                    : "—"}
+                </p>
+              </div>
             </div>
-            <div>
-              <p className="text-muted-foreground">Portal Profile</p>
-              <p className="mt-0.5 font-semibold">{PROFILE_LABELS[member.portalProfile]}</p>
-            </div>
-            <div>
-              <p className="text-muted-foreground">Hourly Cost Rate</p>
-              <p className="mt-0.5 font-semibold tabular-nums">
-                {formatCurrency(member.hourlyCostRate, defaultCurrency)}/hr
-              </p>
-            </div>
-            <div>
-              <p className="text-muted-foreground">Weekly Capacity</p>
-              <p className="mt-0.5 font-semibold tabular-nums">
-                {member.weeklyCapacityHours}h/wk
-              </p>
-            </div>
-            <div>
-              <p className="text-muted-foreground">Job Title</p>
-              <p className="mt-0.5 font-medium">{member.jobTitle ?? "—"}</p>
-            </div>
-            <div>
-              <p className="text-muted-foreground">Last Active</p>
-              <p className="mt-0.5 font-medium">
-                {member.lastActiveAt
-                  ? formatDate(member.lastActiveAt.slice(0, 10), { withYear: true })
-                  : "—"}
-              </p>
+
+            <div className="space-y-1.5 border-t pt-2.5 dark:border-zinc-800">
+              <div className="flex items-center justify-between">
+                <span className="font-medium text-foreground">Current Workload / Capacity</span>
+                <span
+                  className={cn(
+                    "font-semibold tabular-nums",
+                    capacityPct >= 100
+                      ? "text-rose-600 dark:text-rose-400"
+                      : capacityPct >= 75
+                        ? "text-amber-600 dark:text-amber-400"
+                        : "text-emerald-600 dark:text-emerald-400",
+                  )}
+                >
+                  {member.loggedHours.toFixed(1)}h / {member.weeklyCapacityHours}h ({capacityPct}%)
+                </span>
+              </div>
+              <div className="h-2 w-full overflow-hidden rounded-full bg-muted dark:bg-zinc-800">
+                <div
+                  style={{ width: `${Math.min(capacityPct, 100)}%` }}
+                  className={cn(
+                    "h-full rounded-full transition-all",
+                    capacityPct >= 100
+                      ? "bg-rose-500"
+                      : capacityPct >= 75
+                        ? "bg-amber-500"
+                        : "bg-emerald-500",
+                  )}
+                />
+              </div>
             </div>
           </div>
 
           <div className="grid grid-cols-3 gap-2 text-center">
-            <div className="rounded-lg border p-2.5">
+            <div className="rounded-lg border p-2.5 dark:border-zinc-800">
               <p className="text-lg font-bold tabular-nums">{member.projectsAssignedCount}</p>
               <p className="text-[11px] text-muted-foreground">Projects</p>
             </div>
-            <div className="rounded-lg border p-2.5">
+            <div className="rounded-lg border p-2.5 dark:border-zinc-800">
               <p className="text-lg font-bold tabular-nums">
                 {member.completedTasksCount}/{member.assignedTasksCount}
               </p>
               <p className="text-[11px] text-muted-foreground">Tasks Done</p>
             </div>
-            <div className="rounded-lg border p-2.5">
-              <p className="text-lg font-bold tabular-nums">{member.loggedHours.toFixed(1)}h</p>
-              <p className="text-[11px] text-muted-foreground">Logged</p>
+            <div className="rounded-lg border p-2.5 dark:border-zinc-800">
+              <p className="text-lg font-bold tabular-nums">{member.openTasks.length}</p>
+              <p className="text-[11px] text-muted-foreground">Open Tasks</p>
             </div>
           </div>
 
           <div className="space-y-2">
             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Assigned Projects
+              Assigned Projects ({member.assignedProjects.length})
             </p>
             {member.assignedProjects.length === 0 ? (
               <p className="text-xs text-muted-foreground">No projects assigned yet.</p>
@@ -157,10 +202,49 @@ export function UserDetailSheet({
                     key={proj.id}
                     href={`/${orgSlug}/projects/${proj.id}`}
                     onClick={() => onOpenChange(false)}
-                    className="flex items-center gap-2 rounded-md border px-3 py-2 text-xs font-medium hover:bg-accent"
+                    className="flex items-center gap-2 rounded-md border px-3 py-2 text-xs font-medium hover:bg-accent dark:border-zinc-800"
                   >
                     <FolderKanban className="size-3.5 text-violet-600" />
-                    <span>{proj.name}</span>
+                    <span className="truncate">{proj.name}</span>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Open Tasks ({member.openTasks.length})
+            </p>
+            {member.openTasks.length === 0 ? (
+              <p className="text-xs text-muted-foreground">No open tasks assigned.</p>
+            ) : (
+              <div className="space-y-1.5">
+                {member.openTasks.map((t) => (
+                  <Link
+                    key={t.id}
+                    href={`/${orgSlug}/projects/tasks?taskId=${t.id}`}
+                    onClick={() => onOpenChange(false)}
+                    className="flex items-start justify-between gap-2 rounded-md border px-3 py-2 text-xs transition hover:bg-accent dark:border-zinc-800"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5 font-medium text-foreground">
+                        <CheckSquare className="size-3.5 shrink-0 text-primary" />
+                        <span className="truncate">{t.title}</span>
+                      </div>
+                      <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+                        {t.projectName}
+                        {t.dueDate ? ` · Due ${formatDate(t.dueDate)}` : ""}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 flex-col items-end gap-1">
+                      <Badge variant="outline" className="px-1.5 py-0 text-[9px]">
+                        {t.priority}
+                      </Badge>
+                      <span className="text-[10px] text-muted-foreground">
+                        {t.status.replace("_", " ")}
+                      </span>
+                    </div>
                   </Link>
                 ))}
               </div>

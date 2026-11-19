@@ -6,6 +6,9 @@ import {
   Activity,
   AtSign,
   Check,
+  CheckSquare,
+  ChevronDown,
+  ChevronRight,
   Clock,
   ExternalLink,
   GitBranch,
@@ -33,6 +36,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { formatDate, formatDateTimeUtc } from "@/lib/format";
+import { emitWorkspaceNotification } from "@/lib/notifications";
 import { cn } from "@/lib/utils";
 import {
   createTimeLogAction,
@@ -41,7 +45,7 @@ import {
   toggleTaskMetaCommentAction,
   updateTaskDetailsAction,
 } from "@/modules/projects/projects.actions";
-import type { TaskCardDTO } from "@/modules/projects/projects.types";
+import type { ExtendedTaskStatus, TaskCardDTO } from "@/modules/projects/projects.types";
 
 type DetailTab =
   | "subtasks"
@@ -76,12 +80,14 @@ export function TaskDetailSheet({
 }) {
   const router = useRouter();
   const [activeTab, setActiveTab] = React.useState<DetailTab>("subtasks");
+  const [descOpen, setDescOpen] = React.useState(false);
+  const [infoOpen, setInfoOpen] = React.useState(true);
   const [isPending, startTransition] = React.useTransition();
 
   // Editable core task fields
   const [title, setTitle] = React.useState("");
   const [description, setDescription] = React.useState("");
-  const [status, setStatus] = React.useState<TaskStatus>("TODO");
+  const [status, setStatus] = React.useState<ExtendedTaskStatus>("TODO");
   const [priority, setPriority] = React.useState<TaskPriority>("MEDIUM");
   const [assigneeId, setAssigneeId] = React.useState("");
   const [dueDate, setDueDate] = React.useState("");
@@ -104,7 +110,7 @@ export function TaskDetailSheet({
     if (!task) return;
     setTitle(task.title);
     setDescription(task.description ?? "");
-    setStatus(task.status);
+    setStatus(task.extendedStatus ?? task.status);
     setPriority(task.priority);
     setAssigneeId(task.assignee?.id ?? "");
     setDueDate(task.dueDate ?? "");
@@ -125,12 +131,16 @@ export function TaskDetailSheet({
   const totalTaskHours = timeLogs.reduce((sum, l) => sum + l.hours, 0);
 
   const handleSaveDetails = (nextFields?: {
-    status?: TaskStatus;
+    status?: ExtendedTaskStatus;
     priority?: TaskPriority;
     assigneeId?: string;
     dueDate?: string;
   }) => {
-    const targetStatus = nextFields?.status ?? status;
+    const targetExtStatus = nextFields?.status ?? status;
+    const dbStatus: TaskStatus =
+      targetExtStatus === "DELAYED" || targetExtStatus === "CANCELLED"
+        ? task.status
+        : targetExtStatus;
     const targetPriority = nextFields?.priority ?? priority;
     const targetAssignee = nextFields?.assigneeId ?? assigneeId;
     const targetDue = nextFields?.dueDate ?? dueDate;
@@ -141,7 +151,8 @@ export function TaskDetailSheet({
         taskId: task.id,
         title: title.trim() || task.title,
         description: description.trim() || null,
-        status: targetStatus,
+        status: dbStatus,
+        extendedStatus: targetExtStatus,
         priority: targetPriority,
         assigneeId: targetAssignee || null,
         dueDate: targetDue || null,
@@ -155,7 +166,11 @@ export function TaskDetailSheet({
         ...task,
         title: title.trim() || task.title,
         description: description.trim() || null,
-        status: targetStatus,
+        status: dbStatus,
+        extendedStatus:
+          targetExtStatus === "DELAYED" || targetExtStatus === "CANCELLED"
+            ? targetExtStatus
+            : undefined,
         priority: targetPriority,
         dueDate: targetDue || null,
         assignee: nextMember
@@ -163,6 +178,20 @@ export function TaskDetailSheet({
           : null,
       });
       toast.success("Task updated");
+      if (nextFields?.assigneeId !== undefined) {
+        emitWorkspaceNotification({
+          kind: "assignment",
+          actorName: nextMember?.name ?? "Team Member",
+          title: nextMember
+            ? `${nextMember.name} assigned to ${title.trim() || task.title}`
+            : `Task unassigned: ${title.trim() || task.title}`,
+          description: `Status: ${targetExtStatus} · Priority: ${targetPriority}`,
+          entityKey: task.taskKey,
+          projectName: task.projectName,
+          href: `/${orgSlug}/projects/tasks?taskId=${task.id}`,
+          badgeLabel: "Assigned",
+        });
+      }
       router.refresh();
     });
   };
@@ -324,17 +353,24 @@ export function TaskDetailSheet({
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="right" className="flex w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
-        {/* Header */}
+        {/* Zoho-style Header */}
         <SheetHeader className="border-b px-6 py-4">
           <div className="flex flex-wrap items-center gap-2 pr-8">
-            <Badge variant="outline">{task.projectName}</Badge>
-            {task.milestoneName && <Badge variant="secondary">{task.milestoneName}</Badge>}
-            <span className="text-[11px] font-mono text-muted-foreground">
-              TSK-{task.id.slice(-5).toUpperCase()}
+            <span className="inline-flex items-center gap-1.5 rounded bg-sky-600 px-2.5 py-1 text-xs font-semibold text-white">
+              <CheckSquare className="size-3.5" />
+              Task
             </span>
+            <span className="rounded border bg-muted/60 px-2 py-1 font-mono text-xs font-medium text-muted-foreground">
+              {task.taskKey ?? `TSK-${task.id.slice(-5).toUpperCase()}`}
+            </span>
+            {task.milestoneName && (
+              <Badge variant="secondary" className="text-[11px]">
+                {task.milestoneName}
+              </Badge>
+            )}
           </div>
 
-          <SheetTitle className="mt-1">
+          <SheetTitle className="mt-2">
             {canWrite ? (
               <Input
                 value={title}
@@ -350,85 +386,186 @@ export function TaskDetailSheet({
               task.title
             )}
           </SheetTitle>
+          <p className="px-1 text-xs text-muted-foreground">
+            {task.projectName}
+            {task.assignee ? ` · Assigned to ${task.assignee.name}` : " · Unassigned"}
+          </p>
           <SheetDescription className="sr-only">
-            Manage subtasks, dependencies, time logs, comments, attachments, and activity history.
+            Manage task information, subtasks, dependencies, time logs, comments, attachments, and
+            activity history.
           </SheetDescription>
 
-          {/* Inline Field Bar */}
-          <div className="mt-3 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-            <div className="space-y-1">
-              <Label className="text-[10px] uppercase text-muted-foreground">Status</Label>
+          {/* Status Summary Card */}
+          <div className="mt-3 rounded-lg border bg-muted/25 px-3.5 py-2.5">
+            <div className="flex items-center gap-2">
+              <span
+                className={cn(
+                  "size-2.5 rounded-full",
+                  status === "DELAYED"
+                    ? "bg-rose-500"
+                    : status === "DONE"
+                      ? "bg-teal-500"
+                      : status === "IN_PROGRESS"
+                        ? "bg-blue-500"
+                        : status === "IN_REVIEW"
+                          ? "bg-amber-500"
+                          : status === "CANCELLED"
+                            ? "bg-zinc-400"
+                            : "bg-emerald-500",
+                )}
+              />
               <select
+                aria-label="Task Status"
                 value={status}
                 disabled={!canWrite || isPending}
                 onChange={(e) => {
-                  const next = e.target.value as TaskStatus;
+                  const next = e.target.value as ExtendedTaskStatus;
                   setStatus(next);
                   handleSaveDetails({ status: next });
                 }}
-                className="flex h-8 w-full rounded-md border border-input bg-background px-2 text-xs"
+                className="bg-transparent text-sm font-semibold text-foreground focus:outline-none"
               >
-                <option value="TODO">Open / To Do</option>
+                <option value="DELAYED">Delayed</option>
+                <option value="TODO">Open</option>
                 <option value="IN_PROGRESS">In Progress</option>
                 <option value="IN_REVIEW">In Review</option>
-                <option value="DONE">Closed / Done</option>
+                <option value="DONE">Closed</option>
+                <option value="CANCELLED">Cancelled</option>
               </select>
             </div>
+            <p className="mt-0.5 pl-4 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+              Status
+            </p>
+          </div>
 
-            <div className="space-y-1">
-              <Label className="text-[10px] uppercase text-muted-foreground">Priority</Label>
-              <select
-                value={priority}
-                disabled={!canWrite || isPending}
-                onChange={(e) => {
-                  const next = e.target.value as TaskPriority;
-                  setPriority(next);
-                  handleSaveDetails({ priority: next });
-                }}
-                className="flex h-8 w-full rounded-md border border-input bg-background px-2 text-xs"
-              >
-                <option value="LOW">Low</option>
-                <option value="MEDIUM">Medium</option>
-                <option value="HIGH">High</option>
-                <option value="URGENT">Urgent</option>
-              </select>
-            </div>
+          {/* Collapsible Description Card */}
+          <div className="mt-2 rounded-lg border bg-muted/20">
+            <button
+              type="button"
+              onClick={() => setDescOpen((prev) => !prev)}
+              className="flex w-full items-center gap-1.5 px-3.5 py-2.5 text-left text-xs font-semibold text-foreground hover:bg-muted/30"
+            >
+              {descOpen ? (
+                <ChevronDown className="size-3.5 text-sky-500" />
+              ) : (
+                <ChevronRight className="size-3.5 text-sky-500" />
+              )}
+              <span>Description</span>
+              <Plus className="ml-0.5 size-3.5 text-sky-500" />
+            </button>
+            {descOpen && (
+              <div className="border-t px-3.5 py-2.5">
+                <textarea
+                  rows={3}
+                  value={description}
+                  disabled={!canWrite || isPending}
+                  onChange={(e) => setDescription(e.target.value)}
+                  onBlur={() => handleSaveDetails()}
+                  placeholder="Add task description..."
+                  className="w-full rounded-md border border-input bg-background p-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+                />
+              </div>
+            )}
+          </div>
 
-            <div className="space-y-1">
-              <Label className="text-[10px] uppercase text-muted-foreground">Owner</Label>
-              <select
-                value={assigneeId}
-                disabled={!canWrite || isPending}
-                onChange={(e) => {
-                  const next = e.target.value;
-                  setAssigneeId(next);
-                  handleSaveDetails({ assigneeId: next });
-                }}
-                className="flex h-8 w-full rounded-md border border-input bg-background px-2 text-xs"
-              >
-                <option value="">Unassigned</option>
-                {members.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name}
-                  </option>
-                ))}
-              </select>
-            </div>
+          {/* Collapsible Zoho Task Information Table */}
+          <div className="mt-2 rounded-lg border bg-muted/20">
+            <button
+              type="button"
+              onClick={() => setInfoOpen((prev) => !prev)}
+              className="flex w-full items-center gap-1.5 px-3.5 py-2.5 text-left text-xs font-semibold text-foreground hover:bg-muted/30"
+            >
+              {infoOpen ? (
+                <ChevronDown className="size-3.5 text-sky-500" />
+              ) : (
+                <ChevronRight className="size-3.5 text-sky-500" />
+              )}
+              <span>Task Information</span>
+            </button>
+            {infoOpen && (
+              <div className="divide-y border-t text-xs">
+                <div className="grid grid-cols-3 items-center px-3.5 py-2">
+                  <span className="text-muted-foreground">Owner</span>
+                  <select
+                    value={assigneeId}
+                    disabled={!canWrite || isPending}
+                    onChange={(e) => {
+                      const next = e.target.value;
+                      setAssigneeId(next);
+                      handleSaveDetails({ assigneeId: next });
+                    }}
+                    className="col-span-2 h-7 rounded bg-transparent px-1 text-xs font-medium hover:bg-muted/50 focus:bg-background focus:outline-none"
+                  >
+                    <option value="">Unassigned</option>
+                    {members.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-            <div className="space-y-1">
-              <Label className="text-[10px] uppercase text-muted-foreground">Due Date</Label>
-              <Input
-                type="date"
-                value={dueDate}
-                disabled={!canWrite || isPending}
-                onChange={(e) => {
-                  const next = e.target.value;
-                  setDueDate(next);
-                  handleSaveDetails({ dueDate: next });
-                }}
-                className="h-8 text-xs"
-              />
-            </div>
+                <div className="grid grid-cols-3 items-center px-3.5 py-2">
+                  <span className="text-muted-foreground">Work Hours</span>
+                  <span className="col-span-2 px-1 font-mono font-medium tabular-nums">
+                    {String(Math.floor(totalTaskHours)).padStart(2, "0")}:
+                    {String(Math.round((totalTaskHours % 1) * 60)).padStart(2, "0")}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-3 items-center px-3.5 py-2">
+                  <span className="text-muted-foreground">Start Date</span>
+                  <span className="col-span-2 px-1 text-muted-foreground">
+                    {task.startDate ? formatDate(task.startDate, { withYear: true }) : "—"}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-3 items-center px-3.5 py-2">
+                  <span className="text-muted-foreground">Due Date</span>
+                  <Input
+                    type="date"
+                    value={dueDate}
+                    disabled={!canWrite || isPending}
+                    onChange={(e) => {
+                      const next = e.target.value;
+                      setDueDate(next);
+                      handleSaveDetails({ dueDate: next });
+                    }}
+                    className="col-span-2 h-7 border-transparent bg-transparent px-1 text-xs shadow-none hover:border-input focus-visible:border-input"
+                  />
+                </div>
+
+                <div className="grid grid-cols-3 items-center px-3.5 py-2">
+                  <span className="text-muted-foreground">Priority</span>
+                  <select
+                    value={priority}
+                    disabled={!canWrite || isPending}
+                    onChange={(e) => {
+                      const next = e.target.value as TaskPriority;
+                      setPriority(next);
+                      handleSaveDetails({ priority: next });
+                    }}
+                    className="col-span-2 h-7 rounded bg-transparent px-1 text-xs font-medium hover:bg-muted/50 focus:bg-background focus:outline-none"
+                  >
+                    <option value="LOW">Low</option>
+                    <option value="MEDIUM">Medium</option>
+                    <option value="HIGH">High</option>
+                    <option value="URGENT">Urgent</option>
+                  </select>
+                </div>
+
+                <div className="grid grid-cols-3 items-center px-3.5 py-2">
+                  <span className="text-muted-foreground">Completion %</span>
+                  <span className="col-span-2 px-1 font-medium tabular-nums">
+                    {status === "DONE"
+                      ? "100%"
+                      : subtasks.length > 0
+                        ? `${Math.round((doneSubtasks / subtasks.length) * 100)}%`
+                        : "0%"}
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
         </SheetHeader>
 

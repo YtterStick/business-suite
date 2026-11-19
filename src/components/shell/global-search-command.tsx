@@ -112,13 +112,13 @@ export function GlobalSearchCommand({ orgSlug }: GlobalSearchCommandProps) {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="flex h-9 w-full max-w-md items-center justify-between gap-2 rounded-lg border bg-muted/40 px-3 text-sm text-muted-foreground transition hover:bg-muted/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="flex h-8 w-full max-w-[210px] items-center justify-between gap-2 rounded-lg border bg-muted/40 px-2.5 text-xs text-muted-foreground transition hover:bg-muted/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:max-w-[270px] xl:max-w-xs"
       >
-        <span className="flex min-w-0 items-center gap-2">
-          <Search className="size-4 shrink-0" />
-          <span className="truncate">Search deals, contacts, invoices, projects...</span>
+        <span className="flex min-w-0 items-center gap-1.5">
+          <Search className="size-3.5 shrink-0" />
+          <span className="truncate">Search deals, projects, invoices...</span>
         </span>
-        <kbd className="hidden rounded border bg-background px-1.5 py-0.5 font-mono text-[10px] font-medium text-muted-foreground sm:inline-block">
+        <kbd className="hidden shrink-0 rounded border bg-background px-1.5 py-0.5 font-mono text-[10px] font-medium text-muted-foreground sm:inline-block">
           ⌘K
         </kbd>
       </button>

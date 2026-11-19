@@ -15,9 +15,11 @@ import {
   HelpCircle,
   History,
   Keyboard,
+  Laptop,
   Loader2,
   MessageCircle,
   MessageSquare,
+  Moon,
   Pause,
   Pin,
   PinOff,
@@ -26,12 +28,15 @@ import {
   Receipt,
   Send,
   Square,
+  StickyNote,
+  Sun,
   Trash2,
   Users,
   XCircle,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { useTheme } from "@/components/theme-provider";
 import { toast } from "sonner";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -111,6 +116,13 @@ interface BackgroundTaskItem {
   updatedAt: string;
 }
 
+interface StickyNoteEntry {
+  id: string;
+  text: string;
+  color: "amber" | "violet" | "emerald" | "sky";
+  updatedAt: string;
+}
+
 type UtilityPanel = "pins" | "chats" | "live-chat" | "contacts" | "timer" | null;
 
 function formatElapsed(seconds: number): string {
@@ -137,8 +149,77 @@ export function SuiteBottomBar({
 }) {
   const pathname = usePathname();
   const router = useRouter();
+  const { theme, setTheme } = useTheme();
   const [activePanel, setActivePanel] = React.useState<UtilityPanel>(null);
   const [bgTasks, setBgTasks] = React.useState<BackgroundTaskItem[]>([]);
+  const [stickyNotes, setStickyNotes] = React.useState<StickyNoteEntry[]>([]);
+  const [noteDraft, setNoteDraft] = React.useState("");
+  const [noteColor, setNoteColor] = React.useState<StickyNoteEntry["color"]>("amber");
+  const [timerTaskId, setTimerTaskId] = React.useState<string | null>(null);
+  const [timerTaskKey, setTimerTaskKey] = React.useState<string | null>(null);
+  const [timerTaskLabel, setTimerTaskLabel] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    try {
+      const savedNotes = window.localStorage.getItem(`bs_sticky_notes_${orgSlug}`);
+      if (savedNotes) {
+        const parsed = JSON.parse(savedNotes) as StickyNoteEntry[];
+        if (Array.isArray(parsed)) setStickyNotes(parsed);
+      }
+      const savedTimer = window.localStorage.getItem(`bs_timer_${orgSlug}`);
+      if (savedTimer) {
+        const t = JSON.parse(savedTimer) as {
+          running?: boolean;
+          startedAtMs?: number;
+          elapsed?: number;
+          projectId?: string;
+          taskId?: string | null;
+          taskKey?: string | null;
+          taskLabel?: string | null;
+          notes?: string;
+        };
+        if (t.projectId) setTimerProjectId(t.projectId);
+        if (t.taskId !== undefined) setTimerTaskId(t.taskId);
+        if (t.taskKey !== undefined) setTimerTaskKey(t.taskKey);
+        if (t.taskLabel !== undefined) setTimerTaskLabel(t.taskLabel);
+        if (t.notes) setTimerNotes(t.notes);
+        const extraSec =
+          t.running && t.startedAtMs
+            ? Math.max(0, Math.floor((Date.now() - t.startedAtMs) / 1000))
+            : 0;
+        setElapsedSeconds((t.elapsed ?? 0) + extraSec);
+        if (t.running) setTimerRunning(true);
+      }
+    } catch {
+      // Ignore
+    }
+  }, [orgSlug]);
+
+  const persistStickyNotes = (next: StickyNoteEntry[]) => {
+    setStickyNotes(next);
+    try {
+      window.localStorage.setItem(`bs_sticky_notes_${orgSlug}`, JSON.stringify(next));
+    } catch {
+      // Ignore
+    }
+  };
+
+  const handleAddStickyNote = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const clean = noteDraft.trim();
+    if (!clean) return;
+    persistStickyNotes([
+      {
+        id: `${Date.now()}`,
+        text: clean,
+        color: noteColor,
+        updatedAt: todayIso,
+      },
+      ...stickyNotes,
+    ]);
+    setNoteDraft("");
+    toast.success("Sticky note saved");
+  };
 
   React.useEffect(() => {
     const onBgTask = (event: Event) => {
@@ -252,24 +333,51 @@ export function SuiteBottomBar({
     );
   }, [contacts, contactSearch]);
 
-  // Quick Chats
+  // Quick Chats (synchronized with Collaboration Chat tab)
   const [chatMessage, setChatMessage] = React.useState("");
+  const [localChats, setLocalChats] = React.useState<BottomBarChatItem[]>(recentChats);
   const [isSendingChat, startChatTransition] = React.useTransition();
+
+  React.useEffect(() => {
+    setLocalChats(recentChats);
+  }, [recentChats]);
+
+  React.useEffect(() => {
+    const onChatSync = (event: Event) => {
+      const msg = (event as CustomEvent<BottomBarChatItem>).detail;
+      if (!msg) return;
+      setLocalChats((prev) =>
+        prev.some((c) => c.id === msg.id) ? prev : [msg, ...prev],
+      );
+    };
+    window.addEventListener("bs-chat-sync", onChatSync);
+    return () => window.removeEventListener("bs-chat-sync", onChatSync);
+  }, []);
 
   const handleSendChat = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!chatMessage.trim()) return;
+    const cleanBody = chatMessage.trim();
+    if (!cleanBody) return;
     startChatTransition(async () => {
       const res = await postCommentAction({
         orgSlug,
         entityType: "Workspace",
         entityId: "workspace",
-        body: chatMessage,
+        body: cleanBody,
       });
       if (!res.ok) toast.error(res.error.message);
       else {
+        const synced: BottomBarChatItem = {
+          id: `live-chat-${Date.now()}`,
+          authorName: "You",
+          body: cleanBody,
+          createdAt: new Date().toISOString(),
+        };
+        setLocalChats((prev) => [synced, ...prev]);
+        window.dispatchEvent(new CustomEvent<BottomBarChatItem>("bs-chat-sync", { detail: synced }));
         setChatMessage("");
-        toast.success("Message posted to Collaboration");
+        toast.success("Message posted to Collaboration Chat");
+        router.refresh();
       }
     });
   };
@@ -375,6 +483,69 @@ export function SuiteBottomBar({
   };
 
   React.useEffect(() => {
+    const onToggleTaskTimer = (event: Event) => {
+      const detail = (
+        event as CustomEvent<{
+          projectId: string;
+          taskId: string;
+          taskTitle: string;
+          taskKey?: string;
+        }>
+      ).detail;
+      if (!detail?.taskId) return;
+      if (timerRunning && timerTaskId === detail.taskId) {
+        setTimerRunning(false);
+        setActivePanel("timer");
+        toast.info(`Stopped timer for ${detail.taskKey ?? detail.taskTitle} — ready to save`);
+      } else {
+        setTimerProjectId(detail.projectId);
+        setTimerTaskId(detail.taskId);
+        setTimerTaskKey(detail.taskKey ?? null);
+        setTimerTaskLabel(detail.taskKey ? `${detail.taskKey}: ${detail.taskTitle}` : detail.taskTitle);
+        setTimerNotes(detail.taskKey ? `[${detail.taskKey}] ${detail.taskTitle}` : detail.taskTitle);
+        setTimerRunning(true);
+        toast.success(`Live timer started for ${detail.taskKey ?? detail.taskTitle}`);
+      }
+    };
+    window.addEventListener("bs-toggle-task-timer", onToggleTaskTimer);
+    return () => window.removeEventListener("bs-toggle-task-timer", onToggleTaskTimer);
+  }, [timerRunning, timerTaskId]);
+
+  React.useEffect(() => {
+    window.dispatchEvent(
+      new CustomEvent("bs-timer-state", {
+        detail: { running: timerRunning, taskId: timerTaskId, elapsedSeconds },
+      }),
+    );
+    try {
+      window.localStorage.setItem(
+        `bs_timer_${orgSlug}`,
+        JSON.stringify({
+          running: timerRunning,
+          startedAtMs: timerRunning ? Date.now() : null,
+          elapsed: elapsedSeconds,
+          projectId: timerProjectId,
+          taskId: timerTaskId,
+          taskKey: timerTaskKey,
+          taskLabel: timerTaskLabel,
+          notes: timerNotes,
+        }),
+      );
+    } catch {
+      // Ignore
+    }
+  }, [
+    orgSlug,
+    timerRunning,
+    timerTaskId,
+    timerTaskKey,
+    timerTaskLabel,
+    timerProjectId,
+    timerNotes,
+    elapsedSeconds,
+  ]);
+
+  React.useEffect(() => {
     if (!timerRunning) return;
     const id = window.setInterval(() => {
       setElapsedSeconds((prev) => prev + 1);
@@ -389,13 +560,20 @@ export function SuiteBottomBar({
     }
     const hours = Math.max(0.25, Math.round((elapsedSeconds / 3600) * 4) / 4);
     startTimeTransition(async () => {
+      const resolvedTaskId =
+        timerTaskId && !timerTaskId.startsWith("issue:") ? timerTaskId : null;
       const res = await createTimeLogAction({
         orgSlug,
         projectId: timerProjectId,
+        taskId: resolvedTaskId,
         hours,
         billable: true,
         loggedDate: todayIso,
-        notes: timerNotes.trim() || `Logged via bottom timer (${formatElapsed(elapsedSeconds)})`,
+        notes:
+          timerNotes.trim() ||
+          (timerTaskLabel
+            ? `${timerTaskLabel} — Logged via timer (${formatElapsed(elapsedSeconds)})`
+            : `Logged via bottom timer (${formatElapsed(elapsedSeconds)})`),
       });
       if (!res.ok) {
         toast.error(res.error.message);
@@ -404,7 +582,15 @@ export function SuiteBottomBar({
       setTimerRunning(false);
       setElapsedSeconds(0);
       setTimerNotes("");
+      setTimerTaskId(null);
+      setTimerTaskKey(null);
+      setTimerTaskLabel(null);
       setActivePanel(null);
+      try {
+        window.localStorage.removeItem(`bs_timer_${orgSlug}`);
+      } catch {
+        // Ignore
+      }
       toast.success(`Logged ${hours.toFixed(2)}h to Time Logs`);
     });
   };
@@ -413,75 +599,178 @@ export function SuiteBottomBar({
     <>
       <footer
         aria-label="Workspace utility bar"
-        className="flex h-9 shrink-0 items-center justify-between border-t bg-background px-3 text-xs text-muted-foreground lg:px-5"
+        className="flex h-9 shrink-0 items-center justify-between gap-2 overflow-x-auto border-t bg-background px-2.5 text-xs whitespace-nowrap text-muted-foreground lg:px-4"
       >
-        <div className="flex items-center gap-1">
+        <div className="flex shrink-0 items-center gap-0.5 sm:gap-1">
           <button
             type="button"
+            title="My Pins"
             onClick={() => setActivePanel(activePanel === "pins" ? null : "pins")}
             className={cn(
-              "inline-flex items-center gap-1.5 rounded px-2 py-1 font-medium transition hover:bg-accent hover:text-foreground",
+              "inline-flex shrink-0 items-center gap-1 rounded px-2 py-1 font-medium whitespace-nowrap transition hover:bg-accent hover:text-foreground",
               activePanel === "pins" && "bg-accent text-foreground",
             )}
           >
-            <Pin className="size-3.5 text-amber-600" />
-            <span>My Pins</span>
-            <Badge variant="secondary" className="h-4 px-1 text-[10px]">
+            <Pin className="size-3.5 shrink-0 text-amber-600" />
+            <span className="hidden sm:inline">My Pins</span>
+            <Badge variant="secondary" className="h-4 px-1 text-[10px] tabular-nums">
               {pins.length}
             </Badge>
           </button>
 
           <button
             type="button"
+            title="Team Chats"
             onClick={() => setActivePanel(activePanel === "chats" ? null : "chats")}
             className={cn(
-              "inline-flex items-center gap-1.5 rounded px-2 py-1 font-medium transition hover:bg-accent hover:text-foreground",
+              "inline-flex shrink-0 items-center gap-1 rounded px-2 py-1 font-medium whitespace-nowrap transition hover:bg-accent hover:text-foreground",
               activePanel === "chats" && "bg-accent text-foreground",
             )}
           >
-            <MessageSquare className="size-3.5 text-violet-600" />
-            <span>Chats</span>
-            {recentChats.length > 0 && (
-              <Badge variant="secondary" className="h-4 px-1 text-[10px]">
-                {recentChats.length}
+            <MessageSquare className="size-3.5 shrink-0 text-violet-600" />
+            <span className="hidden md:inline">Chats</span>
+            {localChats.length > 0 && (
+              <Badge variant="secondary" className="h-4 px-1 text-[10px] tabular-nums">
+                {localChats.length}
               </Badge>
             )}
           </button>
 
           <button
             type="button"
+            title="Live Chat"
             onClick={() => setActivePanel(activePanel === "live-chat" ? null : "live-chat")}
             className={cn(
-              "inline-flex items-center gap-1.5 rounded px-2 py-1 font-medium transition hover:bg-accent hover:text-foreground",
+              "inline-flex shrink-0 items-center gap-1 rounded px-2 py-1 font-medium whitespace-nowrap transition hover:bg-accent hover:text-foreground",
               activePanel === "live-chat" && "bg-accent text-foreground",
             )}
           >
-            <span className="relative flex size-2">
+            <span className="relative flex size-2 shrink-0">
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
               <span className="relative inline-flex size-2 rounded-full bg-emerald-500" />
             </span>
-            <MessageCircle className="size-3.5 text-emerald-600" />
-            <span>Live Chat</span>
+            <MessageCircle className="size-3.5 shrink-0 text-emerald-600" />
+            <span className="hidden lg:inline">Live Chat</span>
           </button>
 
           <button
             type="button"
+            title="CRM Contacts"
             onClick={() => setActivePanel(activePanel === "contacts" ? null : "contacts")}
             className={cn(
-              "inline-flex items-center gap-1.5 rounded px-2 py-1 font-medium transition hover:bg-accent hover:text-foreground",
+              "inline-flex shrink-0 items-center gap-1 rounded px-2 py-1 font-medium whitespace-nowrap transition hover:bg-accent hover:text-foreground",
               activePanel === "contacts" && "bg-accent text-foreground",
             )}
           >
-            <Users className="size-3.5 text-blue-600" />
-            <span>Contacts</span>
-            <Badge variant="secondary" className="h-4 px-1 text-[10px]">
+            <Users className="size-3.5 shrink-0 text-blue-600" />
+            <span className="hidden lg:inline">Contacts</span>
+            <Badge variant="secondary" className="h-4 px-1 text-[10px] tabular-nums">
               {contacts.length}
             </Badge>
           </button>
+
+          {/* Sticky Notes Quick-Pad Popover */}
+          <Popover>
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                aria-label="Sticky Notes"
+                title="Sticky Notes"
+                className="inline-flex shrink-0 items-center gap-1 rounded px-2 py-1 font-medium whitespace-nowrap transition hover:bg-accent hover:text-foreground"
+              >
+                <StickyNote className="size-3.5 shrink-0 text-amber-500" />
+                <span className="hidden xl:inline">Notes</span>
+                {stickyNotes.length > 0 && (
+                  <Badge variant="secondary" className="h-4 px-1 text-[10px] tabular-nums">
+                    {stickyNotes.length}
+                  </Badge>
+                )}
+              </button>
+            </PopoverTrigger>
+            <PopoverContent side="top" align="start" className="w-80 p-3">
+              <div className="space-y-3">
+                <div className="flex items-center justify-between border-b pb-2">
+                  <div>
+                    <p className="text-xs font-semibold">Sticky Notes</p>
+                    <p className="text-[10px] text-muted-foreground">
+                      Quick scratchpad persisted across sessions.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    {(["amber", "violet", "emerald", "sky"] as const).map((c) => (
+                      <button
+                        key={c}
+                        type="button"
+                        aria-label={`Select ${c} note color`}
+                        onClick={() => setNoteColor(c)}
+                        className={cn(
+                          "size-3.5 rounded-full border transition",
+                          c === "amber" && "bg-amber-400",
+                          c === "violet" && "bg-violet-400",
+                          c === "emerald" && "bg-emerald-400",
+                          c === "sky" && "bg-sky-400",
+                          noteColor === c && "ring-2 ring-foreground ring-offset-1",
+                        )}
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                <form onSubmit={handleAddStickyNote} className="flex gap-1.5">
+                  <Input
+                    value={noteDraft}
+                    onChange={(e) => setNoteDraft(e.target.value)}
+                    placeholder="Jot down a quick note..."
+                    className="h-7 flex-1 text-xs"
+                  />
+                  <Button type="submit" size="icon-xs" variant="outline" title="Add note">
+                    <Plus className="size-3.5" />
+                  </Button>
+                </form>
+
+                <div className="max-h-52 space-y-1.5 overflow-y-auto">
+                  {stickyNotes.length === 0 ? (
+                    <p className="py-4 text-center text-[11px] text-muted-foreground">
+                      No sticky notes yet.
+                    </p>
+                  ) : (
+                    stickyNotes.map((note) => (
+                      <div
+                        key={note.id}
+                        className={cn(
+                          "flex items-start justify-between gap-2 rounded-md border p-2 text-xs whitespace-normal",
+                          note.color === "amber" &&
+                            "border-amber-500/30 bg-amber-500/10 text-foreground",
+                          note.color === "violet" &&
+                            "border-violet-500/30 bg-violet-500/10 text-foreground",
+                          note.color === "emerald" &&
+                            "border-emerald-500/30 bg-emerald-500/10 text-foreground",
+                          note.color === "sky" &&
+                            "border-sky-500/30 bg-sky-500/10 text-foreground",
+                        )}
+                      >
+                        <p className="flex-1 leading-relaxed">{note.text}</p>
+                        <button
+                          type="button"
+                          aria-label="Delete note"
+                          onClick={() =>
+                            persistStickyNotes(stickyNotes.filter((n) => n.id !== note.id))
+                          }
+                          className="shrink-0 text-muted-foreground hover:text-destructive"
+                        >
+                          <Trash2 className="size-3" />
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </PopoverContent>
+          </Popover>
         </div>
 
-        {/* Right: Recent Items, Reminders, Keyboard Shortcuts (?), and Quick Timer Widget */}
-        <div className="flex items-center gap-1.5">
+        {/* Right: Recent, Reminders, Quick Add, Theme, Shortcuts (?), Background Tasks (0%), Timer */}
+        <div className="flex shrink-0 items-center gap-1">
           {/* Recent Items Popover */}
           <Popover>
             <PopoverTrigger asChild>
@@ -489,10 +778,10 @@ export function SuiteBottomBar({
                 type="button"
                 aria-label="Recent items"
                 title="Recent Items"
-                className="inline-flex items-center gap-1 rounded px-2 py-1 text-muted-foreground transition hover:bg-accent hover:text-foreground"
+                className="inline-flex shrink-0 items-center gap-1 rounded px-2 py-1 whitespace-nowrap text-muted-foreground transition hover:bg-accent hover:text-foreground"
               >
-                <History className="size-3.5" />
-                <span className="hidden md:inline">Recent</span>
+                <History className="size-3.5 shrink-0" />
+                <span className="hidden xl:inline">Recent</span>
               </button>
             </PopoverTrigger>
             <PopoverContent side="top" align="end" className="w-72 p-0">
@@ -524,10 +813,10 @@ export function SuiteBottomBar({
                 type="button"
                 aria-label="Reminders"
                 title="Reminders"
-                className="inline-flex items-center gap-1 rounded px-2 py-1 text-muted-foreground transition hover:bg-accent hover:text-foreground"
+                className="inline-flex shrink-0 items-center gap-1 rounded px-2 py-1 whitespace-nowrap text-muted-foreground transition hover:bg-accent hover:text-foreground"
               >
-                <BellRing className="size-3.5" />
-                <span className="hidden md:inline">Reminders</span>
+                <BellRing className="size-3.5 shrink-0" />
+                <span className="hidden xl:inline">Reminders</span>
                 {reminders.filter((r) => !r.done).length > 0 && (
                   <Badge variant="secondary" className="h-4 px-1 text-[10px] tabular-nums">
                     {reminders.filter((r) => !r.done).length}
@@ -628,10 +917,10 @@ export function SuiteBottomBar({
                 type="button"
                 aria-label="Quick add item"
                 title="Quick Add (+)"
-                className="inline-flex items-center gap-1 rounded px-2 py-1 font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground"
+                className="inline-flex shrink-0 items-center gap-1 rounded px-2 py-1 font-medium whitespace-nowrap text-muted-foreground transition hover:bg-accent hover:text-foreground"
               >
-                <Plus className="size-3.5 text-primary" />
-                <span className="hidden lg:inline">Quick Add</span>
+                <Plus className="size-3.5 shrink-0 text-primary" />
+                <span className="hidden 2xl:inline">Quick Add</span>
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent side="top" align="end" className="w-52">
@@ -679,13 +968,47 @@ export function SuiteBottomBar({
             </DropdownMenuContent>
           </DropdownMenu>
 
+          {/* Theme / Dark Mode Toggle */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                aria-label="Toggle theme"
+                title="Switch Theme (Light / Dark / System)"
+                className="relative inline-flex shrink-0 items-center justify-center rounded px-1.5 py-1 text-muted-foreground transition hover:bg-accent hover:text-foreground"
+              >
+                <Sun className="size-3.5 scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90" />
+                <Moon className="absolute size-3.5 scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent side="top" align="end" className="w-36">
+              <DropdownMenuLabel className="text-xs">Theme</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onSelect={() => setTheme("light")} className="gap-2 text-xs">
+                <Sun className="size-3.5" />
+                <span>Light</span>
+                {theme === "light" && <span className="ml-auto text-primary">●</span>}
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setTheme("dark")} className="gap-2 text-xs">
+                <Moon className="size-3.5" />
+                <span>Dark</span>
+                {theme === "dark" && <span className="ml-auto text-primary">●</span>}
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setTheme("system")} className="gap-2 text-xs">
+                <Laptop className="size-3.5" />
+                <span>System</span>
+                {theme === "system" && <span className="ml-auto text-primary">●</span>}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
           {/* Keyboard Shortcuts (?) Modal Trigger */}
           <button
             type="button"
             aria-label="Keyboard Shortcuts"
             title="Keyboard Shortcuts (?)"
             onClick={() => setShortcutsOpen(true)}
-            className="inline-flex items-center gap-1 rounded px-2 py-1 text-muted-foreground transition hover:bg-accent hover:text-foreground"
+            className="inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-1 text-muted-foreground transition hover:bg-accent hover:text-foreground"
           >
             <HelpCircle className="size-3.5" />
           </button>
@@ -780,13 +1103,26 @@ export function SuiteBottomBar({
             </PopoverContent>
           </Popover>
 
-          <div className="flex items-center gap-1.5 rounded-md border bg-muted/40 px-2 py-0.5">
+          <div
+            title={timerTaskLabel ? `Tracking: ${timerTaskLabel}` : "Quick Timer"}
+            className={cn(
+              "flex shrink-0 items-center gap-1.5 rounded-md border px-2 py-0.5 whitespace-nowrap",
+              timerRunning
+                ? "border-emerald-500/40 bg-emerald-500/10"
+                : "border-border bg-muted/40",
+            )}
+          >
             <Clock
               className={cn(
-                "size-3.5",
+                "size-3.5 shrink-0",
                 timerRunning ? "animate-pulse text-emerald-600" : "text-muted-foreground",
               )}
             />
+            {timerTaskKey && (
+              <span className="rounded bg-emerald-600 px-1 py-0 font-mono text-[9px] font-bold text-white">
+                {timerTaskKey}
+              </span>
+            )}
             <span className="font-mono text-xs font-semibold tabular-nums text-foreground">
               {formatElapsed(elapsedSeconds)}
             </span>
@@ -980,12 +1316,12 @@ export function SuiteBottomBar({
                 )}
 
                 <div className="space-y-2.5">
-                  {recentChats.length === 0 ? (
+                  {localChats.length === 0 ? (
                     <p className="py-6 text-center text-xs text-muted-foreground">
                       No messages yet.
                     </p>
                   ) : (
-                    recentChats.map((chat) => (
+                    localChats.map((chat) => (
                       <div key={chat.id} className="rounded-lg border bg-muted/20 p-3 text-xs">
                         <div className="flex items-center justify-between font-semibold">
                           <span>{chat.authorName}</span>
@@ -1037,12 +1373,12 @@ export function SuiteBottomBar({
                 )}
 
                 <div className="space-y-2.5">
-                  {recentChats.length === 0 ? (
+                  {localChats.length === 0 ? (
                     <p className="py-6 text-center text-xs text-muted-foreground">
                       No live messages yet. Start a conversation above.
                     </p>
                   ) : (
-                    recentChats.map((chat) => (
+                    localChats.map((chat) => (
                       <div key={chat.id} className="rounded-lg border bg-muted/20 p-3 text-xs">
                         <div className="flex items-center justify-between font-semibold">
                           <span>{chat.authorName}</span>

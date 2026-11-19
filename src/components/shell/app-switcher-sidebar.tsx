@@ -20,6 +20,7 @@ import {
   FileText,
   Flag,
   FolderKanban,
+  GanttChart,
   GripVertical,
   Handshake,
   Home,
@@ -27,10 +28,11 @@ import {
   Layers,
   LogOut,
   MessageSquare,
+  MoreVertical,
   Package,
   Plus,
   Receipt,
-  SlidersHorizontal,
+  Settings,
   UserPlus,
   Users,
   Wallet,
@@ -93,6 +95,7 @@ interface AppSwitcherSidebarProps {
   role: MembershipRole;
   organizations: SidebarOrgOption[];
   user: SidebarUserSummary;
+  recentProjects?: Array<{ id: string; name: string }>;
   onNavigate?: () => void;
   className?: string;
 }
@@ -155,6 +158,7 @@ export function AppSwitcherSidebar({
   role,
   organizations,
   user,
+  recentProjects = [],
   onNavigate,
   className,
 }: AppSwitcherSidebarProps) {
@@ -162,10 +166,51 @@ export function AppSwitcherSidebar({
   const activeModule = resolveActiveModule(pathname, orgSlug);
   const [inviteOpen, setInviteOpen] = React.useState(false);
   const [overviewOpen, setOverviewOpen] = React.useState(true);
+  const [recentProjectsOpen, setRecentProjectsOpen] = React.useState(true);
+  const [visitedProjectIds, setVisitedProjectIds] = React.useState<string[]>([]);
   const [hiddenIds, setHiddenIds] = React.useState<string[]>([]);
   const [customOrderByModule, setCustomOrderByModule] = React.useState<Record<string, string[]>>({});
   const [draggedNavId, setDraggedNavId] = React.useState<string | null>(null);
   const canInvite = can(role, "org.members.manage");
+
+  React.useEffect(() => {
+    try {
+      const savedRecent = window.localStorage.getItem(`bs_recent_proj_ids_${orgSlug}`);
+      if (savedRecent) {
+        const parsed = JSON.parse(savedRecent);
+        if (Array.isArray(parsed)) setVisitedProjectIds(parsed);
+      }
+    } catch {
+      // Ignore
+    }
+  }, [orgSlug]);
+
+  React.useEffect(() => {
+    const match = recentProjects.find((p) => pathname.includes(`/projects/${p.id}`));
+    if (!match) return;
+    setVisitedProjectIds((prev) => {
+      const next = [match.id, ...prev.filter((id) => id !== match.id)].slice(0, 6);
+      try {
+        window.localStorage.setItem(`bs_recent_proj_ids_${orgSlug}`, JSON.stringify(next));
+      } catch {
+        // Ignore
+      }
+      return next;
+    });
+  }, [pathname, orgSlug, recentProjects]);
+
+  const orderedRecentProjects = React.useMemo(() => {
+    const byId = new Map(recentProjects.map((p) => [p.id, p]));
+    const list: Array<{ id: string; name: string }> = [];
+    for (const id of visitedProjectIds) {
+      const found = byId.get(id);
+      if (found) list.push(found);
+    }
+    for (const p of recentProjects) {
+      if (!list.some((item) => item.id === p.id)) list.push(p);
+    }
+    return list.slice(0, 5);
+  }, [recentProjects, visitedProjectIds]);
 
   React.useEffect(() => {
     try {
@@ -281,7 +326,7 @@ export function AppSwitcherSidebar({
                   <button
                     type="button"
                     aria-label="Switch organization"
-                    className="flex size-10 items-center justify-center rounded-xl bg-zinc-800 text-xs font-semibold tracking-tight text-white ring-1 ring-white/15 transition hover:bg-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                    className="flex size-10 items-center justify-center rounded-xl bg-gradient-to-br from-violet-600 to-indigo-600 text-xs font-bold tracking-wider text-white shadow-sm ring-1 ring-white/20 transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
                   >
                     {initials(activeOrg.name)}
                   </button>
@@ -586,7 +631,7 @@ export function AppSwitcherSidebar({
                             title="Customize Sidebar"
                             className="flex size-5 items-center justify-center rounded-md text-muted-foreground transition hover:bg-sidebar-accent hover:text-foreground"
                           >
-                            <SlidersHorizontal className="size-3" />
+                            <Settings className="size-3" />
                           </button>
                         </PopoverTrigger>
                         <PopoverContent side="right" align="start" className="w-64 p-3">
@@ -660,6 +705,92 @@ export function AppSwitcherSidebar({
                       </Popover>
                     </div>
                     {overviewOpen && overviewItems.map(renderNavLink)}
+                  </div>
+                )}
+
+                {activeModule.id === "projects" && orderedRecentProjects.length > 0 && (
+                  <div className="mt-4 space-y-1">
+                    <div className="flex items-center justify-between gap-1 px-1.5">
+                      <button
+                        type="button"
+                        aria-expanded={recentProjectsOpen}
+                        onClick={() => setRecentProjectsOpen((prev) => !prev)}
+                        className="flex flex-1 items-center gap-1.5 rounded-md px-1 py-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground transition hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+                      >
+                        {recentProjectsOpen ? (
+                          <ChevronDown className="size-3.5" />
+                        ) : (
+                          <ChevronRight className="size-3.5" />
+                        )}
+                        <span>Recent Projects</span>
+                      </button>
+                    </div>
+                    {recentProjectsOpen &&
+                      orderedRecentProjects.map((proj) => {
+                        const projHref = `/${orgSlug}/projects/${proj.id}`;
+                        const isProjActive = pathname === projHref;
+                        return (
+                          <div
+                            key={proj.id}
+                            className={cn(
+                              "group relative flex items-center justify-between rounded-lg transition-colors",
+                              isProjActive
+                                ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-2xs"
+                                : "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-foreground",
+                            )}
+                          >
+                            <Link
+                              href={projHref}
+                              onClick={onNavigate}
+                              className="flex min-w-0 flex-1 items-center gap-2 px-2.5 py-1.5 text-xs font-medium"
+                            >
+                              <span className="size-1.5 shrink-0 rounded-full bg-violet-500" />
+                              <span className="truncate">{proj.name}</span>
+                            </Link>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <button
+                                  type="button"
+                                  aria-label={`Quick actions for ${proj.name}`}
+                                  className="mr-1 flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 transition hover:bg-background hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100"
+                                >
+                                  <MoreVertical className="size-3" />
+                                </button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent side="right" align="start" className="w-44">
+                                <DropdownMenuLabel className="truncate text-xs">
+                                  {proj.name}
+                                </DropdownMenuLabel>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem asChild>
+                                  <Link
+                                    href={`/${orgSlug}/projects/tasks?projectId=${proj.id}`}
+                                    onClick={onNavigate}
+                                  >
+                                    <CheckSquare className="size-3.5" />
+                                    Open Tasks
+                                  </Link>
+                                </DropdownMenuItem>
+                                <DropdownMenuItem asChild>
+                                  <Link
+                                    href={`/${orgSlug}/projects/${proj.id}?tab=Tasks`}
+                                    onClick={onNavigate}
+                                  >
+                                    <GanttChart className="size-3.5" />
+                                    Open Gantt
+                                  </Link>
+                                </DropdownMenuItem>
+                                <DropdownMenuItem asChild>
+                                  <Link href={projHref} onClick={onNavigate}>
+                                    <Settings className="size-3.5" />
+                                    Project Settings
+                                  </Link>
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
+                        );
+                      })}
                   </div>
                 )}
               </>

@@ -18,6 +18,7 @@ import { recordAudit } from "@/server/audit";
 import { authorize, type TenantContext } from "@/server/tenancy";
 import type {
   CommentDTO,
+  ExtendedTaskStatus,
   IssueRowDTO,
   MentionReferenceItem,
   ProjectActivityLogDTO,
@@ -740,6 +741,18 @@ export async function importProjects(
   });
 }
 
+function buildProjectTaskPrefix(projectName: string): string {
+  const words = projectName
+    .replace(/[^a-zA-Z0-9\s]/g, "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (words.length >= 2) {
+    return `${words[0]![0]}${words[1]![0]}`.toUpperCase();
+  }
+  return (words[0]?.slice(0, 2) || "PR").toUpperCase();
+}
+
 export async function getTasksBoard(
   ctx: TenantContext,
   projectId?: string,
@@ -747,45 +760,51 @@ export async function getTasksBoard(
   authorize(ctx, "projects.project.read");
   const organizationId = ctx.organization.id;
 
-  const [tasks, projects, memberships, taskTimeLogs, taskComments, taskAudits] = await Promise.all([
-    db.task.findMany({
-      where: {
-        organizationId,
-        ...(projectId ? { projectId } : {}),
-      },
-      orderBy: [{ position: "asc" }, { createdAt: "asc" }],
-      include: {
-        project: { select: { name: true } },
-        milestone: { select: { name: true } },
-        assignee: { select: { id: true, name: true, avatarUrl: true } },
-      },
-    }),
-    db.project.findMany({
-      where: { organizationId, isArchived: false },
-      orderBy: { name: "asc" },
-      select: { id: true, name: true },
-    }),
-    db.membership.findMany({
-      where: { organizationId },
-      orderBy: { user: { name: "asc" } },
-      include: { user: { select: { id: true, name: true } } },
-    }),
-    db.timeLog.findMany({
-      where: { organizationId, taskId: { not: null } },
-      orderBy: [{ loggedDate: "desc" }, { createdAt: "desc" }],
-      include: { user: { select: { name: true } } },
-    }),
-    db.comment.findMany({
-      where: { organizationId, entityType: "Task" },
-      orderBy: { createdAt: "asc" },
-      include: { author: { select: { name: true } } },
-    }),
-    db.auditLog.findMany({
-      where: { organizationId, entityType: "Task" },
-      orderBy: { createdAt: "desc" },
-      take: 200,
-    }),
-  ]);
+  const [tasks, projects, milestones, memberships, taskTimeLogs, taskComments, taskAudits] =
+    await Promise.all([
+      db.task.findMany({
+        where: {
+          organizationId,
+          ...(projectId ? { projectId } : {}),
+        },
+        orderBy: [{ position: "asc" }, { createdAt: "asc" }],
+        include: {
+          project: { select: { name: true } },
+          milestone: { select: { name: true } },
+          assignee: { select: { id: true, name: true, avatarUrl: true } },
+        },
+      }),
+      db.project.findMany({
+        where: { organizationId, isArchived: false },
+        orderBy: { name: "asc" },
+        select: { id: true, name: true },
+      }),
+      db.milestone.findMany({
+        where: { organizationId },
+        orderBy: [{ position: "asc" }, { name: "asc" }],
+        select: { id: true, projectId: true, name: true },
+      }),
+      db.membership.findMany({
+        where: { organizationId },
+        orderBy: { user: { name: "asc" } },
+        include: { user: { select: { id: true, name: true } } },
+      }),
+      db.timeLog.findMany({
+        where: { organizationId, taskId: { not: null } },
+        orderBy: [{ loggedDate: "desc" }, { createdAt: "desc" }],
+        include: { user: { select: { name: true } } },
+      }),
+      db.comment.findMany({
+        where: { organizationId, entityType: "Task" },
+        orderBy: { createdAt: "asc" },
+        include: { author: { select: { name: true } } },
+      }),
+      db.auditLog.findMany({
+        where: { organizationId, entityType: "Task" },
+        orderBy: { createdAt: "desc" },
+        take: 200,
+      }),
+    ]);
 
   const memberNameMap = new Map(memberships.map((m) => [m.user.id, m.user.name]));
   const logsByTask = new Map<string, NonNullable<TaskCardDTO["timeLogs"]>>();
@@ -807,9 +826,23 @@ export async function getTasksBoard(
   const depsByTask = new Map<string, NonNullable<TaskCardDTO["dependencies"]>>();
   const attsByTask = new Map<string, NonNullable<TaskCardDTO["attachments"]>>();
   const commentsByTask = new Map<string, NonNullable<TaskCardDTO["comments"]>>();
+  const statusMetaByTask = new Map<string, ExtendedTaskStatus>();
+  const tagsByTask = new Map<string, string[]>();
 
   for (const c of taskComments) {
-    if (c.body.startsWith("[SUBTASK]|")) {
+    if (c.body.startsWith("[STATUS_META]|")) {
+      const rawSt = c.body.slice("[STATUS_META]|".length).trim();
+      if (rawSt === "DELAYED" || rawSt === "CANCELLED") {
+        statusMetaByTask.set(c.entityId, rawSt);
+      }
+    } else if (c.body.startsWith("[TAGS]|")) {
+      const rawTags = c.body
+        .slice("[TAGS]|".length)
+        .split(",")
+        .map((t) => t.trim())
+        .filter(Boolean);
+      tagsByTask.set(c.entityId, rawTags);
+    } else if (c.body.startsWith("[SUBTASK]|")) {
       const [, subTitle, doneFlag] = c.body.split("|");
       const list = subtasksByTask.get(c.entityId) ?? [];
       list.push({
@@ -872,31 +905,43 @@ export async function getTasksBoard(
     auditsByTask.set(a.entityId, list);
   }
 
-  const mappedTasks: TaskCardDTO[] = tasks.map((t) => ({
-    id: t.id,
-    projectId: t.projectId,
-    projectName: t.project.name,
-    milestoneId: t.milestoneId,
-    milestoneName: t.milestone?.name ?? null,
-    title: t.title,
-    description: t.description,
-    status: t.status,
-    priority: t.priority,
-    position: t.position,
-    startDate: toIsoDate(t.createdAt),
-    dueDate: t.dueDate ? toIsoDate(t.dueDate) : null,
-    assignee: t.assignee,
-    subtasks: subtasksByTask.get(t.id) ?? [],
-    dependencies: depsByTask.get(t.id) ?? [],
-    attachments: attsByTask.get(t.id) ?? [],
-    comments: commentsByTask.get(t.id) ?? [],
-    timeLogs: logsByTask.get(t.id) ?? [],
-    activities: auditsByTask.get(t.id) ?? [],
-  }));
+  const seqByProject = new Map<string, number>();
+  const mappedTasks: TaskCardDTO[] = tasks.map((t) => {
+    const nextSeq = (seqByProject.get(t.projectId) ?? 0) + 1;
+    seqByProject.set(t.projectId, nextSeq);
+    const prefix = buildProjectTaskPrefix(t.project.name);
+
+    return {
+      id: t.id,
+      taskKey: `${prefix}-T${nextSeq}`,
+      projectId: t.projectId,
+      projectName: t.project.name,
+      milestoneId: t.milestoneId,
+      milestoneName: t.milestone?.name ?? null,
+      reporterId: t.reporterId,
+      title: t.title,
+      description: t.description,
+      status: t.status,
+      extendedStatus: statusMetaByTask.get(t.id),
+      priority: t.priority,
+      position: t.position,
+      startDate: toIsoDate(t.createdAt),
+      dueDate: t.dueDate ? toIsoDate(t.dueDate) : null,
+      assignee: t.assignee,
+      tags: tagsByTask.get(t.id) ?? [],
+      subtasks: subtasksByTask.get(t.id) ?? [],
+      dependencies: depsByTask.get(t.id) ?? [],
+      attachments: attsByTask.get(t.id) ?? [],
+      comments: commentsByTask.get(t.id) ?? [],
+      timeLogs: logsByTask.get(t.id) ?? [],
+      activities: auditsByTask.get(t.id) ?? [],
+    };
+  });
 
   return {
     tasks: mappedTasks,
     projects,
+    milestones,
     members: memberships.map((m) => m.user),
   };
 }
@@ -910,6 +955,8 @@ export async function createTask(
     description?: string | null;
     priority: TaskPriority;
     status?: TaskStatus;
+    extendedStatus?: ExtendedTaskStatus;
+    tags?: string[];
     assigneeId?: string | null;
     dueDate?: string | null;
   },
@@ -940,11 +987,14 @@ export async function createTask(
     if (ms) verifiedMilestoneId = ms.id;
   }
 
-  const tail = await db.task.findFirst({
-    where: { organizationId, projectId: project.id },
-    orderBy: { position: "desc" },
-    select: { position: true },
-  });
+  const [tail, existingCount] = await Promise.all([
+    db.task.findFirst({
+      where: { organizationId, projectId: project.id },
+      orderBy: { position: "desc" },
+      select: { position: true },
+    }),
+    db.task.count({ where: { organizationId, projectId: project.id } }),
+  ]);
 
   const status = input.status ?? TaskStatus.TODO;
   const created = await db.task.create({
@@ -968,25 +1018,69 @@ export async function createTask(
     },
   });
 
+  if (input.extendedStatus === "DELAYED" || input.extendedStatus === "CANCELLED") {
+    await db.comment.create({
+      data: {
+        organizationId,
+        authorId: ctx.user.id,
+        entityType: "Task",
+        entityId: created.id,
+        body: `[STATUS_META]|${input.extendedStatus}`,
+      },
+    });
+  }
+
+  const cleanTags = (input.tags ?? []).map((t) => t.trim()).filter(Boolean);
+  if (cleanTags.length > 0) {
+    await db.comment.create({
+      data: {
+        organizationId,
+        authorId: ctx.user.id,
+        entityType: "Task",
+        entityId: created.id,
+        body: `[TAGS]|${cleanTags.join(",")}`,
+      },
+    });
+  }
+
   return {
     id: created.id,
+    taskKey: `${buildProjectTaskPrefix(project.name)}-T${existingCount + 1}`,
     projectId: created.projectId,
     projectName: project.name,
     milestoneId: created.milestoneId,
     milestoneName: created.milestone?.name ?? null,
+    reporterId: created.reporterId,
     title: created.title,
     description: created.description,
     status: created.status,
+    extendedStatus:
+      input.extendedStatus === "DELAYED" || input.extendedStatus === "CANCELLED"
+        ? input.extendedStatus
+        : undefined,
     priority: created.priority,
     position: created.position,
+    startDate: toIsoDate(created.createdAt),
     dueDate: created.dueDate ? toIsoDate(created.dueDate) : null,
     assignee: created.assignee,
+    tags: cleanTags,
+    subtasks: [],
+    dependencies: [],
+    attachments: [],
+    comments: [],
+    timeLogs: [],
+    activities: [],
   };
 }
 
 export async function moveTaskStatus(
   ctx: TenantContext,
-  input: { taskId: string; status: TaskStatus; position?: number },
+  input: {
+    taskId: string;
+    status: TaskStatus;
+    extendedStatus?: ExtendedTaskStatus;
+    position?: number;
+  },
 ): Promise<void> {
   authorize(ctx, "projects.project.write");
   const organizationId = ctx.organization.id;
@@ -1009,13 +1103,38 @@ export async function moveTaskStatus(
           input.status === TaskStatus.DONE ? (existing.completedAt ?? new Date()) : null,
       },
     });
+
+    await tx.comment.deleteMany({
+      where: {
+        organizationId,
+        entityType: "Task",
+        entityId: existing.id,
+        body: { startsWith: "[STATUS_META]|" },
+      },
+    });
+
+    if (input.extendedStatus === "DELAYED" || input.extendedStatus === "CANCELLED") {
+      await tx.comment.create({
+        data: {
+          organizationId,
+          authorId: ctx.user.id,
+          entityType: "Task",
+          entityId: existing.id,
+          body: `[STATUS_META]|${input.extendedStatus}`,
+        },
+      });
+    }
+
     await recordAudit(tx, {
       organizationId,
       actorId: ctx.user.id,
       entityType: "Task",
       entityId: existing.id,
       action: "task.status_changed",
-      metadata: { title: existing.title, status: input.status },
+      metadata: {
+        title: existing.title,
+        status: input.extendedStatus ?? input.status,
+      },
     });
   });
 }
@@ -1027,6 +1146,7 @@ export async function updateTaskDetails(
     title: string;
     description?: string | null;
     status: TaskStatus;
+    extendedStatus?: ExtendedTaskStatus;
     priority: TaskPriority;
     assigneeId?: string | null;
     dueDate?: string | null;
@@ -1055,14 +1175,189 @@ export async function updateTaskDetails(
           input.status === TaskStatus.DONE ? (existing.completedAt ?? new Date()) : null,
       },
     });
+
+    await tx.comment.deleteMany({
+      where: {
+        organizationId,
+        entityType: "Task",
+        entityId: existing.id,
+        body: { startsWith: "[STATUS_META]|" },
+      },
+    });
+
+    if (input.extendedStatus === "DELAYED" || input.extendedStatus === "CANCELLED") {
+      await tx.comment.create({
+        data: {
+          organizationId,
+          authorId: ctx.user.id,
+          entityType: "Task",
+          entityId: existing.id,
+          body: `[STATUS_META]|${input.extendedStatus}`,
+        },
+      });
+    }
+
     await recordAudit(tx, {
       organizationId,
       actorId: ctx.user.id,
       entityType: "Task",
       entityId: existing.id,
       action: "task.updated",
-      metadata: { title: input.title.trim(), status: input.status, priority: input.priority },
+      metadata: {
+        title: input.title.trim(),
+        status: input.extendedStatus ?? input.status,
+        priority: input.priority,
+      },
     });
+  });
+}
+
+export async function quickUpdateTask(
+  ctx: TenantContext,
+  input: {
+    taskId: string;
+    priority?: TaskPriority;
+    assigneeId?: string | null;
+    dueDate?: string | null;
+    tags?: string[];
+  },
+): Promise<void> {
+  authorize(ctx, "projects.project.write");
+  const organizationId = ctx.organization.id;
+
+  const existing = await db.task.findUnique({
+    where: { id_organizationId: { id: input.taskId, organizationId } },
+    select: { id: true, title: true },
+  });
+  if (!existing) throw new NotFoundError("Task not found.");
+
+  await db.$transaction(async (tx) => {
+    const data: Prisma.TaskUncheckedUpdateInput = {};
+    if (input.priority !== undefined) data.priority = input.priority;
+    if (input.assigneeId !== undefined) data.assigneeId = input.assigneeId || null;
+    if (input.dueDate !== undefined) {
+      data.dueDate = input.dueDate
+        ? startOfUtcDay(new Date(`${input.dueDate}T00:00:00.000Z`))
+        : null;
+    }
+
+    if (Object.keys(data).length > 0) {
+      await tx.task.update({
+        where: { id_organizationId: { id: existing.id, organizationId } },
+        data,
+      });
+    }
+
+    if (input.tags !== undefined) {
+      await tx.comment.deleteMany({
+        where: {
+          organizationId,
+          entityType: "Task",
+          entityId: existing.id,
+          body: { startsWith: "[TAGS]|" },
+        },
+      });
+      const cleanTags = input.tags.map((t) => t.trim()).filter(Boolean);
+      if (cleanTags.length > 0) {
+        await tx.comment.create({
+          data: {
+            organizationId,
+            authorId: ctx.user.id,
+            entityType: "Task",
+            entityId: existing.id,
+            body: `[TAGS]|${cleanTags.join(",")}`,
+          },
+        });
+      }
+    }
+
+    await recordAudit(tx, {
+      organizationId,
+      actorId: ctx.user.id,
+      entityType: "Task",
+      entityId: existing.id,
+      action: "task.quick_updated",
+      metadata: { title: existing.title },
+    });
+  });
+}
+
+export async function importTasks(
+  ctx: TenantContext,
+  input: {
+    projectId: string;
+    rows: Array<{
+      title: string;
+      priority?: TaskPriority;
+      status?: TaskStatus;
+      dueDate?: string | null;
+      tags?: string[];
+    }>;
+  },
+): Promise<{ count: number }> {
+  authorize(ctx, "projects.project.write");
+  const organizationId = ctx.organization.id;
+  const project = await db.project.findUnique({
+    where: { id_organizationId: { id: input.projectId, organizationId } },
+    select: { id: true, name: true },
+  });
+  if (!project) throw new NotFoundError("Selected project not found.");
+
+  return db.$transaction(async (tx) => {
+    const tail = await tx.task.findFirst({
+      where: { organizationId, projectId: project.id },
+      orderBy: { position: "desc" },
+      select: { position: true },
+    });
+    let pos = tail ? tail.position + 1024 : 1024;
+    let count = 0;
+
+    for (const row of input.rows) {
+      const title = row.title.trim();
+      if (title.length < 2) continue;
+      const st = row.status ?? TaskStatus.TODO;
+      const created = await tx.task.create({
+        data: {
+          organizationId,
+          projectId: project.id,
+          title: title.slice(0, 180),
+          priority: row.priority ?? TaskPriority.MEDIUM,
+          status: st,
+          reporterId: ctx.user.id,
+          position: pos,
+          dueDate: row.dueDate ? startOfUtcDay(new Date(`${row.dueDate}T00:00:00.000Z`)) : null,
+          completedAt: st === TaskStatus.DONE ? new Date() : null,
+        },
+        select: { id: true },
+      });
+      const cleanTags = (row.tags ?? []).map((t) => t.trim()).filter(Boolean);
+      if (cleanTags.length > 0) {
+        await tx.comment.create({
+          data: {
+            organizationId,
+            authorId: ctx.user.id,
+            entityType: "Task",
+            entityId: created.id,
+            body: `[TAGS]|${cleanTags.join(",")}`,
+          },
+        });
+      }
+      pos += 1024;
+      count += 1;
+    }
+
+    if (count === 0) throw new ValidationError("No valid task rows found.");
+
+    await recordAudit(tx, {
+      organizationId,
+      actorId: ctx.user.id,
+      entityType: "Task",
+      entityId: project.id,
+      action: "task.imported",
+      metadata: { count, title: `${count} tasks imported into ${project.name}` },
+    });
+
+    return { count };
   });
 }
 
@@ -1159,22 +1454,56 @@ export async function updateIssueStatus(
   });
 }
 
+export async function updateIssueDetails(
+  ctx: TenantContext,
+  input: {
+    issueId: string;
+    title?: string;
+    description?: string | null;
+    severity?: IssueSeverity;
+    status?: IssueStatus;
+    assigneeId?: string | null;
+    dueDate?: string | null;
+  },
+): Promise<void> {
+  authorize(ctx, "projects.project.write");
+  const updated = await db.issue.updateMany({
+    where: { id: input.issueId, organizationId: ctx.organization.id },
+    data: {
+      ...(input.title !== undefined ? { title: input.title.trim() } : {}),
+      ...(input.description !== undefined ? { description: input.description } : {}),
+      ...(input.severity !== undefined ? { severity: input.severity } : {}),
+      ...(input.status !== undefined ? { status: input.status } : {}),
+      ...(input.assigneeId !== undefined ? { assigneeId: input.assigneeId || null } : {}),
+      ...(input.dueDate !== undefined
+        ? { dueDate: input.dueDate ? startOfUtcDay(new Date(input.dueDate)) : null }
+        : {}),
+    },
+  });
+  if (updated.count === 0) {
+    throw new NotFoundError("Issue not found.");
+  }
+}
+
 export async function listTimeLogs(ctx: TenantContext): Promise<{
   logs: TimeLogRowDTO[];
   projects: Array<{ id: string; name: string }>;
+  tasks: Array<{ id: string; projectId: string; title: string }>;
+  defaultCurrency: string;
 }> {
   authorize(ctx, "projects.project.read");
   const organizationId = ctx.organization.id;
 
-  const [logs, projects] = await Promise.all([
+  const [logs, projects, tasks, memberships] = await Promise.all([
     db.timeLog.findMany({
       where: { organizationId },
       orderBy: [{ loggedDate: "desc" }, { createdAt: "desc" }],
-      take: 100,
+      take: 150,
       include: {
-        project: { select: { name: true } },
-        task: { select: { title: true } },
-        user: { select: { name: true } },
+        project: { select: { name: true, currency: true } },
+        task: { select: { id: true, title: true } },
+        user: { select: { id: true, name: true } },
+        timesheet: { select: { status: true } },
       },
     }),
     db.project.findMany({
@@ -1182,21 +1511,52 @@ export async function listTimeLogs(ctx: TenantContext): Promise<{
       orderBy: { name: "asc" },
       select: { id: true, name: true },
     }),
+    db.task.findMany({
+      where: { organizationId, project: { isArchived: false } },
+      orderBy: [{ projectId: "asc" }, { title: "asc" }],
+      select: { id: true, projectId: true, title: true },
+    }),
+    db.membership.findMany({
+      where: { organizationId },
+      select: { userId: true, hourlyCostRate: true },
+    }),
   ]);
 
+  const rateByUserId = new Map<string, number>();
+  for (const m of memberships) {
+    rateByUserId.set(m.userId, Number(m.hourlyCostRate));
+  }
+
   return {
-    logs: logs.map((l) => ({
-      id: l.id,
-      projectId: l.projectId,
-      projectName: l.project.name,
-      taskTitle: l.task?.title ?? null,
-      userName: l.user?.name ?? "Unknown",
-      hours: Number(l.hours),
-      billable: l.billable,
-      loggedDate: toIsoDate(l.loggedDate),
-      notes: l.notes,
-    })),
+    logs: logs.map((l) => {
+      const tsStatus = l.timesheet?.status;
+      const approvalStatus: "Approved" | "Pending" | "Rejected" =
+        tsStatus === "APPROVED"
+          ? "Approved"
+          : tsStatus === "REJECTED"
+            ? "Rejected"
+            : "Pending";
+      const memberRate = l.user?.id ? (rateByUserId.get(l.user.id) ?? 0) : 0;
+      const hourlyRate = memberRate > 0 ? memberRate : 95;
+      return {
+        id: l.id,
+        projectId: l.projectId,
+        projectName: l.project.name,
+        taskId: l.task?.id ?? l.taskId ?? null,
+        taskTitle: l.task?.title ?? null,
+        userName: l.user?.name ?? "Unknown",
+        hours: Number(l.hours),
+        billable: l.billable,
+        loggedDate: toIsoDate(l.loggedDate),
+        notes: l.notes,
+        hourlyRate,
+        currency: l.project.currency || ctx.organization.defaultCurrency,
+        approvalStatus,
+      };
+    }),
     projects,
+    tasks,
+    defaultCurrency: ctx.organization.defaultCurrency,
   };
 }
 
@@ -1371,6 +1731,33 @@ export async function updateMilestoneStatus(
   const updated = await db.milestone.updateMany({
     where: { id: milestoneId, organizationId: ctx.organization.id },
     data: { status },
+  });
+  if (updated.count === 0) {
+    throw new NotFoundError("Phase / milestone not found.");
+  }
+}
+
+export async function updateMilestoneDetails(
+  ctx: TenantContext,
+  input: {
+    milestoneId: string;
+    name?: string;
+    description?: string | null;
+    status?: MilestoneStatus;
+    dueDate?: string | null;
+  },
+): Promise<void> {
+  authorize(ctx, "projects.project.write");
+  const updated = await db.milestone.updateMany({
+    where: { id: input.milestoneId, organizationId: ctx.organization.id },
+    data: {
+      ...(input.name !== undefined ? { name: input.name.trim() } : {}),
+      ...(input.description !== undefined ? { description: input.description } : {}),
+      ...(input.status !== undefined ? { status: input.status } : {}),
+      ...(input.dueDate !== undefined
+        ? { dueDate: input.dueDate ? startOfUtcDay(new Date(input.dueDate)) : null }
+        : {}),
+    },
   });
   if (updated.count === 0) {
     throw new NotFoundError("Phase / milestone not found.");

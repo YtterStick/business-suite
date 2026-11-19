@@ -10,7 +10,7 @@ import {
   UserType,
 } from "@prisma/client";
 
-import { addDays } from "@/lib/dates";
+import { addDays, toIsoDate } from "@/lib/dates";
 import { db } from "@/lib/db";
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from "@/lib/errors";
 import { recordAudit } from "@/server/audit";
@@ -40,6 +40,15 @@ export interface TeamMemberDTO {
   assignedProjects: Array<{ id: string; name: string }>;
   assignedTasksCount: number;
   completedTasksCount: number;
+  openTasks: Array<{
+    id: string;
+    title: string;
+    projectId: string;
+    projectName: string;
+    status: string;
+    priority: string;
+    dueDate: string | null;
+  }>;
   loggedHours: number;
   joinedAt: string;
 }
@@ -158,7 +167,16 @@ export async function listOrganizationTeam(ctx: TenantContext): Promise<Organiza
       }),
       db.task.findMany({
         where: { organizationId },
-        select: { assigneeId: true, status: true, projectId: true },
+        orderBy: [{ dueDate: "asc" }, { updatedAt: "desc" }],
+        select: {
+          id: true,
+          title: true,
+          priority: true,
+          dueDate: true,
+          assigneeId: true,
+          status: true,
+          projectId: true,
+        },
       }),
       db.timeLog.findMany({
         where: { organizationId },
@@ -178,6 +196,18 @@ export async function listOrganizationTeam(ctx: TenantContext): Promise<Organiza
     members: memberships.map((m) => {
       const userTasks = tasks.filter((t) => t.assigneeId === m.user.id);
       const completedTasksCount = userTasks.filter((t) => t.status === TaskStatus.DONE).length;
+      const openTasks = userTasks
+        .filter((t) => t.status !== TaskStatus.DONE)
+        .slice(0, 12)
+        .map((t) => ({
+          id: t.id,
+          title: t.title,
+          projectId: t.projectId,
+          projectName: projectNameById.get(t.projectId) ?? "Project",
+          status: t.status,
+          priority: t.priority,
+          dueDate: t.dueDate ? toIsoDate(t.dueDate) : null,
+        }));
       const loggedHours = timeLogs
         .filter((l) => l.userId === m.user.id)
         .reduce((sum, l) => sum + Number(l.hours), 0);
@@ -224,6 +254,7 @@ export async function listOrganizationTeam(ctx: TenantContext): Promise<Organiza
         assignedProjects,
         assignedTasksCount: userTasks.length,
         completedTasksCount,
+        openTasks,
         loggedHours,
         joinedAt: m.createdAt.toISOString(),
       };

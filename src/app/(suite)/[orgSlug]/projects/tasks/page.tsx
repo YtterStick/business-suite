@@ -6,12 +6,12 @@ import { requireTenant } from "@/server/tenancy";
 
 interface TasksPageProps {
   params: Promise<{ orgSlug: string }>;
-  searchParams: Promise<{ projectId?: string; new?: string }>;
+  searchParams: Promise<{ projectId?: string; new?: string; taskId?: string }>;
 }
 
 export default async function ProjectTasksPage({ params, searchParams }: TasksPageProps) {
   const { orgSlug } = await params;
-  const { projectId, new: newParam } = await searchParams;
+  const { projectId, new: newParam, taskId } = await searchParams;
   const tenant = await requireTenant(orgSlug);
   const board = await getTasksBoard(tenant);
 
@@ -24,6 +24,7 @@ export default async function ProjectTasksPage({ params, searchParams }: TasksPa
       canWrite={can(tenant.role, "projects.project.write")}
       defaultProjectId={projectId}
       openCreateInitially={newParam === "1"}
+      initialTaskId={taskId ?? null}
     />
   );
 }

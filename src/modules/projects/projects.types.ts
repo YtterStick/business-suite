@@ -114,20 +114,32 @@ export interface TaskActivityItem {
   createdAt: string;
 }
 
+export type ExtendedTaskStatus =
+  | "DELAYED"
+  | "TODO"
+  | "IN_PROGRESS"
+  | "IN_REVIEW"
+  | "DONE"
+  | "CANCELLED";
+
 export interface TaskCardDTO {
   id: string;
+  taskKey?: string;
   projectId: string;
   projectName: string;
   milestoneId: string | null;
   milestoneName: string | null;
+  reporterId?: string | null;
   title: string;
   description: string | null;
   status: TaskStatus;
+  extendedStatus?: ExtendedTaskStatus;
   priority: TaskPriority;
   position: number;
   startDate?: string | null;
   dueDate: string | null;
   assignee: { id: string; name: string; avatarUrl: string | null } | null;
+  tags?: string[];
   subtasks?: TaskSubtaskItem[];
   dependencies?: TaskDependencyItem[];
   attachments?: TaskAttachmentItem[];
@@ -146,6 +158,7 @@ export interface TaskCardDTO {
 export interface TasksBoardDTO {
   tasks: TaskCardDTO[];
   projects: Array<{ id: string; name: string }>;
+  milestones?: Array<{ id: string; projectId: string; name: string }>;
   members: Array<{ id: string; name: string }>;
 }
 
@@ -177,12 +190,16 @@ export interface TimeLogRowDTO {
   id: string;
   projectId: string;
   projectName: string;
+  taskId?: string | null;
   taskTitle: string | null;
   userName: string;
   hours: number;
   billable: boolean;
   loggedDate: string;
   notes: string | null;
+  hourlyRate?: number;
+  currency?: string;
+  approvalStatus?: "Approved" | "Pending" | "Rejected";
 }
 
 export interface SingleProjectWorkspaceDTO {
