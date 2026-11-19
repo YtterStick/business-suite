@@ -19,6 +19,7 @@ export default async function ProjectTasksPage({ params, searchParams }: TasksPa
     <TaskKanbanBoard
       orgSlug={orgSlug}
       todayIso={toIsoDate(new Date())}
+      currentUserId={tenant.user.id}
       initialBoard={board}
       canWrite={can(tenant.role, "projects.project.write")}
       defaultProjectId={projectId}

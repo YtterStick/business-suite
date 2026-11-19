@@ -1,24 +1,44 @@
 "use client";
 
 import * as React from "react";
+import type { ProjectStatus } from "@prisma/client";
 import {
+  Activity,
+  AlignJustify,
   Archive,
   ArchiveRestore,
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
+  BookmarkPlus,
+  Briefcase,
+  ChevronDown,
   Columns3,
+  Copy,
+  Download,
+  ExternalLink,
+  EyeOff,
   Filter,
   FolderKanban,
   GanttChart,
+  GripVertical,
   Kanban,
   Layers,
   List,
   Lock,
+  MoreHorizontal,
+  MoreVertical,
+  Pencil,
   Plus,
+  Receipt,
+  Rows3,
   Search,
+  SlidersHorizontal,
   Sparkles,
+  Trash2,
+  Upload,
   Workflow,
+  X,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -30,15 +50,19 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   DropdownMenu,
-  DropdownMenuCheckboxItem,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Table,
   TableBody,
@@ -51,13 +75,30 @@ import { formatCurrency, formatDate, initials } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { NewProjectSheet } from "@/modules/projects/components/new-project-sheet";
 import {
+  type CustomProjectTemplate,
+  DeleteProjectsConfirmDialog,
+  emitBackgroundTaskEvent,
+  ImportProjectsDialog,
+  loadCustomTemplates,
+  ProjectActivityLogSheet,
+  QuickEditProjectSheet,
+  removeCustomTemplate,
+  saveCustomTemplate,
+} from "@/modules/projects/components/project-workspace-overlays";
+import {
   getTagPillClass,
   isProjectOverdue,
   ProjectsAutomationDialog,
   ProjectsBoardView,
   ProjectsGanttView,
 } from "@/modules/projects/components/projects-views";
-import { toggleProjectArchiveAction } from "@/modules/projects/projects.actions";
+import {
+  bulkArchiveProjectsAction,
+  bulkUpdateProjectsStatusAction,
+  cloneProjectAction,
+  deleteProjectsAction,
+  toggleProjectArchiveAction,
+} from "@/modules/projects/projects.actions";
 import type {
   ProjectSummaryDTO,
   ProjectsWorkspaceDTO,
@@ -66,11 +107,9 @@ import type {
 
 type ZohoProjectsTab = "active" | "templates" | "groups" | "public" | "archived";
 type ViewMode = "list" | "board" | "gantt";
-type ProjectFilterMode = "all" | "mine" | "overdue";
-type SortField = "name" | "status" | "startDate" | "dueDate" | "budget";
-type SortDirection = "asc" | "desc";
-
-type ColumnKey =
+type SavedProjectView = "all" | "active" | "mine" | "delayed" | "archived";
+type TableDensity = "comfortable" | "compact";
+type SortField =
   | "id"
   | "name"
   | "completion"
@@ -81,22 +120,61 @@ type ColumnKey =
   | "issues"
   | "startDate"
   | "dueDate"
+  | "budget";
+type SortDirection = "asc" | "desc";
+
+type ColumnKey =
+  | "id"
+  | "name"
+  | "completion"
+  | "owner"
+  | "status"
+  | "connected"
+  | "tasks"
+  | "phases"
+  | "issues"
+  | "startDate"
+  | "dueDate"
   | "budget"
   | "tags";
 
-const COLUMN_CONFIG: Array<{ key: ColumnKey; label: string; required?: boolean }> = [
-  { key: "id", label: "ID" },
-  { key: "name", label: "Project Name", required: true },
-  { key: "completion", label: "% Completion" },
-  { key: "owner", label: "Owner" },
-  { key: "status", label: "Status" },
-  { key: "tasks", label: "Tasks" },
-  { key: "phases", label: "Phases" },
-  { key: "issues", label: "Issues" },
-  { key: "startDate", label: "Start Date" },
-  { key: "dueDate", label: "End Date" },
-  { key: "budget", label: "Budget" },
-  { key: "tags", label: "Tags" },
+interface ColumnDef {
+  key: ColumnKey;
+  label: string;
+  required?: boolean;
+  sortable?: SortField;
+}
+
+const COLUMN_DEFS: Record<ColumnKey, ColumnDef> = {
+  id: { key: "id", label: "ID", sortable: "id" },
+  name: { key: "name", label: "Project Name", required: true, sortable: "name" },
+  completion: { key: "completion", label: "% Completion", sortable: "completion" },
+  owner: { key: "owner", label: "Owner", sortable: "owner" },
+  status: { key: "status", label: "Status", sortable: "status" },
+  connected: { key: "connected", label: "Connected Apps" },
+  tasks: { key: "tasks", label: "Tasks", sortable: "tasks" },
+  phases: { key: "phases", label: "Phases", sortable: "phases" },
+  issues: { key: "issues", label: "Issues", sortable: "issues" },
+  startDate: { key: "startDate", label: "Start Date", sortable: "startDate" },
+  dueDate: { key: "dueDate", label: "End Date", sortable: "dueDate" },
+  budget: { key: "budget", label: "Budget", sortable: "budget" },
+  tags: { key: "tags", label: "Tags" },
+};
+
+const DEFAULT_COLUMN_ORDER: ColumnKey[] = [
+  "id",
+  "name",
+  "completion",
+  "owner",
+  "status",
+  "connected",
+  "tasks",
+  "phases",
+  "issues",
+  "startDate",
+  "dueDate",
+  "budget",
+  "tags",
 ];
 
 const DEFAULT_VISIBLE_COLUMNS: Record<ColumnKey, boolean> = {
@@ -105,6 +183,7 @@ const DEFAULT_VISIBLE_COLUMNS: Record<ColumnKey, boolean> = {
   completion: true,
   owner: true,
   status: true,
+  connected: true,
   tasks: true,
   phases: true,
   issues: true,
@@ -113,6 +192,67 @@ const DEFAULT_VISIBLE_COLUMNS: Record<ColumnKey, boolean> = {
   budget: true,
   tags: true,
 };
+
+const BUILTIN_TEMPLATES: Array<{
+  key: ProjectTemplateKey;
+  title: string;
+  desc: string;
+}> = [
+  {
+    key: "CLIENT_ONBOARDING",
+    title: "Client Onboarding",
+    desc: "3 phases (Kickoff, Configuration, Go-Live) with 5 pre-built tasks.",
+  },
+  {
+    key: "SOFTWARE_DELIVERY",
+    title: "Software Delivery",
+    desc: "3 phases (Architecture, Core Build, UAT & Deployment) with 5 tasks.",
+  },
+  {
+    key: "MARKETING_LAUNCH",
+    title: "Marketing Campaign Launch",
+    desc: "3 phases covering messaging, CRM UTM tracking, and attribution.",
+  },
+  {
+    key: "FINANCE_ERP_ROLLOUT",
+    title: "ERP & Finance Rollout",
+    desc: "3 phases covering PHP/USD tax setup, CRM billing, and parallel close.",
+  },
+  {
+    key: "SECURITY_AUDIT",
+    title: "Security & Compliance Audit",
+    desc: "3 phases covering RBAC/tenant review, remediation, and sign-off.",
+  },
+  {
+    key: "NONE",
+    title: "Blank Project",
+    desc: "Start from scratch with custom milestones, tasks, and strict schedule rules.",
+  },
+];
+
+const PROJECT_STATUSES: Array<{ value: ProjectStatus; label: string; dot: string }> = [
+  { value: "PLANNING", label: "Planning", dot: "bg-slate-500" },
+  { value: "ACTIVE", label: "Active", dot: "bg-blue-500" },
+  { value: "ON_HOLD", label: "On Hold", dot: "bg-amber-500" },
+  { value: "COMPLETED", label: "Completed", dot: "bg-emerald-500" },
+  { value: "CANCELLED", label: "Cancelled", dot: "bg-rose-500" },
+];
+
+const SAVED_VIEW_LABELS: Record<SavedProjectView, string> = {
+  all: "All Projects",
+  active: "Active Projects",
+  mine: "My Projects",
+  delayed: "Delayed Projects",
+  archived: "Archived",
+};
+
+const TABS: Array<{ id: ZohoProjectsTab; label: string }> = [
+  { id: "active", label: "Active Projects" },
+  { id: "templates", label: "Project Templates" },
+  { id: "groups", label: "Project Groups" },
+  { id: "public", label: "Public Projects" },
+  { id: "archived", label: "Archived Projects" },
+];
 
 interface ProjectsWorkspaceProps {
   orgSlug: string;
@@ -124,20 +264,6 @@ interface ProjectsWorkspaceProps {
   openCreateInitially?: boolean;
   highlightProjectId?: string;
 }
-
-const TABS: Array<{ id: ZohoProjectsTab; label: string }> = [
-  { id: "active", label: "Active Projects" },
-  { id: "templates", label: "Project Templates" },
-  { id: "groups", label: "Project Groups" },
-  { id: "public", label: "Public Projects" },
-  { id: "archived", label: "Archived Projects" },
-];
-
-const FILTER_LABELS: Record<ProjectFilterMode, string> = {
-  all: "All Projects",
-  mine: "My Projects",
-  overdue: "Overdue",
-};
 
 export function ProjectsWorkspace({
   orgSlug,
@@ -152,16 +278,69 @@ export function ProjectsWorkspace({
   const router = useRouter();
   const [activeTab, setActiveTab] = React.useState<ZohoProjectsTab>("active");
   const [viewMode, setViewMode] = React.useState<ViewMode>("list");
-  const [filterMode, setFilterMode] = React.useState<ProjectFilterMode>("all");
+  const [savedView, setSavedView] = React.useState<SavedProjectView>("all");
+  const [density, setDensity] = React.useState<TableDensity>("comfortable");
+
+  // Multi-criteria advanced filters
+  const [filterOwnerId, setFilterOwnerId] = React.useState<string>("");
+  const [filterStatuses, setFilterStatuses] = React.useState<ProjectStatus[]>([]);
+  const [filterDateFrom, setFilterDateFrom] = React.useState<string>("");
+  const [filterDateTo, setFilterDateTo] = React.useState<string>("");
+  const [filterTags, setFilterTags] = React.useState<string[]>([]);
+
+  // Columns visibility + drag-and-drop order
   const [visibleColumns, setVisibleColumns] =
     React.useState<Record<ColumnKey, boolean>>(DEFAULT_VISIBLE_COLUMNS);
+  const [columnOrder, setColumnOrder] = React.useState<ColumnKey[]>(DEFAULT_COLUMN_ORDER);
+  const [draggedCol, setDraggedCol] = React.useState<ColumnKey | null>(null);
+  const [dragOverCol, setDragOverCol] = React.useState<ColumnKey | null>(null);
+
+  // Sorting & Search
   const [sortField, setSortField] = React.useState<SortField>("startDate");
   const [sortDir, setSortDir] = React.useState<SortDirection>("desc");
   const [search, setSearch] = React.useState("");
+
+  // Selection & Batch actions
+  const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
+  const selectAllRef = React.useRef<HTMLInputElement>(null);
+
+  // Modals / Sheets
   const [sheetOpen, setSheetOpen] = React.useState(openCreateInitially);
   const [sheetTemplate, setSheetTemplate] = React.useState<ProjectTemplateKey>("NONE");
   const [automationOpen, setAutomationOpen] = React.useState(false);
-  const [, startTransition] = React.useTransition();
+  const [importOpen, setImportOpen] = React.useState(false);
+  const [activityOpen, setActivityOpen] = React.useState(false);
+  const [editingProject, setEditingProject] = React.useState<ProjectSummaryDTO | null>(null);
+  const [deleteTarget, setDeleteTarget] = React.useState<{ ids: string[]; name?: string } | null>(
+    null,
+  );
+  const [customTemplates, setCustomTemplates] = React.useState<CustomProjectTemplate[]>([]);
+  const [isPending, startTransition] = React.useTransition();
+
+  React.useEffect(() => {
+    setCustomTemplates(loadCustomTemplates(orgSlug));
+    try {
+      const savedOrder = window.localStorage.getItem(`bs_proj_col_order_${orgSlug}`);
+      if (savedOrder) {
+        const parsed = JSON.parse(savedOrder) as ColumnKey[];
+        if (Array.isArray(parsed) && parsed.length === DEFAULT_COLUMN_ORDER.length) {
+          const valid = DEFAULT_COLUMN_ORDER.every((k) => parsed.includes(k));
+          if (valid) setColumnOrder(parsed);
+        }
+      }
+      const savedVis = window.localStorage.getItem(`bs_proj_col_vis_${orgSlug}`);
+      if (savedVis) {
+        const parsed = JSON.parse(savedVis) as Partial<Record<ColumnKey, boolean>>;
+        setVisibleColumns({ ...DEFAULT_VISIBLE_COLUMNS, ...parsed, name: true });
+      }
+      const savedDensity = window.localStorage.getItem(`bs_proj_density_${orgSlug}`);
+      if (savedDensity === "compact" || savedDensity === "comfortable") {
+        setDensity(savedDensity);
+      }
+    } catch {
+      // Ignore storage read errors
+    }
+  }, [orgSlug]);
 
   React.useEffect(() => {
     if (openCreateInitially) setSheetOpen(true);
@@ -177,7 +356,95 @@ export function ProjectsWorkspace({
     return () => window.removeEventListener("bs-quick-add", onQuickAdd);
   }, []);
 
-  const handleSort = (field: SortField) => {
+  const persistColumnOrder = (next: ColumnKey[]) => {
+    setColumnOrder(next);
+    try {
+      window.localStorage.setItem(`bs_proj_col_order_${orgSlug}`, JSON.stringify(next));
+    } catch {
+      // Ignore
+    }
+  };
+
+  const persistVisibleColumns = (next: Record<ColumnKey, boolean>) => {
+    const safe = { ...next, name: true };
+    setVisibleColumns(safe);
+    try {
+      window.localStorage.setItem(`bs_proj_col_vis_${orgSlug}`, JSON.stringify(safe));
+    } catch {
+      // Ignore
+    }
+  };
+
+  const updateDensity = (next: TableDensity) => {
+    setDensity(next);
+    try {
+      window.localStorage.setItem(`bs_proj_density_${orgSlug}`, next);
+    } catch {
+      // Ignore
+    }
+  };
+
+  const reorderColumns = (sourceKey: ColumnKey, targetKey: ColumnKey) => {
+    if (sourceKey === targetKey) return;
+    const next = [...columnOrder];
+    const fromIdx = next.indexOf(sourceKey);
+    const toIdx = next.indexOf(targetKey);
+    if (fromIdx < 0 || toIdx < 0) return;
+    const [moved] = next.splice(fromIdx, 1);
+    next.splice(toIdx, 0, moved!);
+    persistColumnOrder(next);
+  };
+
+  const moveColumnStep = (key: ColumnKey, delta: -1 | 1) => {
+    const idx = columnOrder.indexOf(key);
+    const targetIdx = idx + delta;
+    if (idx < 0 || targetIdx < 0 || targetIdx >= columnOrder.length) return;
+    const next = [...columnOrder];
+    const [moved] = next.splice(idx, 1);
+    next.splice(targetIdx, 0, moved!);
+    persistColumnOrder(next);
+  };
+
+  // All tags across projects for multi-criteria filter
+  const allAvailableTags = React.useMemo(() => {
+    const set = new Set<string>();
+    for (const p of workspace.projects) {
+      for (const t of p.tags) set.add(t);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [workspace.projects]);
+
+  const activeAdvancedFilterCount =
+    (filterOwnerId ? 1 : 0) +
+    (filterStatuses.length > 0 ? 1 : 0) +
+    (filterDateFrom || filterDateTo ? 1 : 0) +
+    (filterTags.length > 0 ? 1 : 0);
+
+  const clearAdvancedFilters = () => {
+    setFilterOwnerId("");
+    setFilterStatuses([]);
+    setFilterDateFrom("");
+    setFilterDateTo("");
+    setFilterTags([]);
+  };
+
+  const savedViewCounts = React.useMemo(() => {
+    const nonArchived = workspace.projects.filter((p) => !p.isArchived);
+    return {
+      all: nonArchived.length,
+      active: nonArchived.filter((p) => p.status === "ACTIVE").length,
+      mine: nonArchived.filter((p) => p.owner?.id === currentUserId).length,
+      delayed: nonArchived.filter((p) => isProjectOverdue(p, todayIso)).length,
+      archived: workspace.projects.filter((p) => p.isArchived).length,
+    };
+  }, [workspace.projects, currentUserId, todayIso]);
+
+  const handleSort = (field: SortField, forcedDir?: SortDirection) => {
+    if (forcedDir) {
+      setSortField(field);
+      setSortDir(forcedDir);
+      return;
+    }
     if (sortField === field) {
       setSortDir((prev) => (prev === "asc" ? "desc" : "asc"));
     } else {
@@ -186,32 +453,82 @@ export function ProjectsWorkspace({
     }
   };
 
-  const renderSortIcon = (field: SortField) => {
-    if (sortField !== field) {
-      return <ArrowUpDown className="size-3.5 text-muted-foreground/60" />;
+  const handleSavedViewChange = (next: SavedProjectView) => {
+    setSavedView(next);
+    if (next === "archived") {
+      setActiveTab("archived");
+    } else if (activeTab === "archived") {
+      setActiveTab("active");
     }
-    return sortDir === "asc" ? (
-      <ArrowUp className="size-3.5 text-primary" />
-    ) : (
-      <ArrowDown className="size-3.5 text-primary" />
-    );
   };
+
+  const handleTabChange = (tab: ZohoProjectsTab) => {
+    setActiveTab(tab);
+    if (tab === "archived") {
+      setSavedView("archived");
+    } else if (savedView === "archived") {
+      setSavedView("all");
+    }
+  };
+
+  // Preserve stable numeric code index for each project
+  const projectCodeIndexMap = React.useMemo(() => {
+    const map = new Map<string, number>();
+    workspace.projects.forEach((p, idx) => map.set(p.id, idx + 1));
+    return map;
+  }, [workspace.projects]);
 
   const filteredAndSortedProjects = React.useMemo(() => {
     const q = search.trim().toLowerCase();
     const filtered = workspace.projects.filter((p) => {
-      if (activeTab === "active" && p.isArchived) return false;
-      if (activeTab === "archived" && !p.isArchived) return false;
-      if (activeTab === "public" && (!p.isPublic || p.isArchived)) return false;
+      // Tab & saved view archive boundary
+      if (activeTab === "archived" || savedView === "archived") {
+        if (!p.isArchived) return false;
+      } else if (activeTab === "public") {
+        if (!p.isPublic || p.isArchived) return false;
+      } else {
+        if (p.isArchived) return false;
+      }
 
-      if (filterMode === "mine" && p.owner?.id !== currentUserId) return false;
-      if (filterMode === "overdue" && !isProjectOverdue(p, todayIso)) return false;
+      // Saved view rules
+      if (savedView === "active" && p.status !== "ACTIVE") return false;
+      if (savedView === "mine" && p.owner?.id !== currentUserId) return false;
+      if (savedView === "delayed" && !isProjectOverdue(p, todayIso)) return false;
 
+      // Advanced filter: Owner
+      if (filterOwnerId === "__unassigned__") {
+        if (p.owner !== null) return false;
+      } else if (filterOwnerId) {
+        if (p.owner?.id !== filterOwnerId) return false;
+      }
+
+      // Advanced filter: Status
+      if (filterStatuses.length > 0 && !filterStatuses.includes(p.status)) {
+        return false;
+      }
+
+      // Advanced filter: Date range
+      if (filterDateFrom) {
+        const refDate = p.startDate ?? p.dueDate;
+        if (!refDate || refDate < filterDateFrom) return false;
+      }
+      if (filterDateTo) {
+        const refDate = p.dueDate ?? p.startDate;
+        if (!refDate || refDate > filterDateTo) return false;
+      }
+
+      // Advanced filter: Tags
+      if (filterTags.length > 0 && !filterTags.every((t) => p.tags.includes(t))) {
+        return false;
+      }
+
+      // Search query
       if (!q) return true;
       return (
         p.name.toLowerCase().includes(q) ||
         (p.company?.name.toLowerCase().includes(q) ?? false) ||
         (p.group?.name.toLowerCase().includes(q) ?? false) ||
+        (p.owner?.name.toLowerCase().includes(q) ?? false) ||
         p.tags.some((t) => t.toLowerCase().includes(q))
       );
     });
@@ -223,14 +540,32 @@ export function ProjectsWorkspace({
       return a.localeCompare(b);
     };
 
-    const sorted = [...filtered].sort((a: ProjectSummaryDTO, b: ProjectSummaryDTO) => {
+    return [...filtered].sort((a: ProjectSummaryDTO, b: ProjectSummaryDTO) => {
       let result = 0;
       switch (sortField) {
+        case "id":
+          result = (projectCodeIndexMap.get(a.id) ?? 0) - (projectCodeIndexMap.get(b.id) ?? 0);
+          break;
         case "name":
           result = a.name.localeCompare(b.name);
           break;
+        case "completion":
+          result = a.completionPercent - b.completionPercent;
+          break;
+        case "owner":
+          result = compareStrings(a.owner?.name ?? null, b.owner?.name ?? null);
+          break;
         case "status":
           result = a.status.localeCompare(b.status);
+          break;
+        case "tasks":
+          result = a.taskCount - b.taskCount;
+          break;
+        case "phases":
+          result = a.milestoneCount - b.milestoneCount;
+          break;
+        case "issues":
+          result = a.openIssueCount - b.openIssueCount;
           break;
         case "startDate":
           result = compareStrings(a.startDate, b.startDate);
@@ -238,18 +573,62 @@ export function ProjectsWorkspace({
         case "dueDate":
           result = compareStrings(a.dueDate, b.dueDate);
           break;
-        case "budget": {
-          const av = a.budget ?? -1;
-          const bv = b.budget ?? -1;
-          result = av - bv;
+        case "budget":
+          result = (a.budget ?? -1) - (b.budget ?? -1);
           break;
-        }
       }
       return sortDir === "asc" ? result : -result;
     });
+  }, [
+    workspace.projects,
+    activeTab,
+    savedView,
+    currentUserId,
+    todayIso,
+    filterOwnerId,
+    filterStatuses,
+    filterDateFrom,
+    filterDateTo,
+    filterTags,
+    search,
+    sortField,
+    sortDir,
+    projectCodeIndexMap,
+  ]);
 
-    return sorted;
-  }, [workspace.projects, activeTab, filterMode, currentUserId, todayIso, search, sortField, sortDir]);
+  // Keep selectedIds pruned to visible projects
+  const visibleIds = React.useMemo(
+    () => filteredAndSortedProjects.map((p) => p.id),
+    [filteredAndSortedProjects],
+  );
+  const selectedVisibleIds = React.useMemo(
+    () => selectedIds.filter((id) => visibleIds.includes(id)),
+    [selectedIds, visibleIds],
+  );
+  const allVisibleSelected =
+    visibleIds.length > 0 && selectedVisibleIds.length === visibleIds.length;
+  const someVisibleSelected =
+    selectedVisibleIds.length > 0 && selectedVisibleIds.length < visibleIds.length;
+
+  React.useEffect(() => {
+    if (selectAllRef.current) {
+      selectAllRef.current.indeterminate = someVisibleSelected;
+    }
+  }, [someVisibleSelected]);
+
+  const toggleSelectAll = () => {
+    if (allVisibleSelected) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(visibleIds);
+    }
+  };
+
+  const toggleRowSelect = (id: string) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id],
+    );
+  };
 
   const handleToggleArchive = (projectId: string, isArchived: boolean, name: string) => {
     startTransition(async () => {
@@ -262,6 +641,176 @@ export function ProjectsWorkspace({
     });
   };
 
+  const handleBulkArchive = (isArchived: boolean) => {
+    if (selectedVisibleIds.length === 0) return;
+    startTransition(async () => {
+      const res = await bulkArchiveProjectsAction({
+        orgSlug,
+        projectIds: selectedVisibleIds,
+        isArchived,
+      });
+      if (!res.ok) {
+        toast.error(res.error.message);
+        return;
+      }
+      setSelectedIds([]);
+      toast.success(
+        isArchived
+          ? `Archived ${res.data.count} project(s)`
+          : `Restored ${res.data.count} project(s)`,
+      );
+    });
+  };
+
+  const handleBulkStatusChange = (status: ProjectStatus) => {
+    if (selectedVisibleIds.length === 0) return;
+    startTransition(async () => {
+      const res = await bulkUpdateProjectsStatusAction({
+        orgSlug,
+        projectIds: selectedVisibleIds,
+        status,
+      });
+      if (!res.ok) {
+        toast.error(res.error.message);
+        return;
+      }
+      setSelectedIds([]);
+      toast.success(`Updated ${res.data.count} project(s) to ${status.replace("_", " ")}`);
+    });
+  };
+
+  const handleConfirmDelete = () => {
+    if (!deleteTarget || deleteTarget.ids.length === 0) return;
+    startTransition(async () => {
+      const res = await deleteProjectsAction({
+        orgSlug,
+        projectIds: deleteTarget.ids,
+      });
+      if (!res.ok) {
+        toast.error(res.error.message);
+        return;
+      }
+      setSelectedIds((prev) => prev.filter((id) => !deleteTarget.ids.includes(id)));
+      setDeleteTarget(null);
+      toast.success(`Deleted ${res.data.count} project(s)`);
+    });
+  };
+
+  const handleCloneProject = (project: ProjectSummaryDTO) => {
+    startTransition(async () => {
+      const res = await cloneProjectAction({ orgSlug, projectId: project.id });
+      if (!res.ok) {
+        toast.error(res.error.message);
+        return;
+      }
+      toast.success(`Cloned "${project.name}" → "${res.data.name}"`);
+    });
+  };
+
+  const handleSaveAsTemplate = (project: ProjectSummaryDTO) => {
+    const next = saveCustomTemplate(orgSlug, {
+      id: `tpl-${project.id}`,
+      title: `${project.name} Template`,
+      description: `Saved from ${project.name} (${project.milestoneCount} phases, ${project.taskCount} tasks).`,
+      tags: project.tags,
+      budget: project.budget,
+      isStrict: project.isStrict,
+      isPublic: project.isPublic,
+      savedAt: todayIso,
+    });
+    setCustomTemplates(next);
+    toast.success(`Saved "${project.name}" as a reusable template`);
+  };
+
+  const handleExportCsv = () => {
+    const rowsToExport =
+      selectedVisibleIds.length > 0
+        ? filteredAndSortedProjects.filter((p) => selectedVisibleIds.includes(p.id))
+        : filteredAndSortedProjects;
+
+    const jobId = `export-projects-${Date.now()}`;
+    emitBackgroundTaskEvent({
+      id: jobId,
+      label: `Exporting ${rowsToExport.length} project(s) to CSV`,
+      progress: 15,
+      status: "running",
+    });
+
+    window.setTimeout(() => {
+      emitBackgroundTaskEvent({
+        id: jobId,
+        label: `Exporting ${rowsToExport.length} project(s) to CSV`,
+        progress: 65,
+        status: "running",
+      });
+    }, 220);
+
+    window.setTimeout(() => {
+      const esc = (v: string | number | null | undefined) => {
+        const s = v === null || v === undefined ? "" : String(v);
+        return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+      };
+      const header = [
+        "ID",
+        "Project Name",
+        "Status",
+        "Completion %",
+        "Owner",
+        "Client (CRM)",
+        "Tasks Done/Total",
+        "Phases",
+        "Open Issues",
+        "Start Date",
+        "End Date",
+        "Budget",
+        "Currency",
+        "Tags",
+      ];
+      const lines = [
+        header.join(","),
+        ...rowsToExport.map((p) => {
+          const codeIdx = projectCodeIndexMap.get(p.id) ?? 1;
+          return [
+            `PRJ-${String(codeIdx).padStart(3, "0")}`,
+            p.name,
+            p.status,
+            p.completionPercent,
+            p.owner?.name ?? "Unassigned",
+            p.company?.name ?? "",
+            `${p.doneTaskCount}/${p.taskCount}`,
+            p.milestoneCount,
+            p.openIssueCount,
+            p.startDate ?? "",
+            p.dueDate ?? "",
+            p.budget ?? "",
+            p.currency,
+            p.tags.join(";"),
+          ]
+            .map(esc)
+            .join(",");
+        }),
+      ];
+
+      const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${orgSlug}-projects-${todayIso}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      emitBackgroundTaskEvent({
+        id: jobId,
+        label: `Exported ${rowsToExport.length} project(s) CSV`,
+        progress: 100,
+        status: "completed",
+      });
+      toast.success(`Exported ${rowsToExport.length} project(s) to CSV`);
+    }, 520);
+  };
+
   const openNewWithTemplate = (template: ProjectTemplateKey) => {
     setSheetTemplate(template);
     setSheetOpen(true);
@@ -270,12 +819,252 @@ export function ProjectsWorkspace({
   const showProjectCollection =
     activeTab === "active" || activeTab === "public" || activeTab === "archived";
 
-  const visibleColCount =
-    COLUMN_CONFIG.filter((c) => visibleColumns[c.key]).length + 1;
+  const orderedVisibleColumns = React.useMemo(
+    () => columnOrder.filter((key) => visibleColumns[key]),
+    [columnOrder, visibleColumns],
+  );
+
+  const cellPad = density === "compact" ? "py-1.5" : "py-3";
+  const visibleColCount = orderedVisibleColumns.length + 2; // leading checkbox + sticky actions
+
+  const renderCell = (colKey: ColumnKey, project: ProjectSummaryDTO) => {
+    const overdue = isProjectOverdue(project, todayIso);
+    const codeNum = projectCodeIndexMap.get(project.id) ?? 1;
+    const hasCrmLink = Boolean(project.company || project.deal);
+    const hasFinanceLink = project.budget !== null || project.expenseCount > 0;
+
+    switch (colKey) {
+      case "id":
+        return (
+          <TableCell
+            key={colKey}
+            className={cn("font-mono text-xs whitespace-nowrap text-muted-foreground", cellPad)}
+          >
+            PRJ-{String(codeNum).padStart(3, "0")}
+          </TableCell>
+        );
+      case "name":
+        return (
+          <TableCell key={colKey} className={cn("min-w-52", cellPad)}>
+            <div className="flex flex-col gap-0.5">
+              <div className="flex items-center gap-1.5">
+                <Link
+                  href={`/${orgSlug}/projects/${project.id}`}
+                  className={cn(
+                    "font-semibold text-foreground hover:text-primary hover:underline",
+                    density === "compact" ? "text-xs" : "text-sm",
+                  )}
+                >
+                  {project.name}
+                </Link>
+                {project.isStrict && (
+                  <Lock className="size-3 shrink-0 text-amber-600" aria-label="Strict project" />
+                )}
+                {project.source === "AUTOMATION" && (
+                  <Sparkles
+                    className="size-3 shrink-0 text-violet-600"
+                    aria-label="Auto-created from Closed Won Deal"
+                  />
+                )}
+              </div>
+              {density === "comfortable" && (project.group || project.company) && (
+                <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                  {project.group && (
+                    <Badge variant="outline" className="px-1.5 py-0 text-[10px]">
+                      {project.group.name}
+                    </Badge>
+                  )}
+                  {project.company && <span>{project.company.name}</span>}
+                </div>
+              )}
+            </div>
+          </TableCell>
+        );
+      case "completion":
+        return (
+          <TableCell key={colKey} className={cn("min-w-32", cellPad)}>
+            <div className="space-y-1">
+              <div className="flex items-center justify-between text-xs tabular-nums">
+                <span className="font-semibold">{project.completionPercent}%</span>
+              </div>
+              <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                <div
+                  className="h-full rounded-full bg-violet-600 transition-all"
+                  style={{ width: `${project.completionPercent}%` }}
+                />
+              </div>
+            </div>
+          </TableCell>
+        );
+      case "owner":
+        return (
+          <TableCell key={colKey} className={cn("whitespace-nowrap", cellPad)}>
+            {project.owner ? (
+              <div className="flex items-center gap-2">
+                <Avatar className={density === "compact" ? "size-5" : "size-6"}>
+                  {project.owner.avatarUrl && (
+                    <AvatarImage src={project.owner.avatarUrl} alt={project.owner.name} />
+                  )}
+                  <AvatarFallback className="text-[10px]">
+                    {initials(project.owner.name)}
+                  </AvatarFallback>
+                </Avatar>
+                <span className={density === "compact" ? "text-xs" : "text-sm"}>
+                  {project.owner.name}
+                </span>
+              </div>
+            ) : (
+              <span className="text-xs text-muted-foreground">Unassigned</span>
+            )}
+          </TableCell>
+        );
+      case "status":
+        return (
+          <TableCell key={colKey} className={cn("whitespace-nowrap", cellPad)}>
+            <Badge variant="secondary" className={density === "compact" ? "text-[10px]" : ""}>
+              {project.status.replace("_", " ")}
+            </Badge>
+          </TableCell>
+        );
+      case "connected":
+        return (
+          <TableCell key={colKey} className={cn("whitespace-nowrap", cellPad)}>
+            <div className="flex items-center gap-1">
+              <Link
+                href={`/${orgSlug}/crm/deals`}
+                title={
+                  project.deal
+                    ? `CRM Deal: ${project.deal.title}`
+                    : project.company
+                      ? `CRM Client: ${project.company.name}`
+                      : "Open CRM"
+                }
+                className={cn(
+                  "inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-medium transition hover:opacity-85",
+                  hasCrmLink
+                    ? "border-blue-500/30 bg-blue-500/10 text-blue-700 dark:text-blue-300"
+                    : "border-border bg-muted/40 text-muted-foreground",
+                )}
+              >
+                <Briefcase className="size-2.5" />
+                CRM
+              </Link>
+              <Link
+                href={`/${orgSlug}/finance/invoices`}
+                title={
+                  hasFinanceLink
+                    ? `Finance tracked (${project.expenseCount} expenses)`
+                    : "Open Finance"
+                }
+                className={cn(
+                  "inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-medium transition hover:opacity-85",
+                  hasFinanceLink
+                    ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                    : "border-border bg-muted/40 text-muted-foreground",
+                )}
+              >
+                <Receipt className="size-2.5" />
+                Finance
+              </Link>
+            </div>
+          </TableCell>
+        );
+      case "tasks":
+        return (
+          <TableCell key={colKey} className={cn("whitespace-nowrap", cellPad)}>
+            <Link
+              href={`/${orgSlug}/projects/tasks?projectId=${project.id}`}
+              className="inline-flex items-center gap-1.5 hover:opacity-80"
+            >
+              <span className="text-sm font-medium tabular-nums">{project.taskCount}</span>
+              <Badge variant="outline" className="px-1.5 py-0 text-[10px] tabular-nums">
+                {project.doneTaskCount}/{project.taskCount}
+              </Badge>
+            </Link>
+          </TableCell>
+        );
+      case "phases":
+        return (
+          <TableCell
+            key={colKey}
+            className={cn("text-sm tabular-nums whitespace-nowrap text-muted-foreground", cellPad)}
+          >
+            {project.milestoneCount}
+          </TableCell>
+        );
+      case "issues":
+        return (
+          <TableCell key={colKey} className={cn("whitespace-nowrap", cellPad)}>
+            <Link
+              href={`/${orgSlug}/projects/issues`}
+              className={cn(
+                "text-sm tabular-nums hover:underline",
+                project.openIssueCount > 0
+                  ? "font-semibold text-rose-600"
+                  : "text-muted-foreground",
+              )}
+            >
+              {project.openIssueCount}/{project.issueCount}
+            </Link>
+          </TableCell>
+        );
+      case "startDate":
+        return (
+          <TableCell
+            key={colKey}
+            className={cn("text-xs whitespace-nowrap text-muted-foreground", cellPad)}
+          >
+            {project.startDate ? formatDate(project.startDate, { withYear: true }) : "—"}
+          </TableCell>
+        );
+      case "dueDate":
+        return (
+          <TableCell
+            key={colKey}
+            className={cn(
+              "text-xs whitespace-nowrap",
+              overdue ? "font-semibold text-rose-600" : "text-muted-foreground",
+              cellPad,
+            )}
+          >
+            {project.dueDate ? formatDate(project.dueDate, { withYear: true }) : "—"}
+          </TableCell>
+        );
+      case "budget":
+        return (
+          <TableCell
+            key={colKey}
+            className={cn("text-xs font-medium tabular-nums whitespace-nowrap", cellPad)}
+          >
+            {project.budget !== null ? formatCurrency(project.budget, project.currency) : "—"}
+          </TableCell>
+        );
+      case "tags":
+        return (
+          <TableCell key={colKey} className={cellPad}>
+            <div className="flex max-w-48 flex-wrap gap-1">
+              {project.tags.length === 0 ? (
+                <span className="text-xs text-muted-foreground">—</span>
+              ) : (
+                project.tags.map((tag) => (
+                  <Badge
+                    key={tag}
+                    variant="outline"
+                    className={cn("px-1.5 py-0 text-[10px]", getTagPillClass(tag))}
+                  >
+                    #{tag}
+                  </Badge>
+                ))
+              )}
+            </div>
+          </TableCell>
+        );
+    }
+  };
 
   return (
     <div className="flex flex-col">
-      {/* Zoho-style Top Sub-Header & Tabs */}
+      {/* Zoho-style Top Sub-Header & Split CTAs */}
       <div className="border-b bg-background px-4 pt-4 lg:px-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -285,8 +1074,8 @@ export function ProjectsWorkspace({
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
-            <div className="relative w-56">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative w-52 sm:w-56">
               <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
               <Input
                 value={search}
@@ -296,12 +1085,156 @@ export function ProjectsWorkspace({
               />
             </div>
 
-            {canWrite && (
-              <Button onClick={() => openNewWithTemplate("NONE")}>
-                <Plus className="size-4" />
-                New Project
+            {/* Split Button: Project Templates */}
+            <div className="inline-flex items-center rounded-md shadow-2xs">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => handleTabChange("templates")}
+                className="h-9 rounded-r-none border-r-0 px-3 text-xs"
+              >
+                <Layers className="size-3.5 text-violet-600" />
+                Project Templates
               </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    aria-label="Project templates options"
+                    className="h-9 rounded-l-none px-2"
+                  >
+                    <ChevronDown className="size-3.5" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-56">
+                  <DropdownMenuLabel>Quick Launch Template</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  {BUILTIN_TEMPLATES.filter((t) => t.key !== "NONE").map((tpl) => (
+                    <DropdownMenuItem
+                      key={tpl.key}
+                      disabled={!canWrite}
+                      onClick={() => openNewWithTemplate(tpl.key)}
+                    >
+                      <Layers className="size-3.5 text-violet-600" />
+                      {tpl.title}
+                    </DropdownMenuItem>
+                  ))}
+                  {customTemplates.length > 0 && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuLabel>Saved Custom Templates</DropdownMenuLabel>
+                      {customTemplates.map((ct) => (
+                        <DropdownMenuItem
+                          key={ct.id}
+                          disabled={!canWrite}
+                          onClick={() => openNewWithTemplate("NONE")}
+                        >
+                          <BookmarkPlus className="size-3.5 text-emerald-600" />
+                          <span className="truncate">{ct.title}</span>
+                        </DropdownMenuItem>
+                      ))}
+                    </>
+                  )}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => handleTabChange("templates")}>
+                    Browse All Templates
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+
+            {/* Split Button: New Project */}
+            {canWrite && (
+              <div className="inline-flex items-center rounded-md shadow-2xs">
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => openNewWithTemplate("NONE")}
+                  className="h-9 rounded-r-none border-r border-primary-foreground/20 px-3 text-xs"
+                >
+                  <Plus className="size-4" />
+                  New Project
+                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      type="button"
+                      size="sm"
+                      aria-label="New project options"
+                      className="h-9 rounded-l-none px-2"
+                    >
+                      <ChevronDown className="size-3.5" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-56">
+                    <DropdownMenuLabel>Create Project</DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={() => openNewWithTemplate("NONE")}>
+                      <Plus className="size-3.5" />
+                      Create Blank Project
+                    </DropdownMenuItem>
+                    <DropdownMenuSub>
+                      <DropdownMenuSubTrigger>
+                        <Layers className="size-3.5 text-violet-600" />
+                        Create from Template
+                      </DropdownMenuSubTrigger>
+                      <DropdownMenuSubContent className="w-52">
+                        {BUILTIN_TEMPLATES.filter((t) => t.key !== "NONE").map((tpl) => (
+                          <DropdownMenuItem
+                            key={tpl.key}
+                            onClick={() => openNewWithTemplate(tpl.key)}
+                          >
+                            {tpl.title}
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuSubContent>
+                    </DropdownMenuSub>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={() => setImportOpen(true)}>
+                      <Upload className="size-3.5" />
+                      Import from CSV / JSON
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
             )}
+
+            {/* Top-Right Overflow Menu (...) */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  size="icon-sm"
+                  variant="outline"
+                  aria-label="More project actions"
+                  className="h-9 w-9"
+                >
+                  <MoreHorizontal className="size-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-52">
+                <DropdownMenuLabel>Workspace Tools</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={handleExportCsv}>
+                  <Download className="size-3.5" />
+                  Export Projects (CSV)
+                </DropdownMenuItem>
+                {canWrite && (
+                  <DropdownMenuItem onClick={() => setImportOpen(true)}>
+                    <Upload className="size-3.5" />
+                    Import Projects
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => setActivityOpen(true)}>
+                  <Activity className="size-3.5 text-violet-600" />
+                  View Activity Log
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
 
@@ -312,7 +1245,7 @@ export function ProjectsWorkspace({
               <button
                 key={tab.id}
                 type="button"
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => handleTabChange(tab.id)}
                 className={cn(
                   "shrink-0 border-b-2 pb-2.5 text-sm font-medium transition-colors",
                   isActive
@@ -327,134 +1260,538 @@ export function ProjectsWorkspace({
         </nav>
       </div>
 
-      {/* Zoho-Style Sub-Toolbar (View Switcher, Filter, Columns, Automation) */}
+      {/* Zoho-Style Sub-Toolbar (View Switcher, Saved Views, Advanced Filter, Density, Columns, Automation) */}
       {showProjectCollection && (
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b bg-muted/20 px-4 py-2.5 lg:px-6">
-          <div className="flex flex-wrap items-center gap-2">
-            {/* View Switcher */}
-            <div
-              className="inline-flex items-center rounded-lg border bg-background p-0.5 shadow-2xs"
-              role="group"
-              aria-label="Project view switcher"
-            >
-              <button
-                type="button"
-                onClick={() => setViewMode("list")}
-                className={cn(
-                  "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition",
-                  viewMode === "list"
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
+        <div className="border-b bg-muted/20 px-4 py-2.5 lg:px-6">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-2">
+              {/* View Switcher */}
+              <div
+                className="inline-flex items-center rounded-lg border bg-background p-0.5 shadow-2xs"
+                role="group"
+                aria-label="Project view switcher"
               >
-                <List className="size-3.5" />
-                List View
-              </button>
-              <button
-                type="button"
-                onClick={() => setViewMode("board")}
-                className={cn(
-                  "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition",
-                  viewMode === "board"
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                <Kanban className="size-3.5" />
-                Board
-              </button>
-              <button
-                type="button"
-                onClick={() => setViewMode("gantt")}
-                className={cn(
-                  "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition",
-                  viewMode === "gantt"
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                <GanttChart className="size-3.5" />
-                Gantt
-              </button>
-            </div>
-
-            {/* Filter Dropdown */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button type="button" size="sm" variant="outline" className="h-8 gap-1.5 text-xs">
-                  <Filter className="size-3.5" />
-                  <span>{FILTER_LABELS[filterMode]}</span>
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-44">
-                <DropdownMenuLabel>Filter Projects</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuRadioGroup
-                  value={filterMode}
-                  onValueChange={(val) => setFilterMode(val as ProjectFilterMode)}
+                <button
+                  type="button"
+                  onClick={() => setViewMode("list")}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition",
+                    viewMode === "list"
+                      ? "bg-primary text-primary-foreground"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
                 >
-                  <DropdownMenuRadioItem value="all">All Projects</DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="mine">My Projects</DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="overdue">Overdue</DropdownMenuRadioItem>
-                </DropdownMenuRadioGroup>
-              </DropdownMenuContent>
-            </DropdownMenu>
+                  <List className="size-3.5" />
+                  List View
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode("board")}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition",
+                    viewMode === "board"
+                      ? "bg-primary text-primary-foreground"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  <Kanban className="size-3.5" />
+                  Board
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode("gantt")}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition",
+                    viewMode === "gantt"
+                      ? "bg-primary text-primary-foreground"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  <GanttChart className="size-3.5" />
+                  Gantt
+                </button>
+              </div>
 
-            <Badge variant="secondary" className="text-xs tabular-nums">
-              {filteredAndSortedProjects.length} shown
-            </Badge>
-          </div>
-
-          <div className="flex items-center gap-2">
-            {/* Column Customization */}
-            {viewMode === "list" && (
+              {/* Saved View Switcher Dropdown */}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button type="button" size="sm" variant="outline" className="h-8 gap-1.5 text-xs">
-                    <Columns3 className="size-3.5" />
-                    Columns
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-8 gap-1.5 bg-background text-xs font-medium"
+                  >
+                    <FolderKanban className="size-3.5 text-primary" />
+                    <span>{SAVED_VIEW_LABELS[savedView]}</span>
+                    <ChevronDown className="size-3 opacity-60" />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-48">
-                  <DropdownMenuLabel>Visible Columns</DropdownMenuLabel>
+                <DropdownMenuContent align="start" className="w-52">
+                  <DropdownMenuLabel>Saved Project Views</DropdownMenuLabel>
                   <DropdownMenuSeparator />
-                  {COLUMN_CONFIG.map((col) => (
-                    <DropdownMenuCheckboxItem
-                      key={col.key}
-                      disabled={col.required}
-                      checked={visibleColumns[col.key]}
-                      onCheckedChange={(checked) =>
-                        setVisibleColumns((prev) => ({
-                          ...prev,
-                          [col.key]: Boolean(checked),
-                        }))
-                      }
-                    >
-                      {col.label}
-                    </DropdownMenuCheckboxItem>
-                  ))}
-                  <DropdownMenuSeparator />
-                  <button
-                    type="button"
-                    onClick={() => setVisibleColumns(DEFAULT_VISIBLE_COLUMNS)}
-                    className="w-full px-2 py-1.5 text-left text-xs font-medium text-primary hover:bg-accent"
+                  <DropdownMenuRadioGroup
+                    value={savedView}
+                    onValueChange={(val) => handleSavedViewChange(val as SavedProjectView)}
                   >
-                    Reset all columns
-                  </button>
+                    {(Object.keys(SAVED_VIEW_LABELS) as SavedProjectView[]).map((viewKey) => (
+                      <DropdownMenuRadioItem
+                        key={viewKey}
+                        value={viewKey}
+                        className="flex items-center justify-between"
+                      >
+                        <span>{SAVED_VIEW_LABELS[viewKey]}</span>
+                        <Badge variant="secondary" className="ml-2 px-1.5 py-0 text-[10px]">
+                          {savedViewCounts[viewKey]}
+                        </Badge>
+                      </DropdownMenuRadioItem>
+                    ))}
+                  </DropdownMenuRadioGroup>
                 </DropdownMenuContent>
               </DropdownMenu>
+
+              {/* Multi-Criteria Advanced Filter Popover */}
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={activeAdvancedFilterCount > 0 ? "secondary" : "outline"}
+                    className={cn(
+                      "h-8 gap-1.5 text-xs",
+                      activeAdvancedFilterCount === 0 && "bg-background",
+                    )}
+                  >
+                    <Filter className="size-3.5" />
+                    <span>Filters</span>
+                    {activeAdvancedFilterCount > 0 && (
+                      <Badge className="h-4 px-1 text-[10px]">{activeAdvancedFilterCount}</Badge>
+                    )}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent align="start" className="w-80 p-3.5">
+                  <div className="space-y-3.5">
+                    <div className="flex items-center justify-between border-b pb-2">
+                      <div className="flex items-center gap-1.5">
+                        <SlidersHorizontal className="size-3.5 text-primary" />
+                        <p className="text-xs font-semibold">Advanced Filters</p>
+                      </div>
+                      {activeAdvancedFilterCount > 0 && (
+                        <button
+                          type="button"
+                          onClick={clearAdvancedFilters}
+                          className="text-[11px] font-medium text-primary hover:underline"
+                        >
+                          Clear all
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Owner */}
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-medium text-muted-foreground">Owner</label>
+                      <select
+                        value={filterOwnerId}
+                        onChange={(e) => setFilterOwnerId(e.target.value)}
+                        className="flex h-8 w-full rounded-md border border-input bg-background px-2.5 text-xs"
+                      >
+                        <option value="">Any Owner</option>
+                        <option value="__unassigned__">Unassigned</option>
+                        {workspace.members.map((m) => (
+                          <option key={m.id} value={m.id}>
+                            {m.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Status multi-select */}
+                    <div className="space-y-1.5">
+                      <p className="text-[11px] font-medium text-muted-foreground">Status</p>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {PROJECT_STATUSES.map((st) => {
+                          const checked = filterStatuses.includes(st.value);
+                          return (
+                            <label
+                              key={st.value}
+                              className="flex cursor-pointer items-center gap-1.5 rounded border px-2 py-1 text-xs hover:bg-muted/40"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() =>
+                                  setFilterStatuses((prev) =>
+                                    prev.includes(st.value)
+                                      ? prev.filter((item) => item !== st.value)
+                                      : [...prev, st.value],
+                                  )
+                                }
+                                className="size-3.5 accent-primary"
+                              />
+                              <span className={cn("size-2 rounded-full", st.dot)} />
+                              <span>{st.label}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Date Range */}
+                    <div className="space-y-1">
+                      <p className="text-[11px] font-medium text-muted-foreground">Date Range</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        <Input
+                          type="date"
+                          aria-label="Filter start date from"
+                          value={filterDateFrom}
+                          onChange={(e) => setFilterDateFrom(e.target.value)}
+                          className="h-8 text-xs"
+                        />
+                        <Input
+                          type="date"
+                          aria-label="Filter due date to"
+                          value={filterDateTo}
+                          onChange={(e) => setFilterDateTo(e.target.value)}
+                          className="h-8 text-xs"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Tags */}
+                    {allAvailableTags.length > 0 && (
+                      <div className="space-y-1.5">
+                        <p className="text-[11px] font-medium text-muted-foreground">Tags</p>
+                        <div className="flex max-h-24 flex-wrap gap-1 overflow-y-auto">
+                          {allAvailableTags.map((tag) => {
+                            const selected = filterTags.includes(tag);
+                            return (
+                              <button
+                                key={tag}
+                                type="button"
+                                onClick={() =>
+                                  setFilterTags((prev) =>
+                                    prev.includes(tag)
+                                      ? prev.filter((t) => t !== tag)
+                                      : [...prev, tag],
+                                  )
+                                }
+                                className={cn(
+                                  "rounded-md border px-2 py-0.5 text-[11px] transition",
+                                  selected
+                                    ? "border-primary bg-primary text-primary-foreground"
+                                    : "border-input bg-background text-muted-foreground hover:text-foreground",
+                                )}
+                              >
+                                #{tag}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </PopoverContent>
+              </Popover>
+
+              <Badge variant="secondary" className="text-xs tabular-nums">
+                {filteredAndSortedProjects.length} shown
+              </Badge>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Density Switcher (Compact / Comfortable) */}
+              {viewMode === "list" && (
+                <div
+                  className="inline-flex items-center rounded-lg border bg-background p-0.5"
+                  role="group"
+                  aria-label="Table row density"
+                >
+                  <button
+                    type="button"
+                    onClick={() => updateDensity("comfortable")}
+                    title="Comfortable row height"
+                    className={cn(
+                      "inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition",
+                      density === "comfortable"
+                        ? "bg-muted text-foreground"
+                        : "text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    <Rows3 className="size-3.5" />
+                    <span className="hidden sm:inline">Comfortable</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => updateDensity("compact")}
+                    title="Compact row height"
+                    className={cn(
+                      "inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition",
+                      density === "compact"
+                        ? "bg-muted text-foreground"
+                        : "text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    <AlignJustify className="size-3.5" />
+                    <span className="hidden sm:inline">Compact</span>
+                  </button>
+                </div>
+              )}
+
+              {/* Column Customization & Reorder Popover (Synced with DnD Headers) */}
+              {viewMode === "list" && (
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-8 gap-1.5 bg-background text-xs"
+                    >
+                      <Columns3 className="size-3.5" />
+                      Columns
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent align="end" className="w-64 p-3">
+                    <div className="flex items-center justify-between border-b pb-2">
+                      <div>
+                        <p className="text-xs font-semibold">Columns &amp; Order</p>
+                        <p className="text-[10px] text-muted-foreground">
+                          Drag or toggle columns to customize table.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          persistVisibleColumns(DEFAULT_VISIBLE_COLUMNS);
+                          persistColumnOrder(DEFAULT_COLUMN_ORDER);
+                        }}
+                        className="text-[11px] font-medium text-primary hover:underline"
+                      >
+                        Reset
+                      </button>
+                    </div>
+                    <div className="mt-2 max-h-72 space-y-1 overflow-y-auto">
+                      {columnOrder.map((colKey, idx) => {
+                        const col = COLUMN_DEFS[colKey];
+                        return (
+                          <div
+                            key={colKey}
+                            draggable
+                            onDragStart={() => setDraggedCol(colKey)}
+                            onDragOver={(e) => {
+                              e.preventDefault();
+                              setDragOverCol(colKey);
+                            }}
+                            onDrop={(e) => {
+                              e.preventDefault();
+                              if (draggedCol) reorderColumns(draggedCol, colKey);
+                              setDraggedCol(null);
+                              setDragOverCol(null);
+                            }}
+                            onDragEnd={() => {
+                              setDraggedCol(null);
+                              setDragOverCol(null);
+                            }}
+                            className={cn(
+                              "flex items-center justify-between gap-2 rounded-md px-1.5 py-1 text-xs hover:bg-muted/60",
+                              dragOverCol === colKey && "ring-1 ring-primary",
+                            )}
+                          >
+                            <div className="flex min-w-0 flex-1 items-center gap-2">
+                              <GripVertical className="size-3.5 shrink-0 cursor-grab text-muted-foreground/70" />
+                              <input
+                                type="checkbox"
+                                disabled={col.required}
+                                checked={visibleColumns[colKey]}
+                                onChange={(e) =>
+                                  persistVisibleColumns({
+                                    ...visibleColumns,
+                                    [colKey]: e.target.checked,
+                                  })
+                                }
+                                className="size-3.5 accent-primary"
+                              />
+                              <span className="truncate">{col.label}</span>
+                            </div>
+                            <div className="flex items-center gap-0.5">
+                              <button
+                                type="button"
+                                disabled={idx === 0}
+                                aria-label={`Move ${col.label} up`}
+                                onClick={() => moveColumnStep(colKey, -1)}
+                                className="rounded p-0.5 text-muted-foreground hover:bg-background hover:text-foreground disabled:opacity-30"
+                              >
+                                <ArrowUp className="size-3" />
+                              </button>
+                              <button
+                                type="button"
+                                disabled={idx === columnOrder.length - 1}
+                                aria-label={`Move ${col.label} down`}
+                                onClick={() => moveColumnStep(colKey, 1)}
+                                className="rounded p-0.5 text-muted-foreground hover:bg-background hover:text-foreground disabled:opacity-30"
+                              >
+                                <ArrowDown className="size-3" />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </PopoverContent>
+                </Popover>
+              )}
+
+              {/* Automation Button */}
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => setAutomationOpen(true)}
+                className="h-8 gap-1.5 border-emerald-500/30 bg-background text-xs text-emerald-700 hover:bg-emerald-500/10 dark:text-emerald-300"
+              >
+                <Workflow className="size-3.5" />
+                Automation
+              </Button>
+            </div>
+          </div>
+
+          {/* Active Advanced Filter Chips */}
+          {activeAdvancedFilterCount > 0 && (
+            <div className="mt-2.5 flex flex-wrap items-center gap-1.5 border-t pt-2 text-xs">
+              <span className="text-[11px] font-medium text-muted-foreground">Active filters:</span>
+              {filterOwnerId && (
+                <Badge variant="secondary" className="gap-1 text-[11px]">
+                  Owner:{" "}
+                  {filterOwnerId === "__unassigned__"
+                    ? "Unassigned"
+                    : workspace.members.find((m) => m.id === filterOwnerId)?.name ?? "Member"}
+                  <button type="button" onClick={() => setFilterOwnerId("")}>
+                    <X className="size-3" />
+                  </button>
+                </Badge>
+              )}
+              {filterStatuses.map((st) => (
+                <Badge key={st} variant="secondary" className="gap-1 text-[11px]">
+                  Status: {st.replace("_", " ")}
+                  <button
+                    type="button"
+                    onClick={() => setFilterStatuses((prev) => prev.filter((s) => s !== st))}
+                  >
+                    <X className="size-3" />
+                  </button>
+                </Badge>
+              ))}
+              {(filterDateFrom || filterDateTo) && (
+                <Badge variant="secondary" className="gap-1 text-[11px]">
+                  Dates: {filterDateFrom || "Any"} → {filterDateTo || "Any"}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFilterDateFrom("");
+                      setFilterDateTo("");
+                    }}
+                  >
+                    <X className="size-3" />
+                  </button>
+                </Badge>
+              )}
+              {filterTags.map((tag) => (
+                <Badge key={tag} variant="secondary" className="gap-1 text-[11px]">
+                  #{tag}
+                  <button
+                    type="button"
+                    onClick={() => setFilterTags((prev) => prev.filter((t) => t !== tag))}
+                  >
+                    <X className="size-3" />
+                  </button>
+                </Badge>
+              ))}
+              <button
+                type="button"
+                onClick={clearAdvancedFilters}
+                className="ml-1 text-[11px] font-medium text-primary hover:underline"
+              >
+                Reset all
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Contextual Bulk Action Toolbar */}
+      {showProjectCollection && viewMode === "list" && selectedVisibleIds.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b bg-primary/5 px-4 py-2 text-xs lg:px-6">
+          <div className="flex items-center gap-2.5">
+            <Badge className="tabular-nums">{selectedVisibleIds.length} selected</Badge>
+            <button
+              type="button"
+              onClick={() => setSelectedIds([])}
+              className="text-muted-foreground hover:text-foreground hover:underline"
+            >
+              Clear selection
+            </button>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {canWrite && (
+              <>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button type="button" size="xs" variant="outline" disabled={isPending}>
+                      Change Status
+                      <ChevronDown className="size-3" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-44">
+                    <DropdownMenuLabel>Set Status</DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    {PROJECT_STATUSES.map((st) => (
+                      <DropdownMenuItem
+                        key={st.value}
+                        onClick={() => handleBulkStatusChange(st.value)}
+                      >
+                        <span className={cn("size-2 rounded-full", st.dot)} />
+                        {st.label}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="outline"
+                  disabled={isPending}
+                  onClick={() => handleBulkArchive(activeTab !== "archived")}
+                >
+                  {activeTab === "archived" ? (
+                    <>
+                      <ArchiveRestore className="size-3.5" />
+                      Restore
+                    </>
+                  ) : (
+                    <>
+                      <Archive className="size-3.5" />
+                      Archive
+                    </>
+                  )}
+                </Button>
+
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="destructive"
+                  disabled={isPending}
+                  onClick={() => setDeleteTarget({ ids: selectedVisibleIds })}
+                >
+                  <Trash2 className="size-3.5" />
+                  Delete
+                </Button>
+              </>
             )}
 
-            {/* Automation Button */}
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() => setAutomationOpen(true)}
-              className="h-8 gap-1.5 border-emerald-500/30 text-xs text-emerald-700 hover:bg-emerald-500/10 dark:text-emerald-300"
-            >
-              <Workflow className="size-3.5" />
-              Automation
+            <Button type="button" size="xs" variant="outline" onClick={handleExportCsv}>
+              <Download className="size-3.5" />
+              Export Selected
             </Button>
           </div>
         </div>
@@ -463,60 +1800,74 @@ export function ProjectsWorkspace({
       {/* Tab Body */}
       <div className="p-4 lg:p-6">
         {activeTab === "templates" ? (
-          <div className="grid gap-4 md:grid-cols-3">
-            {[
-              {
-                key: "CLIENT_ONBOARDING" as const,
-                title: "Client Onboarding",
-                desc: "3 phases (Kickoff, Configuration, Go-Live) with 5 pre-built tasks.",
-              },
-              {
-                key: "SOFTWARE_DELIVERY" as const,
-                title: "Software Delivery",
-                desc: "3 phases (Architecture, Core Build, UAT & Deployment) with 5 tasks.",
-              },
-              {
-                key: "MARKETING_LAUNCH" as const,
-                title: "Marketing Campaign Launch",
-                desc: "3 phases covering messaging, CRM UTM tracking, and attribution.",
-              },
-              {
-                key: "FINANCE_ERP_ROLLOUT" as const,
-                title: "ERP & Finance Rollout",
-                desc: "3 phases covering PHP/USD tax setup, CRM billing, and parallel close.",
-              },
-              {
-                key: "SECURITY_AUDIT" as const,
-                title: "Security & Compliance Audit",
-                desc: "3 phases covering RBAC/tenant review, remediation, and sign-off.",
-              },
-              {
-                key: "NONE" as const,
-                title: "Blank Project",
-                desc: "Start from scratch with custom milestones, tasks, and strict schedule rules.",
-              },
-            ].map((tpl) => (
-              <Card key={tpl.key} className="flex flex-col justify-between">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-base">
-                    <Layers className="size-4 text-violet-600" />
-                    {tpl.title}
-                  </CardTitle>
-                  <CardDescription>{tpl.desc}</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {canWrite && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => openNewWithTemplate(tpl.key)}
-                    >
-                      Use Template
-                    </Button>
-                  )}
-                </CardContent>
-              </Card>
-            ))}
+          <div className="space-y-6">
+            <div className="grid gap-4 md:grid-cols-3">
+              {BUILTIN_TEMPLATES.map((tpl) => (
+                <Card key={tpl.key} className="flex flex-col justify-between">
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <Layers className="size-4 text-violet-600" />
+                      {tpl.title}
+                    </CardTitle>
+                    <CardDescription>{tpl.desc}</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {canWrite && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => openNewWithTemplate(tpl.key)}
+                      >
+                        Use Template
+                      </Button>
+                    )}
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+
+            {customTemplates.length > 0 && (
+              <div className="space-y-3">
+                <h2 className="text-sm font-semibold">Saved Custom Templates</h2>
+                <div className="grid gap-4 md:grid-cols-3">
+                  {customTemplates.map((ct) => (
+                    <Card key={ct.id} className="flex flex-col justify-between">
+                      <CardHeader>
+                        <CardTitle className="flex items-center justify-between gap-2 text-base">
+                          <span className="flex items-center gap-2 truncate">
+                            <BookmarkPlus className="size-4 shrink-0 text-emerald-600" />
+                            <span className="truncate">{ct.title}</span>
+                          </span>
+                        </CardTitle>
+                        <CardDescription>{ct.description}</CardDescription>
+                      </CardHeader>
+                      <CardContent className="flex items-center justify-between gap-2">
+                        {canWrite && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => openNewWithTemplate("NONE")}
+                          >
+                            Use Template
+                          </Button>
+                        )}
+                        <Button
+                          variant="ghost"
+                          size="xs"
+                          className="text-muted-foreground hover:text-destructive"
+                          onClick={() => {
+                            setCustomTemplates(removeCustomTemplate(orgSlug, ct.id));
+                            toast.success("Removed custom template");
+                          }}
+                        >
+                          Remove
+                        </Button>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         ) : activeTab === "groups" ? (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -556,86 +1907,130 @@ export function ProjectsWorkspace({
               <Table>
                 <TableHeader>
                   <TableRow>
-                    {visibleColumns.id && <TableHead className="whitespace-nowrap">ID</TableHead>}
-                    {visibleColumns.name && (
-                      <TableHead className="whitespace-nowrap">
-                        <button
-                          type="button"
-                          onClick={() => handleSort("name")}
-                          className="inline-flex items-center gap-1 font-medium hover:text-foreground"
+                    {/* Leading Bulk Selection Checkbox */}
+                    <TableHead className="w-10 px-3">
+                      <input
+                        ref={selectAllRef}
+                        type="checkbox"
+                        aria-label="Select all projects"
+                        checked={allVisibleSelected}
+                        onChange={toggleSelectAll}
+                        className="size-4 cursor-pointer accent-primary"
+                      />
+                    </TableHead>
+
+                    {/* Dynamic Draggable, Sortable Headers with Action Menus */}
+                    {orderedVisibleColumns.map((colKey) => {
+                      const col = COLUMN_DEFS[colKey];
+                      const isSorted = col.sortable && sortField === col.sortable;
+                      return (
+                        <TableHead
+                          key={colKey}
+                          draggable
+                          onDragStart={() => setDraggedCol(colKey)}
+                          onDragOver={(e) => {
+                            e.preventDefault();
+                            setDragOverCol(colKey);
+                          }}
+                          onDrop={(e) => {
+                            e.preventDefault();
+                            if (draggedCol) reorderColumns(draggedCol, colKey);
+                            setDraggedCol(null);
+                            setDragOverCol(null);
+                          }}
+                          onDragEnd={() => {
+                            setDraggedCol(null);
+                            setDragOverCol(null);
+                          }}
+                          className={cn(
+                            "group/th whitespace-nowrap select-none",
+                            dragOverCol === colKey &&
+                              draggedCol !== colKey &&
+                              "border-l-2 border-l-primary bg-primary/5",
+                          )}
                         >
-                          Project Name
-                          {renderSortIcon("name")}
-                        </button>
-                      </TableHead>
-                    )}
-                    {visibleColumns.completion && (
-                      <TableHead className="w-36 whitespace-nowrap">% Completion</TableHead>
-                    )}
-                    {visibleColumns.owner && (
-                      <TableHead className="whitespace-nowrap">Owner</TableHead>
-                    )}
-                    {visibleColumns.status && (
-                      <TableHead className="whitespace-nowrap">
-                        <button
-                          type="button"
-                          onClick={() => handleSort("status")}
-                          className="inline-flex items-center gap-1 font-medium hover:text-foreground"
-                        >
-                          Status
-                          {renderSortIcon("status")}
-                        </button>
-                      </TableHead>
-                    )}
-                    {visibleColumns.tasks && (
-                      <TableHead className="whitespace-nowrap">Tasks</TableHead>
-                    )}
-                    {visibleColumns.phases && (
-                      <TableHead className="whitespace-nowrap">Phases</TableHead>
-                    )}
-                    {visibleColumns.issues && (
-                      <TableHead className="whitespace-nowrap">Issues</TableHead>
-                    )}
-                    {visibleColumns.startDate && (
-                      <TableHead className="whitespace-nowrap">
-                        <button
-                          type="button"
-                          onClick={() => handleSort("startDate")}
-                          className="inline-flex items-center gap-1 font-medium hover:text-foreground"
-                        >
-                          Start Date
-                          {renderSortIcon("startDate")}
-                        </button>
-                      </TableHead>
-                    )}
-                    {visibleColumns.dueDate && (
-                      <TableHead className="whitespace-nowrap">
-                        <button
-                          type="button"
-                          onClick={() => handleSort("dueDate")}
-                          className="inline-flex items-center gap-1 font-medium hover:text-foreground"
-                        >
-                          End Date
-                          {renderSortIcon("dueDate")}
-                        </button>
-                      </TableHead>
-                    )}
-                    {visibleColumns.budget && (
-                      <TableHead className="whitespace-nowrap">
-                        <button
-                          type="button"
-                          onClick={() => handleSort("budget")}
-                          className="inline-flex items-center gap-1 font-medium hover:text-foreground"
-                        >
-                          Budget
-                          {renderSortIcon("budget")}
-                        </button>
-                      </TableHead>
-                    )}
-                    {visibleColumns.tags && (
-                      <TableHead className="whitespace-nowrap">Tags</TableHead>
-                    )}
-                    <TableHead className="text-right whitespace-nowrap">Actions</TableHead>
+                          <div className="flex items-center justify-between gap-1">
+                            <div className="flex items-center gap-1">
+                              <GripVertical
+                                className="size-3 cursor-grab text-muted-foreground/40 opacity-0 transition group-hover/th:opacity-100"
+                                aria-hidden="true"
+                              />
+                              {col.sortable ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleSort(col.sortable!)}
+                                  className="inline-flex items-center gap-1 font-medium hover:text-foreground"
+                                >
+                                  <span>{col.label}</span>
+                                  {isSorted ? (
+                                    <span
+                                      className="text-[10px] font-bold text-primary"
+                                      aria-label={`Sorted ${sortDir}`}
+                                    >
+                                      {sortDir === "asc" ? "▲" : "▼"}
+                                    </span>
+                                  ) : (
+                                    <ArrowUpDown className="size-3 text-muted-foreground/50 opacity-0 transition group-hover/th:opacity-100" />
+                                  )}
+                                </button>
+                              ) : (
+                                <span className="font-medium">{col.label}</span>
+                              )}
+                            </div>
+
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <button
+                                  type="button"
+                                  aria-label={`${col.label} column menu`}
+                                  className="rounded p-0.5 text-muted-foreground opacity-0 transition hover:bg-muted hover:text-foreground group-hover/th:opacity-100 focus-visible:opacity-100"
+                                >
+                                  <MoreVertical className="size-3" />
+                                </button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="start" className="w-44">
+                                <DropdownMenuLabel className="text-xs">{col.label}</DropdownMenuLabel>
+                                <DropdownMenuSeparator />
+                                {col.sortable && (
+                                  <>
+                                    <DropdownMenuItem
+                                      onClick={() => handleSort(col.sortable!, "asc")}
+                                    >
+                                      <ArrowUp className="size-3.5" />
+                                      Sort Ascending
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                      onClick={() => handleSort(col.sortable!, "desc")}
+                                    >
+                                      <ArrowDown className="size-3.5" />
+                                      Sort Descending
+                                    </DropdownMenuItem>
+                                    <DropdownMenuSeparator />
+                                  </>
+                                )}
+                                <DropdownMenuItem
+                                  disabled={col.required}
+                                  onClick={() =>
+                                    persistVisibleColumns({
+                                      ...visibleColumns,
+                                      [colKey]: false,
+                                    })
+                                  }
+                                >
+                                  <EyeOff className="size-3.5" />
+                                  Hide Column
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
+                        </TableHead>
+                      );
+                    })}
+
+                    {/* Sticky Right Actions Column Header */}
+                    <TableHead className="sticky right-0 z-10 bg-background/95 text-right whitespace-nowrap shadow-[-6px_0_12px_-6px_rgba(0,0,0,0.08)] backdrop-blur-xs">
+                      Actions
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -645,227 +2040,131 @@ export function ProjectsWorkspace({
                         colSpan={visibleColCount}
                         className="h-28 text-center text-muted-foreground"
                       >
-                        No projects found in this view.
+                        No projects found matching the current view and filters.
                       </TableCell>
                     </TableRow>
                   ) : (
-                    filteredAndSortedProjects.map((project, idx) => {
-                      const overdue = isProjectOverdue(project, todayIso);
+                    filteredAndSortedProjects.map((project) => {
+                      const isSelected = selectedVisibleIds.includes(project.id);
                       return (
                         <TableRow
                           key={project.id}
+                          data-state={isSelected ? "selected" : undefined}
                           onClick={(e) => {
-                            if ((e.target as HTMLElement).closest("a,button,input,select")) return;
+                            if (
+                              (e.target as HTMLElement).closest(
+                                "a,button,input,select,[role='menuitem']",
+                              )
+                            ) {
+                              return;
+                            }
                             router.push(`/${orgSlug}/projects/${project.id}`);
                           }}
                           className={cn(
-                            "cursor-pointer transition-colors hover:bg-muted/40",
+                            "group cursor-pointer transition-colors hover:bg-muted/40",
+                            isSelected && "bg-primary/5",
                             highlightProjectId === project.id && "bg-violet-500/10",
                           )}
                         >
-                          {visibleColumns.id && (
-                            <TableCell className="font-mono text-xs whitespace-nowrap text-muted-foreground">
-                              PRJ-{String(idx + 1).padStart(3, "0")}
-                            </TableCell>
-                          )}
+                          {/* Row Selection Checkbox */}
+                          <TableCell className={cn("w-10 px-3", cellPad)}>
+                            <input
+                              type="checkbox"
+                              aria-label={`Select ${project.name}`}
+                              checked={isSelected}
+                              onChange={() => toggleRowSelect(project.id)}
+                              className="size-4 cursor-pointer accent-primary"
+                            />
+                          </TableCell>
 
-                          {visibleColumns.name && (
-                            <TableCell className="min-w-52">
-                              <div className="flex flex-col gap-0.5">
-                                <div className="flex items-center gap-1.5">
-                                  <Link
-                                    href={`/${orgSlug}/projects/${project.id}`}
-                                    className="font-semibold text-foreground hover:text-primary hover:underline"
-                                  >
-                                    {project.name}
-                                  </Link>
-                                  {project.isStrict && (
-                                    <Lock
-                                      className="size-3 shrink-0 text-amber-600"
-                                      aria-label="Strict project"
-                                    />
-                                  )}
-                                  {project.source === "AUTOMATION" && (
-                                    <Sparkles
-                                      className="size-3 shrink-0 text-violet-600"
-                                      aria-label="Auto-created from Closed Won Deal"
-                                    />
-                                  )}
-                                </div>
-                                {(project.group || project.company) && (
-                                  <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-                                    {project.group && (
-                                      <Badge variant="outline" className="px-1.5 py-0 text-[10px]">
-                                        {project.group.name}
-                                      </Badge>
-                                    )}
-                                    {project.company && <span>{project.company.name}</span>}
-                                  </div>
-                                )}
-                              </div>
-                            </TableCell>
-                          )}
+                          {/* Dynamic Ordered Cells */}
+                          {orderedVisibleColumns.map((colKey) => renderCell(colKey, project))}
 
-                          {visibleColumns.completion && (
-                            <TableCell className="min-w-32">
-                              <div className="space-y-1">
-                                <div className="flex items-center justify-between text-xs tabular-nums">
-                                  <span className="font-semibold">{project.completionPercent}%</span>
-                                </div>
-                                <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-                                  <div
-                                    className="h-full rounded-full bg-violet-600 transition-all"
-                                    style={{ width: `${project.completionPercent}%` }}
-                                  />
-                                </div>
-                              </div>
-                            </TableCell>
-                          )}
-
-                          {visibleColumns.owner && (
-                            <TableCell className="whitespace-nowrap">
-                              {project.owner ? (
-                                <div className="flex items-center gap-2">
-                                  <Avatar className="size-6">
-                                    {project.owner.avatarUrl && (
-                                      <AvatarImage
-                                        src={project.owner.avatarUrl}
-                                        alt={project.owner.name}
-                                      />
-                                    )}
-                                    <AvatarFallback className="text-[10px]">
-                                      {initials(project.owner.name)}
-                                    </AvatarFallback>
-                                  </Avatar>
-                                  <span className="text-sm">{project.owner.name}</span>
-                                </div>
-                              ) : (
-                                <span className="text-xs text-muted-foreground">Unassigned</span>
-                              )}
-                            </TableCell>
-                          )}
-
-                          {visibleColumns.status && (
-                            <TableCell className="whitespace-nowrap">
-                              <Badge variant="secondary">{project.status}</Badge>
-                            </TableCell>
-                          )}
-
-                          {visibleColumns.tasks && (
-                            <TableCell className="whitespace-nowrap">
-                              <Link
-                                href={`/${orgSlug}/projects/tasks?projectId=${project.id}`}
-                                className="inline-flex items-center gap-1.5 hover:opacity-80"
-                              >
-                                <span className="text-sm font-medium tabular-nums">
-                                  {project.taskCount}
-                                </span>
-                                <Badge variant="outline" className="px-1.5 py-0 text-[10px] tabular-nums">
-                                  {project.doneTaskCount}/{project.taskCount}
-                                </Badge>
-                              </Link>
-                            </TableCell>
-                          )}
-
-                          {visibleColumns.phases && (
-                            <TableCell className="text-sm tabular-nums whitespace-nowrap text-muted-foreground">
-                              {project.milestoneCount}
-                            </TableCell>
-                          )}
-
-                          {visibleColumns.issues && (
-                            <TableCell className="whitespace-nowrap">
-                              <Link
-                                href={`/${orgSlug}/projects/issues`}
-                                className={cn(
-                                  "text-sm tabular-nums hover:underline",
-                                  project.openIssueCount > 0
-                                    ? "font-semibold text-rose-600"
-                                    : "text-muted-foreground",
-                                )}
-                              >
-                                {project.openIssueCount}/{project.issueCount}
-                              </Link>
-                            </TableCell>
-                          )}
-
-                          {visibleColumns.startDate && (
-                            <TableCell className="text-sm whitespace-nowrap text-muted-foreground">
-                              {project.startDate
-                                ? formatDate(project.startDate, { withYear: true })
-                                : "—"}
-                            </TableCell>
-                          )}
-
-                          {visibleColumns.dueDate && (
-                            <TableCell
-                              className={cn(
-                                "text-sm whitespace-nowrap",
-                                overdue ? "font-semibold text-rose-600" : "text-muted-foreground",
-                              )}
-                            >
-                              {project.dueDate
-                                ? formatDate(project.dueDate, { withYear: true })
-                                : "—"}
-                            </TableCell>
-                          )}
-
-                          {visibleColumns.budget && (
-                            <TableCell className="text-sm font-medium tabular-nums whitespace-nowrap">
-                              {project.budget !== null
-                                ? formatCurrency(project.budget, project.currency)
-                                : "—"}
-                            </TableCell>
-                          )}
-
-                          {visibleColumns.tags && (
-                            <TableCell>
-                              <div className="flex max-w-48 flex-wrap gap-1">
-                                {project.tags.length === 0 ? (
-                                  <span className="text-xs text-muted-foreground">—</span>
-                                ) : (
-                                  project.tags.map((tag) => (
-                                    <Badge
-                                      key={tag}
-                                      variant="outline"
-                                      className={cn(
-                                        "px-1.5 py-0 text-[10px]",
-                                        getTagPillClass(tag),
-                                      )}
-                                    >
-                                      #{tag}
-                                    </Badge>
-                                  ))
-                                )}
-                              </div>
-                            </TableCell>
-                          )}
-
-                          <TableCell className="text-right whitespace-nowrap">
+                          {/* Sticky End-of-Row Quick Actions (⋮) */}
+                          <TableCell
+                            className={cn(
+                              "sticky right-0 z-10 bg-background/95 text-right whitespace-nowrap shadow-[-6px_0_12px_-6px_rgba(0,0,0,0.08)] backdrop-blur-xs group-hover:bg-muted/60",
+                              isSelected && "bg-primary/5",
+                              cellPad,
+                            )}
+                          >
                             <div className="flex items-center justify-end gap-1">
-                              <Button asChild size="xs" variant="ghost">
+                              <Button asChild size="xs" variant="ghost" className="hidden sm:inline-flex">
                                 <Link href={`/${orgSlug}/projects/${project.id}`}>
                                   <FolderKanban className="size-3.5" />
                                   Open
                                 </Link>
                               </Button>
-                              {canWrite && (
-                                <Button
-                                  type="button"
-                                  size="icon-xs"
-                                  variant="ghost"
-                                  title={project.isArchived ? "Restore project" : "Archive project"}
-                                  onClick={() =>
-                                    handleToggleArchive(project.id, !project.isArchived, project.name)
-                                  }
-                                >
-                                  {project.isArchived ? (
-                                    <ArchiveRestore className="size-3.5" />
-                                  ) : (
-                                    <Archive className="size-3.5" />
+
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button
+                                    type="button"
+                                    size="icon-xs"
+                                    variant="ghost"
+                                    aria-label={`Actions for ${project.name}`}
+                                  >
+                                    <MoreVertical className="size-3.5" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end" className="w-48">
+                                  <DropdownMenuItem asChild>
+                                    <Link href={`/${orgSlug}/projects/${project.id}`}>
+                                      <ExternalLink className="size-3.5" />
+                                      Open Workspace
+                                    </Link>
+                                  </DropdownMenuItem>
+                                  {canWrite && (
+                                    <>
+                                      <DropdownMenuItem onClick={() => setEditingProject(project)}>
+                                        <Pencil className="size-3.5" />
+                                        Edit Details
+                                      </DropdownMenuItem>
+                                      <DropdownMenuItem onClick={() => handleCloneProject(project)}>
+                                        <Copy className="size-3.5" />
+                                        Clone Project
+                                      </DropdownMenuItem>
+                                      <DropdownMenuItem
+                                        onClick={() => handleSaveAsTemplate(project)}
+                                      >
+                                        <BookmarkPlus className="size-3.5" />
+                                        Save as Template
+                                      </DropdownMenuItem>
+                                      <DropdownMenuSeparator />
+                                      <DropdownMenuItem
+                                        onClick={() =>
+                                          handleToggleArchive(
+                                            project.id,
+                                            !project.isArchived,
+                                            project.name,
+                                          )
+                                        }
+                                      >
+                                        {project.isArchived ? (
+                                          <>
+                                            <ArchiveRestore className="size-3.5" />
+                                            Restore Project
+                                          </>
+                                        ) : (
+                                          <>
+                                            <Archive className="size-3.5" />
+                                            Archive Project
+                                          </>
+                                        )}
+                                      </DropdownMenuItem>
+                                      <DropdownMenuItem
+                                        variant="destructive"
+                                        onClick={() =>
+                                          setDeleteTarget({ ids: [project.id], name: project.name })
+                                        }
+                                      >
+                                        <Trash2 className="size-3.5" />
+                                        Delete Project
+                                      </DropdownMenuItem>
+                                    </>
                                   )}
-                                </Button>
-                              )}
+                                </DropdownMenuContent>
+                              </DropdownMenu>
                             </div>
                           </TableCell>
                         </TableRow>
@@ -879,6 +2178,7 @@ export function ProjectsWorkspace({
         )}
       </div>
 
+      {/* Modals & Slide-Over Drawers */}
       <NewProjectSheet
         open={sheetOpen}
         onOpenChange={setSheetOpen}
@@ -891,6 +2191,31 @@ export function ProjectsWorkspace({
         deals={workspace.deals}
         mentionItems={workspace.mentionItems}
         initialTemplate={sheetTemplate}
+      />
+
+      <QuickEditProjectSheet
+        project={editingProject}
+        open={editingProject !== null}
+        onOpenChange={(open) => !open && setEditingProject(null)}
+        orgSlug={orgSlug}
+        workspace={workspace}
+      />
+
+      <ImportProjectsDialog open={importOpen} onOpenChange={setImportOpen} orgSlug={orgSlug} />
+
+      <ProjectActivityLogSheet
+        open={activityOpen}
+        onOpenChange={setActivityOpen}
+        logs={workspace.activityLogs ?? []}
+      />
+
+      <DeleteProjectsConfirmDialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        count={deleteTarget?.ids.length ?? 0}
+        singleName={deleteTarget?.name}
+        isPending={isPending}
+        onConfirm={handleConfirmDelete}
       />
 
       <ProjectsAutomationDialog

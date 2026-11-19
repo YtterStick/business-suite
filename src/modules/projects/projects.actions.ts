@@ -15,12 +15,17 @@ import type { ActionResult } from "@/lib/action-result";
 import { ValidationError } from "@/lib/errors";
 import { sanitizeRichHtml } from "@/lib/sanitize-html";
 import {
+  bulkArchiveProjects,
+  bulkUpdateProjectsStatus,
+  cloneProject,
   createIssue,
   createMilestone,
   createProject,
   createTask,
   createTimeLog,
   deleteCommentItem,
+  deleteProjects,
+  importProjects,
   moveTaskStatus,
   postComment,
   toggleProjectArchive,
@@ -121,6 +126,89 @@ export async function updateProjectStatusAction(input: {
     await updateProjectStatus(ctx, input.projectId, input.status);
     revalidatePath(`/${input.orgSlug}/projects`, "layout");
     return null;
+  });
+}
+
+export async function bulkArchiveProjectsAction(input: {
+  orgSlug: string;
+  projectIds: string[];
+  isArchived: boolean;
+}): Promise<ActionResult<{ count: number }>> {
+  return runAction(async () => {
+    const ctx = await assertTenant(input.orgSlug);
+    const res = await bulkArchiveProjects(ctx, input.projectIds, input.isArchived);
+    revalidatePath(`/${input.orgSlug}/projects`, "layout");
+    return res;
+  });
+}
+
+export async function bulkUpdateProjectsStatusAction(input: {
+  orgSlug: string;
+  projectIds: string[];
+  status: ProjectStatus;
+}): Promise<ActionResult<{ count: number }>> {
+  return runAction(async () => {
+    const ctx = await assertTenant(input.orgSlug);
+    const res = await bulkUpdateProjectsStatus(ctx, input.projectIds, input.status);
+    revalidatePath(`/${input.orgSlug}/projects`, "layout");
+    return res;
+  });
+}
+
+export async function deleteProjectsAction(input: {
+  orgSlug: string;
+  projectIds: string[];
+}): Promise<ActionResult<{ count: number }>> {
+  return runAction(async () => {
+    const ctx = await assertTenant(input.orgSlug);
+    const res = await deleteProjects(ctx, input.projectIds);
+    revalidatePath(`/${input.orgSlug}/projects`, "layout");
+    return res;
+  });
+}
+
+export async function cloneProjectAction(input: {
+  orgSlug: string;
+  projectId: string;
+}): Promise<ActionResult<{ id: string; name: string }>> {
+  return runAction(async () => {
+    const ctx = await assertTenant(input.orgSlug);
+    const cloned = await cloneProject(ctx, input.projectId);
+    revalidatePath(`/${input.orgSlug}/projects`, "layout");
+    return cloned;
+  });
+}
+
+const importProjectsSchema = z.object({
+  orgSlug: z.string().min(1),
+  rows: z
+    .array(
+      z.object({
+        name: z.string().trim().min(2).max(180),
+        description: z.string().max(4000).nullable().optional(),
+        status: z.nativeEnum(ProjectStatus).optional(),
+        startDate: z.string().nullable().optional(),
+        dueDate: z.string().nullable().optional(),
+        budget: z.coerce.number().min(0).nullable().optional(),
+        tags: z.array(z.string()).optional(),
+      }),
+    )
+    .min(1, "Provide at least one project row to import.")
+    .max(50, "Maximum 50 projects per import batch."),
+});
+
+export async function importProjectsAction(
+  rawInput: z.input<typeof importProjectsSchema>,
+): Promise<ActionResult<{ count: number }>> {
+  return runAction(async () => {
+    const parsed = importProjectsSchema.safeParse(rawInput);
+    if (!parsed.success) {
+      throw new ValidationError(parsed.error.issues[0]?.message ?? "Invalid import data.");
+    }
+    const ctx = await assertTenant(parsed.data.orgSlug);
+    const res = await importProjects(ctx, parsed.data.rows);
+    revalidatePath(`/${parsed.data.orgSlug}/projects`, "layout");
+    return res;
   });
 }
 

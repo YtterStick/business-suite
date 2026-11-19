@@ -29,6 +29,16 @@ export interface MentionReferenceItem {
   projectName: string;
 }
 
+export interface ProjectActivityLogDTO {
+  id: string;
+  action: string;
+  entityType: string;
+  entityId: string;
+  actorName: string;
+  summary: string;
+  createdAt: string;
+}
+
 export interface ProjectSummaryDTO {
   id: string;
   name: string;
@@ -54,6 +64,7 @@ export interface ProjectSummaryDTO {
   milestoneCount: number;
   issueCount: number;
   openIssueCount: number;
+  expenseCount: number;
   hoursLogged: number;
   group: { id: string; name: string } | null;
   owner: { id: string; name: string; avatarUrl: string | null } | null;
@@ -68,6 +79,7 @@ export interface ProjectsWorkspaceDTO {
   companies: Array<{ id: string; name: string }>;
   deals: Array<{ id: string; title: string; companyId: string | null }>;
   mentionItems: MentionReferenceItem[];
+  activityLogs: ProjectActivityLogDTO[];
 }
 
 export interface TaskSubtaskItem {

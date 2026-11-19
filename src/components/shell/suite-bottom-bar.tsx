@@ -2,9 +2,16 @@
 
 import * as React from "react";
 import {
+  Activity,
   BellRing,
+  Briefcase,
+  Bug,
   Check,
+  CheckCircle2,
+  CheckSquare,
   Clock,
+  Flag,
+  FolderKanban,
   HelpCircle,
   History,
   Keyboard,
@@ -16,18 +23,35 @@ import {
   PinOff,
   Play,
   Plus,
+  Receipt,
   Send,
   Square,
   Trash2,
   Users,
+  XCircle,
 } from "lucide-react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
@@ -79,6 +103,14 @@ interface ReminderEntry {
   done: boolean;
 }
 
+interface BackgroundTaskItem {
+  id: string;
+  label: string;
+  progress: number;
+  status: "running" | "completed" | "failed";
+  updatedAt: string;
+}
+
 type UtilityPanel = "pins" | "chats" | "live-chat" | "contacts" | "timer" | null;
 
 function formatElapsed(seconds: number): string {
@@ -104,7 +136,62 @@ export function SuiteBottomBar({
   canWriteProjects: boolean;
 }) {
   const pathname = usePathname();
+  const router = useRouter();
   const [activePanel, setActivePanel] = React.useState<UtilityPanel>(null);
+  const [bgTasks, setBgTasks] = React.useState<BackgroundTaskItem[]>([]);
+
+  React.useEffect(() => {
+    const onBgTask = (event: Event) => {
+      const detail = (
+        event as CustomEvent<{
+          id: string;
+          label: string;
+          progress: number;
+          status: "running" | "completed" | "failed";
+        }>
+      ).detail;
+      if (!detail?.id) return;
+      const nowTime = new Date().toISOString().slice(11, 16) + " UTC";
+      setBgTasks((prev) => {
+        const exists = prev.some((t) => t.id === detail.id);
+        if (exists) {
+          return prev.map((t) =>
+            t.id === detail.id
+              ? {
+                  ...t,
+                  label: detail.label,
+                  progress: detail.progress,
+                  status: detail.status,
+                  updatedAt: nowTime,
+                }
+              : t,
+          );
+        }
+        return [
+          {
+            id: detail.id,
+            label: detail.label,
+            progress: detail.progress,
+            status: detail.status,
+            updatedAt: nowTime,
+          },
+          ...prev,
+        ].slice(0, 10);
+      });
+    };
+    window.addEventListener("bs-bg-task", onBgTask);
+    return () => window.removeEventListener("bs-bg-task", onBgTask);
+  }, []);
+
+  const activeRunningTask = bgTasks.find((t) => t.status === "running") ?? null;
+  const dockProgressPercent = activeRunningTask ? activeRunningTask.progress : 0;
+
+  const triggerDockQuickAdd = (href: string, quickEventKey?: string) => {
+    if (quickEventKey) {
+      window.dispatchEvent(new CustomEvent("bs-quick-add", { detail: quickEventKey }));
+    }
+    router.push(href);
+  };
 
   // My Pins (persisted in localStorage per org)
   const defaultPins = React.useMemo<PinnedRoute[]>(
@@ -534,39 +621,161 @@ export function SuiteBottomBar({
             </PopoverContent>
           </Popover>
 
-          {/* Keyboard Shortcuts (?) Popover */}
-          <Popover open={shortcutsOpen} onOpenChange={setShortcutsOpen}>
+          {/* Quick Add (+) Menu */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                aria-label="Quick add item"
+                title="Quick Add (+)"
+                className="inline-flex items-center gap-1 rounded px-2 py-1 font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground"
+              >
+                <Plus className="size-3.5 text-primary" />
+                <span className="hidden lg:inline">Quick Add</span>
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent side="top" align="end" className="w-52">
+              <DropdownMenuLabel>Quick Create</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={() => triggerDockQuickAdd(`/${orgSlug}/projects?new=1`, "projects")}
+              >
+                <FolderKanban className="size-3.5 text-violet-600" />
+                New Project
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => triggerDockQuickAdd(`/${orgSlug}/projects/tasks?new=1`, "tasks")}
+              >
+                <CheckSquare className="size-3.5 text-blue-600" />
+                New Task
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => triggerDockQuickAdd(`/${orgSlug}/projects/issues?new=1`, "issues")}
+              >
+                <Bug className="size-3.5 text-rose-600" />
+                New Issue
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() =>
+                  triggerDockQuickAdd(`/${orgSlug}/projects/milestones?new=1`, "milestones")
+                }
+              >
+                <Flag className="size-3.5 text-amber-600" />
+                New Phase / Milestone
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setActivePanel("timer")}>
+                <Clock className="size-3.5 text-emerald-600" />
+                Log Time
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => triggerDockQuickAdd(`/${orgSlug}/crm/deals`)}>
+                <Briefcase className="size-3.5 text-blue-600" />
+                New CRM Deal
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => triggerDockQuickAdd(`/${orgSlug}/finance/invoices`)}>
+                <Receipt className="size-3.5 text-emerald-600" />
+                New Finance Invoice
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {/* Keyboard Shortcuts (?) Modal Trigger */}
+          <button
+            type="button"
+            aria-label="Keyboard Shortcuts"
+            title="Keyboard Shortcuts (?)"
+            onClick={() => setShortcutsOpen(true)}
+            className="inline-flex items-center gap-1 rounded px-2 py-1 text-muted-foreground transition hover:bg-accent hover:text-foreground"
+          >
+            <HelpCircle className="size-3.5" />
+          </button>
+
+          {/* Background Task / Export Progress (0%) Indicator */}
+          <Popover>
             <PopoverTrigger asChild>
               <button
                 type="button"
-                aria-label="Keyboard Shortcuts"
-                title="Keyboard Shortcuts (?)"
-                className="inline-flex items-center gap-1 rounded px-2 py-1 text-muted-foreground transition hover:bg-accent hover:text-foreground"
+                aria-label="Background tasks and export progress"
+                title="Background Tasks & Exports"
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 font-mono text-[11px] font-semibold tabular-nums transition hover:bg-accent hover:text-foreground",
+                  activeRunningTask
+                    ? "border-primary/40 bg-primary/10 text-primary"
+                    : "border-border bg-muted/40 text-muted-foreground",
+                )}
               >
-                <HelpCircle className="size-3.5" />
+                {activeRunningTask ? (
+                  <Loader2 className="size-3 animate-spin text-primary" />
+                ) : (
+                  <Activity className="size-3" />
+                )}
+                <span>{dockProgressPercent}%</span>
               </button>
             </PopoverTrigger>
-            <PopoverContent side="top" align="end" className="w-72 p-3">
+            <PopoverContent side="top" align="end" className="w-80 p-3">
               <div className="space-y-2.5">
-                <div className="flex items-center gap-1.5 border-b pb-2">
-                  <Keyboard className="size-3.5 text-primary" />
-                  <p className="text-xs font-semibold">Keyboard Shortcuts</p>
+                <div className="flex items-center justify-between border-b pb-2">
+                  <div>
+                    <p className="text-xs font-semibold">Background Tasks &amp; Exports</p>
+                    <p className="text-[10px] text-muted-foreground">
+                      Tracks CSV exports, project imports, and batch jobs.
+                    </p>
+                  </div>
+                  {bgTasks.some((t) => t.status !== "running") && (
+                    <button
+                      type="button"
+                      onClick={() => setBgTasks((prev) => prev.filter((t) => t.status === "running"))}
+                      className="text-[11px] font-medium text-primary hover:underline"
+                    >
+                      Clear
+                    </button>
+                  )}
                 </div>
-                <div className="space-y-1.5 text-xs">
-                  {[
-                    { keys: "Ctrl / ⌘ + K", action: "Open global search" },
-                    { keys: "?", action: "Toggle shortcuts reference" },
-                    { keys: "Esc", action: "Close active drawer or modal" },
-                    { keys: "Enter / ,", action: "Commit project tag chip" },
-                  ].map((item) => (
-                    <div key={item.keys} className="flex items-center justify-between gap-2">
-                      <span className="text-muted-foreground">{item.action}</span>
-                      <kbd className="rounded border bg-muted px-1.5 py-0.5 font-mono text-[10px]">
-                        {item.keys}
-                      </kbd>
-                    </div>
-                  ))}
-                </div>
+
+                {bgTasks.length === 0 ? (
+                  <div className="py-4 text-center text-xs text-muted-foreground">
+                    <p>No active background jobs (0%).</p>
+                    <p className="mt-0.5 text-[11px]">
+                      CSV exports &amp; batch imports will report live progress here.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="max-h-52 space-y-2 overflow-y-auto">
+                    {bgTasks.map((job) => (
+                      <div key={job.id} className="space-y-1.5 rounded-md border bg-muted/20 p-2 text-xs">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="flex min-w-0 items-center gap-1.5 font-medium">
+                            {job.status === "running" ? (
+                              <Loader2 className="size-3 shrink-0 animate-spin text-primary" />
+                            ) : job.status === "completed" ? (
+                              <CheckCircle2 className="size-3 shrink-0 text-emerald-600" />
+                            ) : (
+                              <XCircle className="size-3 shrink-0 text-destructive" />
+                            )}
+                            <span className="truncate">{job.label}</span>
+                          </span>
+                          <span className="shrink-0 font-mono text-[10px] font-semibold tabular-nums">
+                            {job.progress}%
+                          </span>
+                        </div>
+                        <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                          <div
+                            className={cn(
+                              "h-full rounded-full transition-all duration-300",
+                              job.status === "failed"
+                                ? "bg-destructive"
+                                : job.status === "completed"
+                                  ? "bg-emerald-600"
+                                  : "bg-primary",
+                            )}
+                            style={{ width: `${job.progress}%` }}
+                          />
+                        </div>
+                        <p className="text-[10px] text-muted-foreground">{job.updatedAt}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </PopoverContent>
           </Popover>
@@ -604,6 +813,69 @@ export function SuiteBottomBar({
           </div>
         </div>
       </footer>
+
+      {/* Keyboard Shortcuts Modal */}
+      <Dialog open={shortcutsOpen} onOpenChange={setShortcutsOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Keyboard className="size-4 text-primary" />
+              Keyboard Shortcuts
+            </DialogTitle>
+            <DialogDescription>
+              Speed up your workflow across Projects, Tasks, CRM, and Finance.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Global Navigation
+              </p>
+              <div className="space-y-1.5 text-xs">
+                {[
+                  { keys: "Ctrl / ⌘ + K", action: "Open global search" },
+                  { keys: "?", action: "Open keyboard shortcuts" },
+                  { keys: "Esc", action: "Close modal or drawer" },
+                ].map((item) => (
+                  <div
+                    key={item.keys}
+                    className="flex items-center justify-between gap-2 rounded border bg-muted/20 px-2.5 py-1.5"
+                  >
+                    <span>{item.action}</span>
+                    <kbd className="rounded border bg-background px-1.5 py-0.5 font-mono text-[10px]">
+                      {item.keys}
+                    </kbd>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Projects &amp; Tasks
+              </p>
+              <div className="space-y-1.5 text-xs">
+                {[
+                  { keys: "Enter", action: "Save inline Kanban task" },
+                  { keys: "Enter / ,", action: "Add project tag chip" },
+                  { keys: "Drag", action: "Reorder table columns or cards" },
+                ].map((item) => (
+                  <div
+                    key={item.keys}
+                    className="flex items-center justify-between gap-2 rounded border bg-muted/20 px-2.5 py-1.5"
+                  >
+                    <span>{item.action}</span>
+                    <kbd className="rounded border bg-background px-1.5 py-0.5 font-mono text-[10px]">
+                      {item.keys}
+                    </kbd>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Utility Drawer */}
       <Sheet open={activePanel !== null} onOpenChange={(open) => !open && setActivePanel(null)}>

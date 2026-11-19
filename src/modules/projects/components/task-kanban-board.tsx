@@ -17,7 +17,9 @@ import { CSS } from "@dnd-kit/utilities";
 import type { TaskPriority, TaskStatus } from "@prisma/client";
 import {
   Calendar,
+  ChevronDown,
   Clock,
+  Filter,
   GanttChart,
   GitBranch,
   GripVertical,
@@ -28,6 +30,7 @@ import {
   Loader2,
   Plus,
   Search,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -35,6 +38,15 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -61,6 +73,15 @@ import type { TaskCardDTO, TasksBoardDTO } from "@/modules/projects/projects.typ
 
 type TaskViewMode = "list" | "kanban" | "gantt";
 type TaskGroupBy = "project" | "status" | "priority" | "owner";
+type TaskSavedView = "all_open" | "all" | "mine" | "overdue" | "high_priority";
+
+const TASK_SAVED_VIEW_LABELS: Record<TaskSavedView, string> = {
+  all_open: "All Open",
+  all: "All Tasks",
+  mine: "My Tasks",
+  overdue: "Overdue",
+  high_priority: "High Priority",
+};
 
 const TASK_COLUMNS: Array<{ status: TaskStatus; label: string; dot: string }> = [
   { status: "TODO", label: "Open / To Do", dot: "bg-slate-500" },
@@ -208,7 +229,10 @@ function TaskColumn({
   dot,
   tasks,
   canWrite,
+  projects,
+  defaultProjectId,
   onAddInStatus,
+  onQuickCreate,
   onOpenTask,
 }: {
   status: TaskStatus;
@@ -216,10 +240,48 @@ function TaskColumn({
   dot: string;
   tasks: TaskCardDTO[];
   canWrite: boolean;
+  projects: Array<{ id: string; name: string }>;
+  defaultProjectId: string;
   onAddInStatus: (status: TaskStatus) => void;
+  onQuickCreate: (payload: {
+    status: TaskStatus;
+    title: string;
+    projectId: string;
+    priority: TaskPriority;
+  }) => Promise<boolean>;
   onOpenTask: (taskId: string) => void;
 }) {
   const { isOver, setNodeRef } = useDroppable({ id: `col:${status}` });
+  const [composerOpen, setComposerOpen] = React.useState(false);
+  const [quickTitle, setQuickTitle] = React.useState("");
+  const [quickProjectId, setQuickProjectId] = React.useState(
+    defaultProjectId || projects[0]?.id || "",
+  );
+  const [quickPriority, setQuickPriority] = React.useState<TaskPriority>("MEDIUM");
+  const [saving, setSaving] = React.useState(false);
+
+  React.useEffect(() => {
+    if (defaultProjectId) setQuickProjectId(defaultProjectId);
+    else if (!quickProjectId && projects[0]?.id) setQuickProjectId(projects[0].id);
+  }, [defaultProjectId, projects, quickProjectId]);
+
+  const handleInlineSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const trimmed = quickTitle.trim();
+    const targetProject = defaultProjectId || quickProjectId || projects[0]?.id || "";
+    if (!trimmed || !targetProject) return;
+    setSaving(true);
+    const ok = await onQuickCreate({
+      status,
+      title: trimmed,
+      projectId: targetProject,
+      priority: quickPriority,
+    });
+    setSaving(false);
+    if (ok) {
+      setQuickTitle("");
+    }
+  };
 
   return (
     <div
@@ -242,6 +304,7 @@ function TaskColumn({
           <button
             type="button"
             onClick={() => onAddInStatus(status)}
+            title={`New task in ${label} (full drawer)`}
             className="rounded p-1 text-muted-foreground transition hover:bg-background hover:text-foreground"
             aria-label={`Add task to ${label}`}
           >
@@ -252,7 +315,7 @@ function TaskColumn({
 
       <SortableContext items={tasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
         <div className="flex flex-1 flex-col gap-2.5">
-          {tasks.length === 0 ? (
+          {tasks.length === 0 && !composerOpen ? (
             <div className="flex h-24 items-center justify-center rounded-lg border border-dashed text-xs text-muted-foreground">
               Drop tasks here
             </div>
@@ -268,6 +331,87 @@ function TaskColumn({
           )}
         </div>
       </SortableContext>
+
+      {/* Inline Quick-Add at the bottom of each Kanban column */}
+      {canWrite && projects.length > 0 && (
+        <div className="mt-2.5 pt-1">
+          {composerOpen ? (
+            <form
+              onSubmit={handleInlineSubmit}
+              className="space-y-2 rounded-lg border bg-card p-2.5 shadow-2xs"
+            >
+              <Input
+                autoFocus
+                value={quickTitle}
+                onChange={(e) => setQuickTitle(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") {
+                    setComposerOpen(false);
+                    setQuickTitle("");
+                  }
+                }}
+                placeholder="Enter task title..."
+                className="h-8 text-xs"
+                required
+              />
+              <div className="flex items-center gap-1.5">
+                {!defaultProjectId && (
+                  <select
+                    aria-label="Project for quick task"
+                    value={quickProjectId}
+                    onChange={(e) => setQuickProjectId(e.target.value)}
+                    className="h-7 min-w-0 flex-1 rounded border border-input bg-background px-1.5 text-[11px]"
+                  >
+                    {projects.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                <select
+                  aria-label="Priority for quick task"
+                  value={quickPriority}
+                  onChange={(e) => setQuickPriority(e.target.value as TaskPriority)}
+                  className="h-7 rounded border border-input bg-background px-1.5 text-[11px]"
+                >
+                  <option value="LOW">Low</option>
+                  <option value="MEDIUM">Medium</option>
+                  <option value="HIGH">High</option>
+                  <option value="URGENT">Urgent</option>
+                </select>
+              </div>
+              <div className="flex items-center justify-end gap-1.5">
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="ghost"
+                  onClick={() => {
+                    setComposerOpen(false);
+                    setQuickTitle("");
+                  }}
+                >
+                  <X className="size-3" />
+                  Cancel
+                </Button>
+                <Button type="submit" size="xs" disabled={saving || !quickTitle.trim()}>
+                  {saving ? <Loader2 className="size-3 animate-spin" /> : <Plus className="size-3" />}
+                  Add
+                </Button>
+              </div>
+            </form>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setComposerOpen(true)}
+              className="flex w-full items-center gap-1.5 rounded-lg border border-transparent px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition hover:border-border hover:bg-background hover:text-foreground"
+            >
+              <Plus className="size-3.5" />
+              <span>Add Task</span>
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -275,6 +419,7 @@ function TaskColumn({
 export function TaskKanbanBoard({
   orgSlug,
   todayIso = "",
+  currentUserId = "",
   initialBoard,
   canWrite,
   defaultProjectId,
@@ -282,6 +427,7 @@ export function TaskKanbanBoard({
 }: {
   orgSlug: string;
   todayIso?: string;
+  currentUserId?: string;
   initialBoard: TasksBoardDTO;
   canWrite: boolean;
   defaultProjectId?: string;
@@ -290,6 +436,7 @@ export function TaskKanbanBoard({
   const dndContextId = React.useId();
   const [tasks, setTasks] = React.useState<TaskCardDTO[]>(initialBoard.tasks);
   const [viewMode, setViewMode] = React.useState<TaskViewMode>("kanban");
+  const [savedView, setSavedView] = React.useState<TaskSavedView>("all");
   const [groupBy, setGroupBy] = React.useState<TaskGroupBy>("project");
   const [projectFilter, setProjectFilter] = React.useState(defaultProjectId ?? "");
   const [search, setSearch] = React.useState("");
@@ -326,10 +473,36 @@ export function TaskKanbanBoard({
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
   );
 
+  const refTodayIso = todayIso || "2026-11-19";
+
+  const savedViewCounts = React.useMemo(() => {
+    const scoped = projectFilter ? tasks.filter((t) => t.projectId === projectFilter) : tasks;
+    return {
+      all: scoped.length,
+      all_open: scoped.filter((t) => t.status !== "DONE").length,
+      mine: scoped.filter((t) => t.assignee?.id === currentUserId).length,
+      overdue: scoped.filter(
+        (t) => t.dueDate !== null && t.dueDate < refTodayIso && t.status !== "DONE",
+      ).length,
+      high_priority: scoped.filter((t) => t.priority === "HIGH" || t.priority === "URGENT").length,
+    };
+  }, [tasks, projectFilter, currentUserId, refTodayIso]);
+
   const visibleTasks = React.useMemo(() => {
     const q = search.trim().toLowerCase();
     return tasks.filter((t) => {
       if (projectFilter && t.projectId !== projectFilter) return false;
+      if (savedView === "all_open" && t.status === "DONE") return false;
+      if (savedView === "mine" && t.assignee?.id !== currentUserId) return false;
+      if (
+        savedView === "overdue" &&
+        (!t.dueDate || t.dueDate >= refTodayIso || t.status === "DONE")
+      ) {
+        return false;
+      }
+      if (savedView === "high_priority" && t.priority !== "HIGH" && t.priority !== "URGENT") {
+        return false;
+      }
       if (!q) return true;
       return (
         t.title.toLowerCase().includes(q) ||
@@ -337,7 +510,7 @@ export function TaskKanbanBoard({
         (t.assignee?.name.toLowerCase().includes(q) ?? false)
       );
     });
-  }, [tasks, projectFilter, search]);
+  }, [tasks, projectFilter, savedView, currentUserId, refTodayIso, search]);
 
   const groupedTasks = React.useMemo(() => {
     const map = new Map<string, TaskCardDTO[]>();
@@ -436,6 +609,29 @@ export function TaskKanbanBoard({
       setCreateOpen(false);
       toast.success(`Task "${res.data.title}" added`);
     });
+  };
+
+  const handleInlineQuickCreate = async (payload: {
+    status: TaskStatus;
+    title: string;
+    projectId: string;
+    priority: TaskPriority;
+  }): Promise<boolean> => {
+    const res = await createTaskAction({
+      orgSlug,
+      projectId: payload.projectId,
+      title: payload.title,
+      priority: payload.priority,
+      status: payload.status,
+      assigneeId: currentUserId || null,
+    });
+    if (!res.ok) {
+      toast.error(res.error.message);
+      return false;
+    }
+    setTasks((prev) => [...prev, res.data]);
+    toast.success(`Added "${res.data.title}" to ${STATUS_LABELS[payload.status]}`);
+    return true;
   };
 
   // Gantt bounds
@@ -539,6 +735,48 @@ export function TaskKanbanBoard({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {/* Saved Task View Filter Dropdown */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-8 gap-1.5 bg-background text-xs font-medium"
+              >
+                <Filter className="size-3.5 text-primary" />
+                <span>{TASK_SAVED_VIEW_LABELS[savedView]}</span>
+                <Badge variant="secondary" className="px-1 py-0 text-[10px] tabular-nums">
+                  {savedViewCounts[savedView]}
+                </Badge>
+                <ChevronDown className="size-3 opacity-60" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-52">
+              <DropdownMenuLabel>Task Views</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuRadioGroup
+                value={savedView}
+                onValueChange={(val) => setSavedView(val as TaskSavedView)}
+              >
+                {(
+                  ["all_open", "mine", "overdue", "high_priority", "all"] as TaskSavedView[]
+                ).map((viewKey) => (
+                  <DropdownMenuRadioItem
+                    key={viewKey}
+                    value={viewKey}
+                    className="flex items-center justify-between"
+                  >
+                    <span>{TASK_SAVED_VIEW_LABELS[viewKey]}</span>
+                    <Badge variant="secondary" className="ml-2 px-1.5 py-0 text-[10px] tabular-nums">
+                      {savedViewCounts[viewKey]}
+                    </Badge>
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
           <select
             aria-label="Filter tasks by project"
             value={projectFilter}
@@ -553,7 +791,7 @@ export function TaskKanbanBoard({
             ))}
           </select>
 
-          <div className="relative w-56">
+          <div className="relative w-52 sm:w-56">
             <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={search}
@@ -698,10 +936,13 @@ export function TaskKanbanBoard({
                     dot={col.dot}
                     tasks={visibleTasks.filter((t) => t.status === col.status)}
                     canWrite={canWrite}
+                    projects={initialBoard.projects}
+                    defaultProjectId={projectFilter}
                     onAddInStatus={(st) => {
                       setNewStatus(st);
                       setCreateOpen(true);
                     }}
+                    onQuickCreate={handleInlineQuickCreate}
                     onOpenTask={(id) => setDetailTaskId(id)}
                   />
                 ))}

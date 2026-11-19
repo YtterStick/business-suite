@@ -3,6 +3,8 @@
 import * as React from "react";
 import type { MembershipRole } from "@prisma/client";
 import {
+  ArrowDown,
+  ArrowUp,
   BarChart3,
   Building2,
   Bug,
@@ -18,6 +20,7 @@ import {
   FileText,
   Flag,
   FolderKanban,
+  GripVertical,
   Handshake,
   Home,
   Kanban,
@@ -160,6 +163,8 @@ export function AppSwitcherSidebar({
   const [inviteOpen, setInviteOpen] = React.useState(false);
   const [overviewOpen, setOverviewOpen] = React.useState(true);
   const [hiddenIds, setHiddenIds] = React.useState<string[]>([]);
+  const [customOrderByModule, setCustomOrderByModule] = React.useState<Record<string, string[]>>({});
+  const [draggedNavId, setDraggedNavId] = React.useState<string | null>(null);
   const canInvite = can(role, "org.members.manage");
 
   React.useEffect(() => {
@@ -168,6 +173,13 @@ export function AppSwitcherSidebar({
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed)) setHiddenIds(parsed);
+      }
+      const savedOrder = window.localStorage.getItem(`bs_sidebar_order_${orgSlug}`);
+      if (savedOrder) {
+        const parsedOrder = JSON.parse(savedOrder);
+        if (parsedOrder && typeof parsedOrder === "object") {
+          setCustomOrderByModule(parsedOrder as Record<string, string[]>);
+        }
       }
     } catch {
       // Ignore storage read errors
@@ -184,6 +196,70 @@ export function AppSwitcherSidebar({
       }
       return next;
     });
+  };
+
+  const orderedModuleItems = React.useMemo(() => {
+    const savedIds = customOrderByModule[activeModule.id];
+    if (!savedIds || savedIds.length === 0) return activeModule.items;
+    const itemById = new Map(activeModule.items.map((item) => [item.id, item]));
+    const ordered: typeof activeModule.items = [];
+    for (const id of savedIds) {
+      const found = itemById.get(id);
+      if (found) ordered.push(found);
+    }
+    for (const item of activeModule.items) {
+      if (!savedIds.includes(item.id)) ordered.push(item);
+    }
+    return ordered;
+  }, [activeModule, customOrderByModule]);
+
+  const persistModuleOrder = (nextIds: string[]) => {
+    setCustomOrderByModule((prev) => {
+      const updated = { ...prev, [activeModule.id]: nextIds };
+      try {
+        window.localStorage.setItem(`bs_sidebar_order_${orgSlug}`, JSON.stringify(updated));
+      } catch {
+        // Ignore storage write errors
+      }
+      return updated;
+    });
+  };
+
+  const moveNavItem = (id: string, delta: -1 | 1) => {
+    const ids = orderedModuleItems.map((i) => i.id);
+    const idx = ids.indexOf(id);
+    const targetIdx = idx + delta;
+    if (idx < 0 || targetIdx < 0 || targetIdx >= ids.length) return;
+    const next = [...ids];
+    const [moved] = next.splice(idx, 1);
+    next.splice(targetIdx, 0, moved!);
+    persistModuleOrder(next);
+  };
+
+  const reorderNavItems = (sourceId: string, targetId: string) => {
+    if (sourceId === targetId) return;
+    const ids = orderedModuleItems.map((i) => i.id);
+    const fromIdx = ids.indexOf(sourceId);
+    const toIdx = ids.indexOf(targetId);
+    if (fromIdx < 0 || toIdx < 0) return;
+    const next = [...ids];
+    const [moved] = next.splice(fromIdx, 1);
+    next.splice(toIdx, 0, moved!);
+    persistModuleOrder(next);
+  };
+
+  const resetSidebarCustomization = () => {
+    const moduleItemIds = new Set(activeModule.items.map((i) => i.id));
+    setHiddenIds((prev) => {
+      const next = prev.filter((id) => !moduleItemIds.has(id));
+      try {
+        window.localStorage.setItem(`bs_sidebar_hidden_${orgSlug}`, JSON.stringify(next));
+      } catch {
+        // Ignore
+      }
+      return next;
+    });
+    persistModuleOrder(activeModule.items.map((i) => i.id));
   };
 
   return (
@@ -398,10 +474,10 @@ export function AppSwitcherSidebar({
         {/* Contextual Navigation Links */}
         <ScrollArea className="flex-1 px-2.5 py-3">
           {(() => {
-            const mainItems = activeModule.items.filter(
+            const mainItems = orderedModuleItems.filter(
               (i) => i.section !== "overview" && !hiddenIds.includes(i.id),
             );
-            const overviewItems = activeModule.items.filter(
+            const overviewItems = orderedModuleItems.filter(
               (i) => i.section === "overview" && !hiddenIds.includes(i.id),
             );
             const renderNavLink = (item: (typeof activeModule.items)[number]) => {
@@ -513,27 +589,70 @@ export function AppSwitcherSidebar({
                             <SlidersHorizontal className="size-3" />
                           </button>
                         </PopoverTrigger>
-                        <PopoverContent side="right" align="start" className="w-56 p-3">
-                          <p className="text-xs font-semibold">Customize Sidebar</p>
-                          <p className="mt-0.5 text-[11px] text-muted-foreground">
-                            Show or hide navigation links in {activeModule.name}.
-                          </p>
-                          <div className="mt-2.5 max-h-60 space-y-1.5 overflow-y-auto">
-                            {activeModule.items.map((navItem) => {
+                        <PopoverContent side="right" align="start" className="w-64 p-3">
+                          <div className="flex items-center justify-between border-b pb-2">
+                            <div>
+                              <p className="text-xs font-semibold">Customize Sidebar</p>
+                              <p className="mt-0.5 text-[10px] text-muted-foreground">
+                                Show, hide, or reorder {activeModule.name} links.
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={resetSidebarCustomization}
+                              className="text-[11px] font-medium text-primary hover:underline"
+                            >
+                              Reset
+                            </button>
+                          </div>
+                          <div className="mt-2 max-h-64 space-y-1 overflow-y-auto">
+                            {orderedModuleItems.map((navItem, idx) => {
                               const visible = !hiddenIds.includes(navItem.id);
                               return (
-                                <label
+                                <div
                                   key={navItem.id}
-                                  className="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-xs hover:bg-muted/60"
+                                  draggable
+                                  onDragStart={() => setDraggedNavId(navItem.id)}
+                                  onDragOver={(e) => e.preventDefault()}
+                                  onDrop={(e) => {
+                                    e.preventDefault();
+                                    if (draggedNavId) reorderNavItems(draggedNavId, navItem.id);
+                                    setDraggedNavId(null);
+                                  }}
+                                  onDragEnd={() => setDraggedNavId(null)}
+                                  className="flex items-center justify-between gap-1.5 rounded px-1.5 py-1 text-xs hover:bg-muted/60"
                                 >
-                                  <input
-                                    type="checkbox"
-                                    checked={visible}
-                                    onChange={() => toggleItemVisibility(navItem.id)}
-                                    className="size-3.5 accent-primary"
-                                  />
-                                  <span>{navItem.label}</span>
-                                </label>
+                                  <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5">
+                                    <GripVertical className="size-3 shrink-0 cursor-grab text-muted-foreground/60" />
+                                    <input
+                                      type="checkbox"
+                                      checked={visible}
+                                      onChange={() => toggleItemVisibility(navItem.id)}
+                                      className="size-3.5 accent-primary"
+                                    />
+                                    <span className="truncate">{navItem.label}</span>
+                                  </label>
+                                  <div className="flex shrink-0 items-center gap-0.5">
+                                    <button
+                                      type="button"
+                                      disabled={idx === 0}
+                                      aria-label={`Move ${navItem.label} up`}
+                                      onClick={() => moveNavItem(navItem.id, -1)}
+                                      className="rounded p-0.5 text-muted-foreground hover:bg-background hover:text-foreground disabled:opacity-30"
+                                    >
+                                      <ArrowUp className="size-3" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      disabled={idx === orderedModuleItems.length - 1}
+                                      aria-label={`Move ${navItem.label} down`}
+                                      onClick={() => moveNavItem(navItem.id, 1)}
+                                      className="rounded p-0.5 text-muted-foreground hover:bg-background hover:text-foreground disabled:opacity-30"
+                                    >
+                                      <ArrowDown className="size-3" />
+                                    </button>
+                                  </div>
+                                </div>
                               );
                             })}
                           </div>

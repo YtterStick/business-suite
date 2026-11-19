@@ -20,6 +20,7 @@ import type {
   CommentDTO,
   IssueRowDTO,
   MentionReferenceItem,
+  ProjectActivityLogDTO,
   ProjectBlueprintPhase,
   ProjectSummaryDTO,
   ProjectsWorkspaceDTO,
@@ -143,7 +144,7 @@ export async function listProjectsWorkspace(ctx: TenantContext): Promise<Project
   authorize(ctx, "projects.project.read");
   const organizationId = ctx.organization.id;
 
-  const [projects, groups, memberships, companies, deals, recentTasks, recentIssues] =
+  const [projects, groups, memberships, companies, deals, recentTasks, recentIssues, rawAuditLogs] =
     await Promise.all([
       db.project.findMany({
         where: { organizationId },
@@ -156,7 +157,7 @@ export async function listProjectsWorkspace(ctx: TenantContext): Promise<Project
           tasks: { select: { status: true } },
           issues: { select: { status: true } },
           timeLogs: { select: { hours: true } },
-          _count: { select: { milestones: true } },
+          _count: { select: { milestones: true, expenses: true, expenseClaims: true } },
         },
       }),
       db.projectGroup.findMany({
@@ -193,7 +194,18 @@ export async function listProjectsWorkspace(ctx: TenantContext): Promise<Project
         take: 25,
         select: { id: true, title: true, project: { select: { name: true } } },
       }),
+      db.auditLog.findMany({
+        where: {
+          organizationId,
+          entityType: { in: ["Project", "Task", "Milestone", "Issue", "Deal"] },
+        },
+        orderBy: { createdAt: "desc" },
+        take: 40,
+      }),
     ]);
+
+  const memberNameById = new Map(memberships.map((m) => [m.user.id, m.user.name]));
+  const projectNameById = new Map(projects.map((p) => [p.id, p.name]));
 
   const summaries: ProjectSummaryDTO[] = projects.map((p) => {
     const taskCount = p.tasks.length;
@@ -230,11 +242,34 @@ export async function listProjectsWorkspace(ctx: TenantContext): Promise<Project
       milestoneCount: p._count.milestones,
       issueCount,
       openIssueCount,
+      expenseCount: p._count.expenses + p._count.expenseClaims,
       hoursLogged,
       group: p.group,
       owner: p.owner,
       company: p.company,
       deal: p.deal,
+    };
+  });
+
+  const activityLogs: ProjectActivityLogDTO[] = rawAuditLogs.map((log) => {
+    const meta = (log.metadata ?? {}) as Record<string, unknown>;
+    const actorName = (log.actorId && memberNameById.get(log.actorId)) || "System Automation";
+    const metaName =
+      typeof meta.name === "string"
+        ? meta.name
+        : typeof meta.title === "string"
+          ? meta.title
+          : projectNameById.get(log.entityId) ?? log.entityType;
+    const countSuffix = typeof meta.count === "number" ? ` (${meta.count} items)` : "";
+    const statusSuffix = typeof meta.status === "string" ? ` → ${meta.status}` : "";
+    return {
+      id: log.id,
+      action: log.action,
+      entityType: log.entityType,
+      entityId: log.entityId,
+      actorName,
+      summary: `${log.action.replace(/\./g, " ")} · ${metaName}${statusSuffix}${countSuffix}`,
+      createdAt: log.createdAt.toISOString(),
     };
   });
 
@@ -266,6 +301,7 @@ export async function listProjectsWorkspace(ctx: TenantContext): Promise<Project
     companies,
     deals,
     mentionItems,
+    activityLogs,
   };
 }
 
@@ -440,6 +476,268 @@ export async function updateProjectStatus(
   if (updated.count === 0) {
     throw new NotFoundError("Project not found.");
   }
+}
+
+export async function bulkArchiveProjects(
+  ctx: TenantContext,
+  projectIds: string[],
+  isArchived: boolean,
+): Promise<{ count: number }> {
+  authorize(ctx, "projects.project.write");
+  const ids = Array.from(new Set(projectIds)).filter(Boolean);
+  if (ids.length === 0) {
+    throw new ValidationError("Select at least one project.");
+  }
+  const organizationId = ctx.organization.id;
+  return db.$transaction(async (tx) => {
+    const res = await tx.project.updateMany({
+      where: { organizationId, id: { in: ids } },
+      data: { isArchived },
+    });
+    await recordAudit(tx, {
+      organizationId,
+      actorId: ctx.user.id,
+      entityType: "Project",
+      entityId: ids[0]!,
+      action: isArchived ? "project.bulk_archived" : "project.bulk_restored",
+      metadata: { count: res.count, projectIds: ids },
+    });
+    return { count: res.count };
+  });
+}
+
+export async function bulkUpdateProjectsStatus(
+  ctx: TenantContext,
+  projectIds: string[],
+  status: ProjectStatus,
+): Promise<{ count: number }> {
+  authorize(ctx, "projects.project.write");
+  const ids = Array.from(new Set(projectIds)).filter(Boolean);
+  if (ids.length === 0) {
+    throw new ValidationError("Select at least one project.");
+  }
+  const organizationId = ctx.organization.id;
+  return db.$transaction(async (tx) => {
+    const res = await tx.project.updateMany({
+      where: { organizationId, id: { in: ids } },
+      data: { status },
+    });
+    await recordAudit(tx, {
+      organizationId,
+      actorId: ctx.user.id,
+      entityType: "Project",
+      entityId: ids[0]!,
+      action: "project.bulk_status_updated",
+      metadata: { count: res.count, status, projectIds: ids },
+    });
+    return { count: res.count };
+  });
+}
+
+export async function deleteProjects(
+  ctx: TenantContext,
+  projectIds: string[],
+): Promise<{ count: number }> {
+  authorize(ctx, "projects.project.write");
+  const ids = Array.from(new Set(projectIds)).filter(Boolean);
+  if (ids.length === 0) {
+    throw new ValidationError("Select at least one project to delete.");
+  }
+  const organizationId = ctx.organization.id;
+  return db.$transaction(async (tx) => {
+    const existing = await tx.project.findMany({
+      where: { organizationId, id: { in: ids } },
+      select: { id: true, name: true },
+    });
+    if (existing.length === 0) {
+      throw new NotFoundError("No matching projects found.");
+    }
+    const existingIds = existing.map((p) => p.id);
+
+    // Unlink Finance expenses (onDelete: Restrict) before deleting projects
+    await tx.expense.updateMany({
+      where: { organizationId, projectId: { in: existingIds } },
+      data: { projectId: null },
+    });
+
+    const deleted = await tx.project.deleteMany({
+      where: { organizationId, id: { in: existingIds } },
+    });
+
+    await recordAudit(tx, {
+      organizationId,
+      actorId: ctx.user.id,
+      entityType: "Project",
+      entityId: existingIds[0]!,
+      action: deleted.count > 1 ? "project.bulk_deleted" : "project.deleted",
+      metadata: {
+        count: deleted.count,
+        name: existing.length === 1 ? existing[0]!.name : `${existing.length} projects`,
+      },
+    });
+
+    return { count: deleted.count };
+  });
+}
+
+export async function cloneProject(
+  ctx: TenantContext,
+  projectId: string,
+): Promise<{ id: string; name: string }> {
+  authorize(ctx, "projects.project.write");
+  const organizationId = ctx.organization.id;
+
+  return db.$transaction(async (tx) => {
+    const src = await tx.project.findFirst({
+      where: { id: projectId, organizationId },
+      include: {
+        milestones: { orderBy: { position: "asc" } },
+        tasks: { orderBy: { position: "asc" } },
+      },
+    });
+    if (!src) {
+      throw new NotFoundError("Project not found.");
+    }
+
+    const clonedName = `${src.name} (Copy)`;
+    const cloned = await tx.project.create({
+      data: {
+        organizationId,
+        groupId: src.groupId,
+        name: clonedName,
+        description: src.description,
+        status: ProjectStatus.PLANNING,
+        source: RecordSource.MANUAL,
+        ownerId: src.ownerId ?? ctx.user.id,
+        companyId: src.companyId,
+        dealId: null,
+        startDate: src.startDate,
+        dueDate: src.dueDate,
+        budget: src.budget,
+        currency: src.currency,
+        isStrict: src.isStrict,
+        isPublic: src.isPublic,
+        isArchived: false,
+        rollupEnabled: src.rollupEnabled,
+        businessHours: src.businessHours,
+        taskLayout: src.taskLayout,
+        enabledTabs: src.enabledTabs,
+        templateName: src.templateName,
+        tags: src.tags,
+      },
+      select: { id: true, name: true },
+    });
+
+    const milestoneMap = new Map<string, string>();
+    for (const ms of src.milestones) {
+      const createdMs = await tx.milestone.create({
+        data: {
+          organizationId,
+          projectId: cloned.id,
+          name: ms.name,
+          description: ms.description,
+          status: MilestoneStatus.PENDING,
+          dueDate: ms.dueDate,
+          position: ms.position,
+        },
+        select: { id: true },
+      });
+      milestoneMap.set(ms.id, createdMs.id);
+    }
+
+    for (const t of src.tasks) {
+      await tx.task.create({
+        data: {
+          organizationId,
+          projectId: cloned.id,
+          milestoneId: t.milestoneId ? (milestoneMap.get(t.milestoneId) ?? null) : null,
+          assigneeId: t.assigneeId,
+          reporterId: ctx.user.id,
+          title: t.title,
+          description: t.description,
+          status: TaskStatus.TODO,
+          priority: t.priority,
+          position: t.position,
+          dueDate: t.dueDate,
+        },
+      });
+    }
+
+    await recordAudit(tx, {
+      organizationId,
+      actorId: ctx.user.id,
+      entityType: "Project",
+      entityId: cloned.id,
+      action: "project.cloned",
+      metadata: { name: cloned.name, sourceProjectId: src.id, sourceName: src.name },
+    });
+
+    return cloned;
+  });
+}
+
+export async function importProjects(
+  ctx: TenantContext,
+  rows: Array<{
+    name: string;
+    description?: string | null;
+    status?: ProjectStatus;
+    startDate?: string | null;
+    dueDate?: string | null;
+    budget?: number | null;
+    tags?: string[];
+  }>,
+): Promise<{ count: number }> {
+  authorize(ctx, "projects.project.write");
+  if (rows.length === 0) {
+    throw new ValidationError("No valid project rows provided for import.");
+  }
+  const organizationId = ctx.organization.id;
+
+  return db.$transaction(async (tx) => {
+    let count = 0;
+    let firstId = "";
+    for (const row of rows) {
+      const cleanName = row.name.trim();
+      if (cleanName.length < 2) continue;
+      const created = await tx.project.create({
+        data: {
+          organizationId,
+          name: cleanName.slice(0, 180),
+          description: row.description?.trim() || null,
+          status: row.status ?? ProjectStatus.ACTIVE,
+          source: RecordSource.MANUAL,
+          ownerId: ctx.user.id,
+          startDate: row.startDate ? startOfUtcDay(new Date(row.startDate)) : startOfUtcDay(new Date()),
+          dueDate: row.dueDate ? startOfUtcDay(new Date(row.dueDate)) : null,
+          budget:
+            row.budget !== null && row.budget !== undefined && Number.isFinite(row.budget)
+              ? new Prisma.Decimal(Math.max(0, row.budget)).toDecimalPlaces(2)
+              : null,
+          currency: ctx.organization.defaultCurrency,
+          tags: (row.tags ?? []).map((t) => t.trim()).filter(Boolean).slice(0, 12),
+        },
+        select: { id: true },
+      });
+      if (!firstId) firstId = created.id;
+      count += 1;
+    }
+
+    if (count === 0) {
+      throw new ValidationError("No valid rows with project names found.");
+    }
+
+    await recordAudit(tx, {
+      organizationId,
+      actorId: ctx.user.id,
+      entityType: "Project",
+      entityId: firstId,
+      action: "project.imported",
+      metadata: { count, name: `${count} imported project(s)` },
+    });
+
+    return { count };
+  });
 }
 
 export async function getTasksBoard(
