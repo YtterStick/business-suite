@@ -4,7 +4,7 @@ services:
     runtime: node
     plan: free
     region: singapore
-    buildCommand: npm ci && npm run db:deploy && npm run build
+    buildCommand: npm ci --include=dev && npm run db:deploy && npm run build
     startCommand: npx next start -H 0.0.0.0 -p ${PORT:-10000}
     healthCheckPath: /api/health
     autoDeploy: true
