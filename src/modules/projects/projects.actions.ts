@@ -25,6 +25,7 @@ import {
   createTimeLog,
   deleteCommentItem,
   deleteProjects,
+  deleteTask,
   importProjects,
   importTasks,
   moveTaskStatus,
@@ -275,6 +276,8 @@ const extendedTaskStatusSchema = z.enum([
   "TODO",
   "IN_PROGRESS",
   "IN_REVIEW",
+  "TO_BE_TESTED",
+  "ON_HOLD",
   "DONE",
   "CANCELLED",
 ]);
@@ -324,6 +327,18 @@ export async function moveTaskStatusAction(input: {
       extendedStatus: input.extendedStatus,
       position: input.position,
     });
+    revalidatePath(`/${input.orgSlug}/projects`, "layout");
+    return null;
+  });
+}
+
+export async function deleteTaskAction(input: {
+  orgSlug: string;
+  taskId: string;
+}): Promise<ActionResult<null>> {
+  return runAction(async () => {
+    const ctx = await assertTenant(input.orgSlug);
+    await deleteTask(ctx, input.taskId);
     revalidatePath(`/${input.orgSlug}/projects`, "layout");
     return null;
   });

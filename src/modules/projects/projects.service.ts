@@ -888,10 +888,17 @@ export async function getTasksBoard(
   const statusMetaByTask = new Map<string, ExtendedTaskStatus>();
   const tagsByTask = new Map<string, string[]>();
 
+  const EXTENDED_META_STATUSES = new Set<ExtendedTaskStatus>([
+    "DELAYED",
+    "TO_BE_TESTED",
+    "ON_HOLD",
+    "CANCELLED",
+  ]);
+
   for (const c of taskComments) {
     if (c.body.startsWith("[STATUS_META]|")) {
-      const rawSt = c.body.slice("[STATUS_META]|".length).trim();
-      if (rawSt === "DELAYED" || rawSt === "CANCELLED") {
+      const rawSt = c.body.slice("[STATUS_META]|".length).trim() as ExtendedTaskStatus;
+      if (EXTENDED_META_STATUSES.has(rawSt)) {
         statusMetaByTask.set(c.entityId, rawSt);
       }
     } else if (c.body.startsWith("[TAGS]|")) {
@@ -1077,7 +1084,10 @@ export async function createTask(
     },
   });
 
-  if (input.extendedStatus === "DELAYED" || input.extendedStatus === "CANCELLED") {
+  const isMetaStatus = (st?: ExtendedTaskStatus): st is ExtendedTaskStatus =>
+    st === "DELAYED" || st === "TO_BE_TESTED" || st === "ON_HOLD" || st === "CANCELLED";
+
+  if (isMetaStatus(input.extendedStatus)) {
     await db.comment.create({
       data: {
         organizationId,
@@ -1113,10 +1123,7 @@ export async function createTask(
     title: created.title,
     description: created.description,
     status: created.status,
-    extendedStatus:
-      input.extendedStatus === "DELAYED" || input.extendedStatus === "CANCELLED"
-        ? input.extendedStatus
-        : undefined,
+    extendedStatus: isMetaStatus(input.extendedStatus) ? input.extendedStatus : undefined,
     priority: created.priority,
     position: created.position,
     startDate: toIsoDate(created.createdAt),
@@ -1172,7 +1179,12 @@ export async function moveTaskStatus(
       },
     });
 
-    if (input.extendedStatus === "DELAYED" || input.extendedStatus === "CANCELLED") {
+    if (
+      input.extendedStatus === "DELAYED" ||
+      input.extendedStatus === "TO_BE_TESTED" ||
+      input.extendedStatus === "ON_HOLD" ||
+      input.extendedStatus === "CANCELLED"
+    ) {
       await tx.comment.create({
         data: {
           organizationId,
@@ -1244,7 +1256,12 @@ export async function updateTaskDetails(
       },
     });
 
-    if (input.extendedStatus === "DELAYED" || input.extendedStatus === "CANCELLED") {
+    if (
+      input.extendedStatus === "DELAYED" ||
+      input.extendedStatus === "TO_BE_TESTED" ||
+      input.extendedStatus === "ON_HOLD" ||
+      input.extendedStatus === "CANCELLED"
+    ) {
       await tx.comment.create({
         data: {
           organizationId,
@@ -1267,6 +1284,42 @@ export async function updateTaskDetails(
         status: input.extendedStatus ?? input.status,
         priority: input.priority,
       },
+    });
+  });
+}
+
+export async function deleteTask(ctx: TenantContext, taskId: string): Promise<void> {
+  authorize(ctx, "projects.project.write");
+  const organizationId = ctx.organization.id;
+
+  const existing = await db.task.findUnique({
+    where: { id_organizationId: { id: taskId, organizationId } },
+    select: { id: true, title: true, projectId: true },
+  });
+  if (!existing) {
+    throw new NotFoundError("Task not found.");
+  }
+
+  await db.$transaction(async (tx) => {
+    await tx.comment.deleteMany({
+      where: {
+        organizationId,
+        entityType: "Task",
+        entityId: existing.id,
+      },
+    });
+
+    await tx.task.delete({
+      where: { id_organizationId: { id: existing.id, organizationId } },
+    });
+
+    await recordAudit(tx, {
+      organizationId,
+      actorId: ctx.user.id,
+      entityType: "Task",
+      entityId: existing.id,
+      action: "project.task.deleted",
+      metadata: { title: existing.title, projectId: existing.projectId },
     });
   });
 }

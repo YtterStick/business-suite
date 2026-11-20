@@ -9,6 +9,7 @@ import {
   useDroppable,
   useSensor,
   useSensors,
+  type Announcements,
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
@@ -17,9 +18,8 @@ import { CSS } from "@dnd-kit/utilities";
 import type { TaskPriority, TaskStatus } from "@prisma/client";
 import {
   Activity,
-  AlertCircle,
+  ArrowRightLeft,
   ArrowUpDown,
-  Ban,
   BookmarkPlus,
   Calendar,
   Check,
@@ -30,9 +30,9 @@ import {
   ChevronsLeft,
   ChevronsRight,
   Clock,
+  Copy,
   Download,
   ExternalLink,
-  FileSpreadsheet,
   Filter,
   Flag,
   FolderKanban,
@@ -47,6 +47,7 @@ import {
   MoreHorizontal,
   MoreVertical,
   Pause,
+  Pencil,
   Play,
   Plus,
   Search,
@@ -72,6 +73,9 @@ import {
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
@@ -102,6 +106,7 @@ import { TagChipsInput } from "@/modules/projects/components/tag-chips-input";
 import {
   DEFAULT_TASK_AUTOMATION_RULES,
   ImportTasksDialog,
+  ManageStatusesDialog,
   QuickPhaseDialog,
   QuickSubtaskDialog,
   TaskActivityLogSheet,
@@ -111,6 +116,7 @@ import {
 import { TaskDetailSheet } from "@/modules/projects/components/task-detail-sheet";
 import {
   createTaskAction,
+  deleteTaskAction,
   moveTaskStatusAction,
   quickUpdateTaskAction,
 } from "@/modules/projects/projects.actions";
@@ -124,18 +130,22 @@ type TaskViewMode = "kanban" | "list" | "gantt";
 type TaskGroupBy = "status" | "priority" | "owner" | "project" | "phase" | "dueDate";
 type TaskSavedView =
   | "all_open"
-  | "all"
   | "my_open"
+  | "due_today"
   | "overdue"
-  | "created_by_me"
-  | "unassigned";
+  | "unassigned"
+  | "completed"
+  | "all";
 type TaskSortBy = "default" | "due_asc" | "due_desc" | "priority" | "key" | "title";
+type CardDensity = "comfortable" | "compact";
 
 interface CustomTaskSavedView {
   id: string;
   name: string;
   projectFilter: string;
-  priorityFilter: TaskPriority | "";
+  priorityFilters: TaskPriority[];
+  assigneeFilters: string[];
+  phaseFilter: string;
   search: string;
 }
 
@@ -165,6 +175,7 @@ interface CardDisplayOptions {
   subtasks: boolean;
   tags: boolean;
   assignee: boolean;
+  density: CardDensity;
 }
 
 const DEFAULT_CARD_OPTIONS: CardDisplayOptions = {
@@ -178,9 +189,10 @@ const DEFAULT_CARD_OPTIONS: CardDisplayOptions = {
   subtasks: true,
   tags: false,
   assignee: true,
+  density: "comfortable",
 };
 
-const CARD_OPTION_LABELS: Array<{ key: keyof CardDisplayOptions; label: string }> = [
+const CARD_OPTION_LABELS: Array<{ key: Exclude<keyof CardDisplayOptions, "density">; label: string }> = [
   { key: "taskKey", label: "Task ID / Key" },
   { key: "completeCheckbox", label: "Inline Complete Checkbox" },
   { key: "phase", label: "Task List / Phase" },
@@ -195,11 +207,12 @@ const CARD_OPTION_LABELS: Array<{ key: keyof CardDisplayOptions; label: string }
 
 const TASK_SAVED_VIEW_LABELS: Record<TaskSavedView, string> = {
   all_open: "All Open",
-  all: "All Tasks",
   my_open: "My Open Tasks",
-  overdue: "Overdue / Delayed",
-  created_by_me: "Created by Me",
+  due_today: "Due Today",
+  overdue: "Overdue",
   unassigned: "Unassigned",
+  completed: "Completed",
+  all: "All Tasks",
 };
 
 const GROUP_BY_LABELS: Record<TaskGroupBy, string> = {
@@ -207,11 +220,11 @@ const GROUP_BY_LABELS: Record<TaskGroupBy, string> = {
   priority: "Priority",
   owner: "Assignee",
   project: "Project",
-  phase: "Task List / Phase",
+  phase: "Phase",
   dueDate: "Due Date",
 };
 
-// Exact Zoho 6-column sequence: Delayed -> Open -> Cancelled -> In Progress -> In Review -> Closed
+// Complete 8-column delivery sequence: Delayed -> Open -> In Progress -> In Review -> To be Tested -> On Hold -> Closed -> Cancelled
 const STATUS_COLUMNS: Array<{
   status: ExtendedTaskStatus;
   label: string;
@@ -234,13 +247,6 @@ const STATUS_COLUMNS: Array<{
     cardAccent: "border-l-sky-500",
   },
   {
-    status: "CANCELLED",
-    label: "Cancelled",
-    dot: "bg-sky-500",
-    pillClass: "bg-sky-600 text-white",
-    cardAccent: "border-l-zinc-400",
-  },
-  {
     status: "IN_PROGRESS",
     label: "In Progress",
     dot: "bg-blue-500",
@@ -255,11 +261,32 @@ const STATUS_COLUMNS: Array<{
     cardAccent: "border-l-amber-500",
   },
   {
+    status: "TO_BE_TESTED",
+    label: "To be Tested",
+    dot: "bg-orange-500",
+    pillClass: "bg-orange-600 text-white",
+    cardAccent: "border-l-orange-500",
+  },
+  {
+    status: "ON_HOLD",
+    label: "On Hold",
+    dot: "bg-yellow-500",
+    pillClass: "bg-slate-600 text-white",
+    cardAccent: "border-l-yellow-500",
+  },
+  {
     status: "DONE",
     label: "Closed",
     dot: "bg-teal-500",
     pillClass: "bg-teal-600 text-white",
     cardAccent: "border-l-emerald-500",
+  },
+  {
+    status: "CANCELLED",
+    label: "Cancelled",
+    dot: "bg-zinc-400",
+    pillClass: "bg-zinc-600 text-white",
+    cardAccent: "border-l-zinc-400",
   },
 ];
 
@@ -268,9 +295,26 @@ const STATUS_LABELS: Record<ExtendedTaskStatus, string> = {
   TODO: "Open",
   IN_PROGRESS: "In Progress",
   IN_REVIEW: "In Review",
+  TO_BE_TESTED: "To be Tested",
+  ON_HOLD: "On Hold",
   DONE: "Closed",
   CANCELLED: "Cancelled",
 };
+
+const EXTENDED_META_STATUSES = new Set<ExtendedTaskStatus>([
+  "DELAYED",
+  "TO_BE_TESTED",
+  "ON_HOLD",
+  "CANCELLED",
+]);
+
+function toPrismaTaskStatus(extStatus: ExtendedTaskStatus): TaskStatus {
+  if (extStatus === "TO_BE_TESTED") return "IN_REVIEW";
+  if (extStatus === "DELAYED" || extStatus === "ON_HOLD" || extStatus === "CANCELLED") {
+    return "TODO";
+  }
+  return extStatus;
+}
 
 const PRIORITY_BADGE_CLASSES: Record<TaskPriority, string> = {
   URGENT: "border-rose-500/40 bg-rose-500/15 text-rose-700 dark:text-rose-300",
@@ -293,6 +337,11 @@ function getEffectiveStatus(
   if (task.extendedStatus === "CANCELLED") return "CANCELLED";
   if (task.status === "DONE") return "DONE";
   if (task.extendedStatus === "DELAYED") return "DELAYED";
+  if (task.extendedStatus === "ON_HOLD") return "ON_HOLD";
+  if (task.extendedStatus === "TO_BE_TESTED") {
+    if (autoMoveOverdue && isTaskOverdue(task, todayIso)) return "DELAYED";
+    return "TO_BE_TESTED";
+  }
   if (autoMoveOverdue && isTaskOverdue(task, todayIso)) return "DELAYED";
   return task.status;
 }
@@ -340,6 +389,8 @@ function TaskCardView({
   onToggleComplete,
   onStatusChange,
   onQuickUpdate,
+  onDuplicate,
+  onDelete,
   onToggleTimer,
 }: {
   task: TaskCardDTO;
@@ -360,6 +411,8 @@ function TaskCardView({
     assigneeId?: string | null;
     dueDate?: string | null;
   }) => void;
+  onDuplicate?: () => void;
+  onDelete?: () => void;
   onToggleTimer?: () => void;
 }) {
   const subtaskCount = task.subtasks?.length ?? 0;
@@ -369,6 +422,8 @@ function TaskCardView({
   const isDone = task.status === "DONE" && task.extendedStatus !== "CANCELLED";
   const isCancelled = task.extendedStatus === "CANCELLED";
   const taskKey = task.taskKey ?? `TSK-${task.id.slice(-4).toUpperCase()}`;
+  const compact = displayOptions.density === "compact";
+  const currentStatus = getEffectiveStatus(task, todayIso, false);
 
   return (
     <div
@@ -383,7 +438,8 @@ function TaskCardView({
         onOpenDetail?.();
       }}
       className={cn(
-        "group/card relative cursor-pointer rounded-lg border border-l-[3px] bg-card p-3 shadow-2xs transition-all hover:border-primary/40 hover:shadow-md dark:bg-zinc-900/95",
+        "group/card relative cursor-pointer rounded-lg border border-l-[3px] bg-card shadow-2xs transition-all hover:border-primary/40 hover:shadow-md dark:bg-zinc-900/95",
+        compact ? "p-2.5" : "p-3",
         overdue ? "border-l-rose-500" : cardAccent,
         isCancelled && "opacity-75",
         isDragging && "opacity-35",
@@ -391,7 +447,7 @@ function TaskCardView({
       )}
     >
       {/* Top Row: [Drag] + Task Key + [ ] Complete Checkbox on left; Timer + Expand + Quick Menu (⋮) on right */}
-      <div className="mb-1.5 flex items-center justify-between gap-1.5">
+      <div className={cn("flex items-center justify-between gap-1.5", compact ? "mb-1" : "mb-1.5")}>
         <div className="flex min-w-0 items-center gap-1.5">
           {canWrite && (
             <button
@@ -432,14 +488,14 @@ function TaskCardView({
           {canWrite && (
             <button
               type="button"
-              title={isTimerActive ? "Pause live timer" : "Start live timer"}
-              aria-label="Toggle live timer"
+              title={isTimerActive ? "Pause live timer" : "Start timer"}
+              aria-label={isTimerActive ? `Pause timer for ${task.title}` : `Start timer for ${task.title}`}
               onClick={onToggleTimer}
               className={cn(
                 "rounded p-0.5 transition",
                 isTimerActive
                   ? "text-emerald-600 opacity-100 dark:text-emerald-400"
-                  : "text-muted-foreground opacity-0 hover:text-foreground group-hover/card:opacity-100",
+                  : "text-muted-foreground opacity-0 hover:bg-muted hover:text-foreground group-hover/card:opacity-100 focus-visible:opacity-100",
               )}
             >
               {isTimerActive ? (
@@ -470,25 +526,48 @@ function TaskCardView({
                 <MoreVertical className="size-3" />
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-40">
+            <DropdownMenuContent align="end" className="w-44">
               <DropdownMenuItem onClick={onOpenDetail}>
-                <ExternalLink className="size-3.5" />
-                Open Details
+                <Pencil className="size-3.5" />
+                Edit
               </DropdownMenuItem>
               {canWrite && (
                 <>
+                  <DropdownMenuItem onClick={onDuplicate}>
+                    <Copy className="size-3.5" />
+                    Duplicate
+                  </DropdownMenuItem>
                   <DropdownMenuItem onClick={onToggleComplete}>
                     <CheckCircle2 className="size-3.5 text-emerald-600" />
                     {isDone ? "Reopen Task" : "Mark Closed"}
                   </DropdownMenuItem>
+                  <DropdownMenuSub>
+                    <DropdownMenuSubTrigger>
+                      <ArrowRightLeft className="size-3.5" />
+                      Move Status
+                    </DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent className="w-44">
+                      {STATUS_COLUMNS.map((stCol) => (
+                        <DropdownMenuItem
+                          key={stCol.status}
+                          onClick={() => onStatusChange?.(stCol.status)}
+                          className="flex items-center justify-between gap-2 text-xs"
+                        >
+                          <span className="flex items-center gap-2">
+                            <span className={cn("size-2 rounded-full", stCol.dot)} />
+                            {stCol.label}
+                          </span>
+                          {currentStatus === stCol.status && (
+                            <Check className="size-3 text-primary" />
+                          )}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => onStatusChange?.("DELAYED")}>
-                    <AlertCircle className="size-3.5 text-rose-600" />
-                    Move to Delayed
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => onStatusChange?.("CANCELLED")}>
-                    <Ban className="size-3.5 text-muted-foreground" />
-                    Move to Cancelled
+                  <DropdownMenuItem variant="destructive" onClick={onDelete}>
+                    <Trash2 className="size-3.5" />
+                    Delete
                   </DropdownMenuItem>
                 </>
               )}
@@ -500,16 +579,22 @@ function TaskCardView({
       {/* Title */}
       <p
         className={cn(
-          "line-clamp-2 break-words text-sm font-semibold leading-snug text-foreground",
+          "line-clamp-2 break-words font-semibold leading-snug text-foreground",
+          compact ? "text-xs" : "text-sm",
           (isDone || isCancelled) && "text-muted-foreground line-through",
         )}
       >
         {task.title}
       </p>
 
-      {/* Simple Stacked Phase & Project Lines (matching Zoho clean card) */}
+      {/* Stacked Phase & Project Lines */}
       {(displayOptions.phase || displayOptions.projectName) && (
-        <div className="mt-2 space-y-1 text-xs text-muted-foreground">
+        <div
+          className={cn(
+            "text-muted-foreground",
+            compact ? "mt-1 space-y-0.5 text-[11px]" : "mt-2 space-y-1 text-xs",
+          )}
+        >
           {displayOptions.phase && (
             <div className="flex items-center gap-1.5">
               <ListChecks className="size-3 shrink-0 opacity-70" />
@@ -525,13 +610,16 @@ function TaskCardView({
         </div>
       )}
 
-      {/* Optional Extra Fields: Color-Coded Priority Flag/Dot, Subtasks Progress, Logged Hours */}
+      {/* Optional Extra Fields: Priority Badge, Subtasks Progress, Logged Hours */}
       {(displayOptions.priority || displayOptions.subtasks || displayOptions.loggedHours) && (
-        <div className="mt-2.5 flex flex-wrap items-center gap-2 text-[10px]">
+        <div className={cn("flex flex-wrap items-center gap-2 text-[10px]", compact ? "mt-1.5" : "mt-2.5")}>
           {displayOptions.priority && (
             <Badge
               variant="outline"
-              className={cn("inline-flex items-center gap-1 px-1.5 py-0 text-[10px]", PRIORITY_BADGE_CLASSES[task.priority])}
+              className={cn(
+                "inline-flex items-center gap-1 px-1.5 py-0 text-[10px]",
+                PRIORITY_BADGE_CLASSES[task.priority],
+              )}
             >
               <Flag className="size-2.5 shrink-0" />
               {task.priority.charAt(0) + task.priority.slice(1).toLowerCase()}
@@ -578,88 +666,96 @@ function TaskCardView({
         </div>
       )}
 
-      {/* Clean Footer: Due Date + Assignee Avatar on Right */}
-      <div
-        className="mt-3 flex items-center justify-between gap-2 border-t border-border/60 pt-2 text-[11px] text-muted-foreground"
-        data-no-card-open
-      >
-        <div className="flex items-center gap-1">
-          {overdue && (
-            <span className="rounded bg-rose-600 px-1 py-0 text-[9px] font-bold text-white">
-              OVERDUE
-            </span>
+      {/* Clean Footer: Due Date Badge (only when set) + Assignee Avatar */}
+      {(overdue || (displayOptions.dueDate && task.dueDate) || displayOptions.assignee) && (
+        <div
+          className={cn(
+            "flex items-center justify-between gap-2 border-t border-border/60 text-[11px] text-muted-foreground",
+            compact ? "mt-2 pt-1.5" : "mt-3 pt-2",
           )}
-        </div>
+          data-no-card-open
+        >
+          <div className="flex items-center gap-1">
+            {overdue && (
+              <span className="rounded bg-rose-600 px-1 py-0 text-[9px] font-bold text-white">
+                OVERDUE
+              </span>
+            )}
+          </div>
 
-        <div className="flex items-center gap-2">
-          {displayOptions.dueDate && (
-            <span
-              className={cn(
-                "inline-flex items-center gap-1",
-                overdue ? "font-semibold text-rose-500" : "text-muted-foreground",
-              )}
-              title={task.dueDate ? `Due ${formatDate(task.dueDate, { withYear: true })}` : "No due date"}
-            >
-              <Calendar className="size-3.5 shrink-0 text-sky-500/80" />
-              {task.dueDate && <span>{formatDate(task.dueDate)}</span>}
-            </span>
-          )}
+          <div className="flex items-center gap-2">
+            {displayOptions.dueDate && task.dueDate && (
+              <span
+                className={cn(
+                  "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium",
+                  overdue
+                    ? "bg-rose-500/15 font-semibold text-rose-600 dark:text-rose-400"
+                    : "bg-muted/70 text-muted-foreground",
+                )}
+                title={`Due ${formatDate(task.dueDate, { withYear: true })}`}
+              >
+                <Calendar className="size-3 shrink-0" />
+                <span>{formatDate(task.dueDate)}</span>
+              </span>
+            )}
 
-          {displayOptions.assignee && (
-            <Popover>
-              <PopoverTrigger asChild>
-                <button
-                  type="button"
-                  disabled={!canWrite}
-                  title={task.assignee ? task.assignee.name : "Unassigned"}
-                  className="shrink-0 rounded-full transition hover:ring-2 hover:ring-primary/50"
-                >
-                  {task.assignee ? (
-                    <Avatar className="size-5">
-                      {task.assignee.avatarUrl && (
-                        <AvatarImage src={task.assignee.avatarUrl} alt={task.assignee.name} />
-                      )}
-                      <AvatarFallback className="text-[9px]">
-                        {initials(task.assignee.name)}
-                      </AvatarFallback>
-                    </Avatar>
-                  ) : (
-                    <span className="flex size-5 items-center justify-center rounded-full bg-muted text-muted-foreground">
-                      <UserPlus className="size-3" />
-                    </span>
-                  )}
-                </button>
-              </PopoverTrigger>
-              {canWrite && (
-                <PopoverContent align="end" className="w-48 p-1.5">
-                  <p className="px-2 py-1 text-xs font-semibold">Assign Owner</p>
-                  <div className="max-h-44 space-y-0.5 overflow-y-auto">
-                    <button
-                      type="button"
-                      onClick={() => onQuickUpdate?.({ assigneeId: null })}
-                      className="flex w-full items-center justify-between rounded px-2 py-1 text-left text-xs hover:bg-muted"
-                    >
-                      <span>Unassigned</span>
-                      {!task.assignee && <Check className="size-3 text-primary" />}
-                    </button>
-                    {members.map((m) => (
+            {displayOptions.assignee && (
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    disabled={!canWrite}
+                    title={task.assignee ? task.assignee.name : "Unassigned"}
+                    aria-label={task.assignee ? `Assigned to ${task.assignee.name}` : "Assign task owner"}
+                    className="shrink-0 rounded-full transition hover:ring-2 hover:ring-primary/50"
+                  >
+                    {task.assignee ? (
+                      <Avatar className="size-5">
+                        {task.assignee.avatarUrl && (
+                          <AvatarImage src={task.assignee.avatarUrl} alt={task.assignee.name} />
+                        )}
+                        <AvatarFallback className="text-[9px]">
+                          {initials(task.assignee.name)}
+                        </AvatarFallback>
+                      </Avatar>
+                    ) : (
+                      <span className="flex size-5 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                        <UserPlus className="size-3" />
+                      </span>
+                    )}
+                  </button>
+                </PopoverTrigger>
+                {canWrite && (
+                  <PopoverContent align="end" className="w-48 p-1.5">
+                    <p className="px-2 py-1 text-xs font-semibold">Assign Owner</p>
+                    <div className="max-h-44 space-y-0.5 overflow-y-auto">
                       <button
-                        key={m.id}
                         type="button"
-                        onClick={() => onQuickUpdate?.({ assigneeId: m.id })}
+                        onClick={() => onQuickUpdate?.({ assigneeId: null })}
                         className="flex w-full items-center justify-between rounded px-2 py-1 text-left text-xs hover:bg-muted"
                       >
-                        <span className="truncate">{m.name}</span>
-                        {task.assignee?.id === m.id && <Check className="size-3 text-primary" />}
+                        <span>Unassigned</span>
+                        {!task.assignee && <Check className="size-3 text-primary" />}
                       </button>
-                    ))}
-                  </div>
-                </PopoverContent>
-              )}
-            </Popover>
-          )}
+                      {members.map((m) => (
+                        <button
+                          key={m.id}
+                          type="button"
+                          onClick={() => onQuickUpdate?.({ assigneeId: m.id })}
+                          className="flex w-full items-center justify-between rounded px-2 py-1 text-left text-xs hover:bg-muted"
+                        >
+                          <span className="truncate">{m.name}</span>
+                          {task.assignee?.id === m.id && <Check className="size-3 text-primary" />}
+                        </button>
+                      ))}
+                    </div>
+                  </PopoverContent>
+                )}
+              </Popover>
+            )}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
@@ -676,6 +772,8 @@ function SortableTaskCard({
   onToggleComplete,
   onStatusChange,
   onQuickUpdate,
+  onDuplicate,
+  onDelete,
   onToggleTimer,
 }: {
   task: TaskCardDTO;
@@ -693,6 +791,8 @@ function SortableTaskCard({
     assigneeId?: string | null;
     dueDate?: string | null;
   }) => void;
+  onDuplicate: () => void;
+  onDelete: () => void;
   onToggleTimer: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
@@ -716,6 +816,8 @@ function SortableTaskCard({
         onToggleComplete={onToggleComplete}
         onStatusChange={onStatusChange}
         onQuickUpdate={onQuickUpdate}
+        onDuplicate={onDuplicate}
+        onDelete={onDelete}
         onToggleTimer={onToggleTimer}
       />
     </div>
@@ -739,6 +841,8 @@ function KanbanColumn({
   onToggleComplete,
   onStatusChange,
   onQuickUpdate,
+  onDuplicate,
+  onDelete,
   onToggleTimer,
 }: {
   col: DynamicColumnSpec;
@@ -766,6 +870,8 @@ function KanbanColumn({
     taskId: string,
     patch: { priority?: TaskPriority; assigneeId?: string | null; dueDate?: string | null },
   ) => void;
+  onDuplicate: (task: TaskCardDTO) => void;
+  onDelete: (task: TaskCardDTO) => void;
   onToggleTimer: (task: TaskCardDTO) => void;
 }) {
   const { isOver, setNodeRef } = useDroppable({ id: `col:${col.id}` });
@@ -778,6 +884,7 @@ function KanbanColumn({
     col.targetPriority ?? "MEDIUM",
   );
   const [saving, setSaving] = React.useState(false);
+  const allowQuickAdd = col.targetStatus !== "DELAYED" && col.targetStatus !== "CANCELLED";
 
   React.useEffect(() => {
     if (defaultProjectId) setQuickProjectId(defaultProjectId);
@@ -868,7 +975,7 @@ function KanbanColumn({
         </div>
 
         <div className="flex shrink-0 items-center gap-0.5">
-          {canWrite && (
+          {canWrite && allowQuickAdd && (
             <button
               type="button"
               onClick={onAddInColumn}
@@ -894,8 +1001,9 @@ function KanbanColumn({
       <SortableContext items={col.tasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
         <div className="flex flex-1 flex-col gap-2.5">
           {col.tasks.length === 0 && !composerOpen ? (
-            <div className="flex min-h-28 items-center justify-center rounded-lg border border-dashed border-muted-foreground/30 px-4 text-center text-xs leading-relaxed text-muted-foreground">
-              Drag an existing Task and drop it under this category.
+            <div className="flex min-h-28 flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed border-muted-foreground/25 bg-background/40 px-4 py-6 text-center text-xs text-muted-foreground transition-colors">
+              <Layers className="size-4 opacity-50" />
+              <span className="font-medium">Drop a task here</span>
             </div>
           ) : (
             col.tasks.map((task) => (
@@ -912,6 +1020,8 @@ function KanbanColumn({
                 onToggleComplete={() => onToggleComplete(task)}
                 onStatusChange={(next) => onStatusChange(task.id, next)}
                 onQuickUpdate={(patch) => onQuickUpdate(task.id, patch)}
+                onDuplicate={() => onDuplicate(task)}
+                onDelete={() => onDelete(task)}
                 onToggleTimer={() => onToggleTimer(task)}
               />
             ))
@@ -919,8 +1029,8 @@ function KanbanColumn({
         </div>
       </SortableContext>
 
-      {/* Inline Quick-Add at the bottom of every Kanban column */}
-      {canWrite && projects.length > 0 && (
+      {/* Inline Quick-Add at the bottom of actionable Kanban columns */}
+      {canWrite && projects.length > 0 && allowQuickAdd && (
         <div className="mt-2.5 pt-1">
           {composerOpen ? (
             <form
@@ -1028,15 +1138,22 @@ export function TaskKanbanBoard({
 
   const [tasks, setTasks] = React.useState<TaskCardDTO[]>(initialBoard.tasks);
   const [viewMode, setViewMode] = React.useState<TaskViewMode>("kanban");
-  const [savedView, setSavedView] = React.useState<string>("all");
+  const [savedView, setSavedView] = React.useState<string>("all_open");
   const [customViews, setCustomViews] = React.useState<CustomTaskSavedView[]>([]);
   const [customViewDraft, setCustomViewDraft] = React.useState("");
   const [groupBy, setGroupBy] = React.useState<TaskGroupBy>("status");
   const [sortBy, setSortBy] = React.useState<TaskSortBy>("default");
   const [projectFilter, setProjectFilter] = React.useState(defaultProjectId ?? "");
-  const [priorityFilter, setPriorityFilter] = React.useState<TaskPriority | "">("");
+  const [assigneeFilters, setAssigneeFilters] = React.useState<string[]>([]);
+  const [priorityFilters, setPriorityFilters] = React.useState<TaskPriority[]>([]);
+  const [phaseFilter, setPhaseFilter] = React.useState("");
+  const [dueFrom, setDueFrom] = React.useState("");
+  const [dueTo, setDueTo] = React.useState("");
+  const [hasLoggedTime, setHasLoggedTime] = React.useState(false);
   const [search, setSearch] = React.useState("");
   const [collapsedCols, setCollapsedCols] = React.useState<string[]>([]);
+  const [collapseEmptyCols, setCollapseEmptyCols] = React.useState(false);
+  const [hiddenStatuses, setHiddenStatuses] = React.useState<ExtendedTaskStatus[]>([]);
   const [displayOptions, setDisplayOptions] =
     React.useState<CardDisplayOptions>(DEFAULT_CARD_OPTIONS);
   const [automationRules, setAutomationRules] = React.useState<TaskAutomationRulesState>(
@@ -1049,6 +1166,7 @@ export function TaskKanbanBoard({
   const [detailTaskId, setDetailTaskId] = React.useState<string | null>(initialTaskId);
   const [createOpen, setCreateOpen] = React.useState(openCreateInitially);
   const [automationOpen, setAutomationOpen] = React.useState(false);
+  const [manageStatusesOpen, setManageStatusesOpen] = React.useState(false);
   const [importOpen, setImportOpen] = React.useState(false);
   const [activityOpen, setActivityOpen] = React.useState(false);
   const [subtaskModalOpen, setSubtaskModalOpen] = React.useState(false);
@@ -1094,6 +1212,25 @@ export function TaskKanbanBoard({
         const parsed = JSON.parse(savedCustom);
         if (Array.isArray(parsed)) setCustomViews(parsed);
       }
+      const savedCollapsed = window.localStorage.getItem(`bs_task_collapsed_cols_${orgSlug}`);
+      if (savedCollapsed) {
+        const parsed = JSON.parse(savedCollapsed);
+        if (Array.isArray(parsed)) {
+          setCollapsedCols(parsed);
+        } else if (parsed && typeof parsed === "object") {
+          if (Array.isArray(parsed.cols)) setCollapsedCols(parsed.cols);
+          if (typeof parsed.collapseEmpty === "boolean") {
+            setCollapseEmptyCols(parsed.collapseEmpty);
+          }
+        }
+      }
+      const savedHiddenStatuses = window.localStorage.getItem(`bs_task_hidden_statuses_${orgSlug}`);
+      if (savedHiddenStatuses) {
+        const parsed = JSON.parse(savedHiddenStatuses);
+        if (Array.isArray(parsed)) {
+          setHiddenStatuses(parsed.filter((s) => s !== "TODO"));
+        }
+      }
     } catch {
       // Ignore
     }
@@ -1135,37 +1272,107 @@ export function TaskKanbanBoard({
     }
   };
 
+  const persistCollapsedState = (cols: string[], collapseEmpty: boolean) => {
+    setCollapsedCols(cols);
+    setCollapseEmptyCols(collapseEmpty);
+    try {
+      window.localStorage.setItem(
+        `bs_task_collapsed_cols_${orgSlug}`,
+        JSON.stringify({ cols, collapseEmpty }),
+      );
+    } catch {
+      // Ignore
+    }
+  };
+
+  const persistHiddenStatuses = (next: ExtendedTaskStatus[]) => {
+    const sanitized = next.filter((s) => s !== "TODO");
+    setHiddenStatuses(sanitized);
+    try {
+      window.localStorage.setItem(`bs_task_hidden_statuses_${orgSlug}`, JSON.stringify(sanitized));
+    } catch {
+      // Ignore
+    }
+  };
+
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
   );
 
   const savedViewCounts = React.useMemo(() => {
     const scoped = projectFilter ? tasks.filter((t) => t.projectId === projectFilter) : tasks;
+    const getSt = (t: TaskCardDTO) =>
+      getEffectiveStatus(t, refTodayIso, automationRules.autoMoveOverdueToDelayed);
     return {
-      all: scoped.length,
       all_open: scoped.filter((t) => {
-        const st = getEffectiveStatus(t, refTodayIso, automationRules.autoMoveOverdueToDelayed);
+        const st = getSt(t);
         return st !== "DONE" && st !== "CANCELLED";
       }).length,
       my_open: scoped.filter((t) => {
-        const st = getEffectiveStatus(t, refTodayIso, automationRules.autoMoveOverdueToDelayed);
+        const st = getSt(t);
         return t.assignee?.id === currentUserId && st !== "DONE" && st !== "CANCELLED";
       }).length,
-      overdue: scoped.filter(
-        (t) =>
-          getEffectiveStatus(t, refTodayIso, automationRules.autoMoveOverdueToDelayed) ===
-          "DELAYED",
-      ).length,
-      created_by_me: scoped.filter((t) => t.reporterId === currentUserId).length,
+      due_today: scoped.filter((t) => {
+        const st = getSt(t);
+        return t.dueDate === refTodayIso && st !== "DONE" && st !== "CANCELLED";
+      }).length,
+      overdue: scoped.filter((t) => getSt(t) === "DELAYED").length,
       unassigned: scoped.filter((t) => !t.assignee).length,
+      completed: scoped.filter((t) => getSt(t) === "DONE").length,
+      all: scoped.length,
     };
   }, [tasks, projectFilter, currentUserId, refTodayIso, automationRules.autoMoveOverdueToDelayed]);
+
+  const countsByStatus = React.useMemo(() => {
+    const counts: Record<ExtendedTaskStatus, number> = {
+      DELAYED: 0,
+      TODO: 0,
+      IN_PROGRESS: 0,
+      IN_REVIEW: 0,
+      TO_BE_TESTED: 0,
+      ON_HOLD: 0,
+      DONE: 0,
+      CANCELLED: 0,
+    };
+    for (const t of tasks) {
+      const st = getEffectiveStatus(t, refTodayIso, automationRules.autoMoveOverdueToDelayed);
+      counts[st] = (counts[st] ?? 0) + 1;
+    }
+    return counts;
+  }, [tasks, refTodayIso, automationRules.autoMoveOverdueToDelayed]);
+
+  const phaseFilterOptions = React.useMemo(() => {
+    const names = new Set<string>(["General"]);
+    for (const ms of initialBoard.milestones ?? []) {
+      if (!projectFilter || ms.projectId === projectFilter) {
+        names.add(ms.name);
+      }
+    }
+    for (const t of tasks) {
+      if (!projectFilter || t.projectId === projectFilter) {
+        names.add(t.milestoneName ?? "General");
+      }
+    }
+    return Array.from(names);
+  }, [initialBoard.milestones, tasks, projectFilter]);
 
   const visibleTasks = React.useMemo(() => {
     const q = search.trim().toLowerCase();
     const filtered = tasks.filter((t) => {
       if (projectFilter && t.projectId !== projectFilter) return false;
-      if (priorityFilter && t.priority !== priorityFilter) return false;
+      if (priorityFilters.length > 0 && !priorityFilters.includes(t.priority)) return false;
+      if (assigneeFilters.length > 0) {
+        const assigneeKey = t.assignee?.id ?? "__unassigned__";
+        if (!assigneeFilters.includes(assigneeKey)) return false;
+      }
+      if (phaseFilter && (t.milestoneName ?? "General") !== phaseFilter) return false;
+      if (dueFrom && (!t.dueDate || t.dueDate < dueFrom)) return false;
+      if (dueTo && (!t.dueDate || t.dueDate > dueTo)) return false;
+      if (hasLoggedTime) {
+        const totalHours = (t.timeLogs ?? []).reduce((s, l) => s + l.hours, 0);
+        if (totalHours <= 0) return false;
+      }
+
       const effStatus = getEffectiveStatus(
         t,
         refTodayIso,
@@ -1180,9 +1387,15 @@ export function TaskKanbanBoard({
       ) {
         return false;
       }
+      if (
+        savedView === "due_today" &&
+        (t.dueDate !== refTodayIso || effStatus === "DONE" || effStatus === "CANCELLED")
+      ) {
+        return false;
+      }
       if (savedView === "overdue" && effStatus !== "DELAYED") return false;
-      if (savedView === "created_by_me" && t.reporterId !== currentUserId) return false;
       if (savedView === "unassigned" && t.assignee !== null) return false;
+      if (savedView === "completed" && effStatus !== "DONE") return false;
 
       if (!q) return true;
       return (
@@ -1220,7 +1433,12 @@ export function TaskKanbanBoard({
   }, [
     tasks,
     projectFilter,
-    priorityFilter,
+    priorityFilters,
+    assigneeFilters,
+    phaseFilter,
+    dueFrom,
+    dueTo,
+    hasLoggedTime,
     savedView,
     currentUserId,
     refTodayIso,
@@ -1229,16 +1447,25 @@ export function TaskKanbanBoard({
     sortBy,
   ]);
 
-  const hasActiveFilters =
-    savedView !== "all" ||
-    Boolean(projectFilter) ||
-    Boolean(priorityFilter) ||
-    search.trim().length > 0;
+  const activeFilterCount =
+    (projectFilter ? 1 : 0) +
+    (priorityFilters.length > 0 ? 1 : 0) +
+    (assigneeFilters.length > 0 ? 1 : 0) +
+    (phaseFilter ? 1 : 0) +
+    (dueFrom || dueTo ? 1 : 0) +
+    (hasLoggedTime ? 1 : 0) +
+    (search.trim().length > 0 ? 1 : 0);
+
+  const hasActiveFilters = activeFilterCount > 0;
 
   const clearAllFilters = () => {
-    setSavedView("all");
     setProjectFilter("");
-    setPriorityFilter("");
+    setPriorityFilters([]);
+    setAssigneeFilters([]);
+    setPhaseFilter("");
+    setDueFrom("");
+    setDueTo("");
+    setHasLoggedTime(false);
     setSearch("");
   };
 
@@ -1257,7 +1484,15 @@ export function TaskKanbanBoard({
     const id = `custom:${Date.now()}`;
     persistCustomViews([
       ...customViews,
-      { id, name, projectFilter, priorityFilter, search },
+      {
+        id,
+        name,
+        projectFilter,
+        priorityFilters,
+        assigneeFilters,
+        phaseFilter,
+        search,
+      },
     ]);
     setCustomViewDraft("");
     setSavedView(id);
@@ -1268,16 +1503,27 @@ export function TaskKanbanBoard({
     setSavedView(viewId);
     const custom = customViews.find((v) => v.id === viewId);
     if (custom) {
-      setProjectFilter(custom.projectFilter);
-      setPriorityFilter(custom.priorityFilter);
-      setSearch(custom.search);
+      const legacyCustom = custom as Partial<CustomTaskSavedView> & {
+        priorityFilter?: TaskPriority | "";
+      };
+      setProjectFilter(custom.projectFilter ?? "");
+      setPriorityFilters(
+        Array.isArray(custom.priorityFilters)
+          ? custom.priorityFilters
+          : legacyCustom.priorityFilter
+            ? [legacyCustom.priorityFilter]
+            : [],
+      );
+      setAssigneeFilters(Array.isArray(custom.assigneeFilters) ? custom.assigneeFilters : []);
+      setPhaseFilter(custom.phaseFilter ?? "");
+      setSearch(custom.search ?? "");
     }
   };
 
   const activeSavedViewLabel =
     TASK_SAVED_VIEW_LABELS[savedView as TaskSavedView] ??
     customViews.find((v) => v.id === savedView)?.name ??
-    "All Tasks";
+    "All Open";
 
   const activeSavedViewCount =
     savedView in savedViewCounts
@@ -1286,9 +1532,11 @@ export function TaskKanbanBoard({
 
   const handleExportTasksCsv = () => {
     const jobId = `export-tasks-${Date.now()}`;
+    const exportCount = visibleTasks.length;
+    const exportWord = exportCount === 1 ? "task" : "tasks";
     emitBackgroundTaskEvent({
       id: jobId,
-      label: `Exporting ${visibleTasks.length} task(s) to CSV`,
+      label: `Exporting ${exportCount} ${exportWord} to CSV`,
       progress: 30,
       status: "running",
     });
@@ -1329,18 +1577,18 @@ export function TaskKanbanBoard({
 
       emitBackgroundTaskEvent({
         id: jobId,
-        label: `Exported ${visibleTasks.length} task(s) CSV`,
+        label: `Exported ${exportCount} ${exportWord} CSV`,
         progress: 100,
         status: "completed",
       });
-      toast.success(`Exported ${visibleTasks.length} task(s) to CSV`);
+      toast.success(`Exported ${exportCount} ${exportWord} to CSV`);
     }, 350);
   };
 
   // Dynamic Columns for Kanban & List Grouping
   const dynamicColumns = React.useMemo<DynamicColumnSpec[]>(() => {
     if (groupBy === "status") {
-      return STATUS_COLUMNS.map((col) => ({
+      return STATUS_COLUMNS.filter((col) => !hiddenStatuses.includes(col.status)).map((col) => ({
         id: `status:${col.status}`,
         label: col.label,
         dot: col.dot,
@@ -1448,7 +1696,11 @@ export function TaskKanbanBoard({
     [detailTaskId, tasks],
   );
 
-  const handleStatusChange = (taskId: string, targetExtStatus: ExtendedTaskStatus) => {
+  const handleStatusChange = (
+    taskId: string,
+    targetExtStatus: ExtendedTaskStatus,
+    options?: { undoFromStatus?: ExtendedTaskStatus },
+  ) => {
     const current = tasks.find((t) => t.id === taskId);
     if (!current) return;
     const currentEff = getEffectiveStatus(
@@ -1458,12 +1710,8 @@ export function TaskKanbanBoard({
     );
     if (currentEff === targetExtStatus) return;
 
-    const dbStatus: TaskStatus =
-      targetExtStatus === "DELAYED" || targetExtStatus === "CANCELLED"
-        ? current.status === "DONE"
-          ? "TODO"
-          : current.status
-        : targetExtStatus;
+    const dbStatus = toPrismaTaskStatus(targetExtStatus);
+    const isMetaStatus = EXTENDED_META_STATUSES.has(targetExtStatus);
 
     const prevTasks = tasks;
     setTasks((list) =>
@@ -1472,10 +1720,7 @@ export function TaskKanbanBoard({
           ? {
               ...t,
               status: dbStatus,
-              extendedStatus:
-                targetExtStatus === "DELAYED" || targetExtStatus === "CANCELLED"
-                  ? targetExtStatus
-                  : undefined,
+              extendedStatus: isMetaStatus ? targetExtStatus : undefined,
             }
           : t,
       ),
@@ -1494,7 +1739,20 @@ export function TaskKanbanBoard({
         return;
       }
 
-      if (targetExtStatus === "IN_REVIEW" && automationRules.autoAssignReviewerInReview) {
+      if (options?.undoFromStatus) {
+        const revertStatus = options.undoFromStatus;
+        toast.success(
+          targetExtStatus === "DONE"
+            ? `Task "${current.title}" closed`
+            : `Task "${current.title}" reopened`,
+          {
+            action: {
+              label: "Undo",
+              onClick: () => handleStatusChange(taskId, revertStatus),
+            },
+          },
+        );
+      } else if (targetExtStatus === "IN_REVIEW" && automationRules.autoAssignReviewerInReview) {
         toast.success(`Moved to In Review · Reviewer notified automatically`);
       } else if (targetExtStatus === "DONE" && automationRules.autoCompleteRollupOnClosed) {
         toast.success(`Task closed · Project completion roll-up updated`);
@@ -1572,7 +1830,58 @@ export function TaskKanbanBoard({
 
   const handleToggleComplete = (task: TaskCardDTO) => {
     const isDone = task.status === "DONE" && task.extendedStatus !== "CANCELLED";
-    handleStatusChange(task.id, isDone ? "TODO" : "DONE");
+    const prevStatus = getEffectiveStatus(
+      task,
+      refTodayIso,
+      automationRules.autoMoveOverdueToDelayed,
+    );
+    handleStatusChange(task.id, isDone ? "TODO" : "DONE", { undoFromStatus: prevStatus });
+  };
+
+  const handleDuplicateTask = (task: TaskCardDTO) => {
+    const extStatus = getEffectiveStatus(
+      task,
+      refTodayIso,
+      automationRules.autoMoveOverdueToDelayed,
+    );
+    const targetExt: ExtendedTaskStatus = extStatus === "DELAYED" ? "TODO" : extStatus;
+    startTransition(async () => {
+      const res = await createTaskAction({
+        orgSlug,
+        projectId: task.projectId,
+        milestoneId: task.milestoneId ?? null,
+        title: `${task.title} (Copy)`.slice(0, 180),
+        description: task.description ?? null,
+        priority: task.priority,
+        status: toPrismaTaskStatus(targetExt),
+        extendedStatus: targetExt,
+        tags: task.tags ?? [],
+        assigneeId: task.assignee?.id ?? null,
+        dueDate: task.dueDate ?? null,
+      });
+      if (!res.ok) {
+        toast.error(res.error.message);
+        return;
+      }
+      setTasks((prev) => [...prev, res.data]);
+      toast.success(`Duplicated "${task.title}"`);
+    });
+  };
+
+  const handleDeleteTask = (task: TaskCardDTO) => {
+    const prevTasks = tasks;
+    setTasks((prev) => prev.filter((t) => t.id !== task.id));
+    if (detailTaskId === task.id) setDetailTaskId(null);
+
+    startTransition(async () => {
+      const res = await deleteTaskAction({ orgSlug, taskId: task.id });
+      if (!res.ok) {
+        setTasks(prevTasks);
+        toast.error(res.error.message);
+        return;
+      }
+      toast.success(`Deleted "${task.title}"`);
+    });
   };
 
   const handleToggleTimer = (task: TaskCardDTO) => {
@@ -1619,10 +1928,41 @@ export function TaskKanbanBoard({
     }
   };
 
+  const dndAnnouncements = React.useMemo<Announcements>(() => {
+    const describeTask = (rawId: string | number) => {
+      const task = tasks.find((t) => t.id === String(rawId));
+      if (!task) return "Task";
+      return task.taskKey ? `Task ${task.taskKey} (${task.title})` : `Task ${task.title}`;
+    };
+    const describeOver = (rawId: string | number) => {
+      const overId = String(rawId);
+      if (overId.startsWith("col:")) {
+        const colId = overId.slice(4);
+        return dynamicColumns.find((c) => c.id === colId)?.label ?? "column";
+      }
+      return dynamicColumns.find((c) => c.tasks.some((t) => t.id === overId))?.label ?? "column";
+    };
+    return {
+      onDragStart({ active }) {
+        return `Picked up ${describeTask(active.id)}.`;
+      },
+      onDragOver({ active, over }) {
+        if (!over) return `${describeTask(active.id)} is no longer over a column.`;
+        return `${describeTask(active.id)} is over ${describeOver(over.id)}.`;
+      },
+      onDragEnd({ active, over }) {
+        if (!over) return `${describeTask(active.id)} was dropped.`;
+        return `${describeTask(active.id)} moved to ${describeOver(over.id)}.`;
+      },
+      onDragCancel({ active }) {
+        return `Dragging cancelled for ${describeTask(active.id)}.`;
+      },
+    };
+  }, [tasks, dynamicColumns]);
+
   const handleCreateTask = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const dbStatus: TaskStatus =
-      newStatus === "DELAYED" || newStatus === "CANCELLED" ? "TODO" : newStatus;
+    const dbStatus = toPrismaTaskStatus(newStatus);
     startTransition(async () => {
       const res = await createTaskAction({
         orgSlug,
@@ -1676,8 +2016,7 @@ export function TaskKanbanBoard({
     priority: TaskPriority;
     assigneeId?: string | null;
   }): Promise<boolean> => {
-    const dbStatus: TaskStatus =
-      payload.status === "DELAYED" || payload.status === "CANCELLED" ? "TODO" : payload.status;
+    const dbStatus = toPrismaTaskStatus(payload.status);
     const res = await createTaskAction({
       orgSlug,
       projectId: payload.projectId,
@@ -1711,7 +2050,7 @@ export function TaskKanbanBoard({
     updateScrollBounds();
     window.addEventListener("resize", updateScrollBounds);
     return () => window.removeEventListener("resize", updateScrollBounds);
-  }, [viewMode, dynamicColumns.length, collapsedCols.length, updateScrollBounds]);
+  }, [viewMode, dynamicColumns.length, collapsedCols.length, collapseEmptyCols, updateScrollBounds]);
 
   const scrollKanban = (delta: number) => {
     const el = kanbanScrollRef.current;
@@ -1720,11 +2059,55 @@ export function TaskKanbanBoard({
     window.setTimeout(updateScrollBounds, 280);
   };
 
-  const toggleColumnCollapse = (colId: string) => {
-    setCollapsedCols((prev) =>
-      prev.includes(colId) ? prev.filter((id) => id !== colId) : [...prev, colId],
-    );
+  const toggleColumnCollapse = (colId: string, isCurrentlyEmpty: boolean) => {
+    if (collapseEmptyCols && isCurrentlyEmpty) {
+      const nextEmptyCols = dynamicColumns
+        .filter((c) => c.tasks.length === 0 && c.id !== colId)
+        .map((c) => c.id);
+      const merged = Array.from(new Set([...collapsedCols, ...nextEmptyCols])).filter(
+        (id) => id !== colId,
+      );
+      persistCollapsedState(merged, false);
+      return;
+    }
+    const nextCols = collapsedCols.includes(colId)
+      ? collapsedCols.filter((id) => id !== colId)
+      : [...collapsedCols, colId];
+    persistCollapsedState(nextCols, collapseEmptyCols);
   };
+
+  const toggleCollapseEmptyCols = () => {
+    const next = !collapseEmptyCols;
+    if (next) {
+      persistCollapsedState(collapsedCols, true);
+    } else {
+      const emptyIds = new Set(dynamicColumns.filter((c) => c.tasks.length === 0).map((c) => c.id));
+      persistCollapsedState(
+        collapsedCols.filter((id) => !emptyIds.has(id)),
+        false,
+      );
+    }
+  };
+
+  const expandAllColumns = () => {
+    persistCollapsedState([], false);
+  };
+
+  const toggleStatusVisibility = (status: ExtendedTaskStatus) => {
+    if (status === "TODO") return;
+    const next = hiddenStatuses.includes(status)
+      ? hiddenStatuses.filter((s) => s !== status)
+      : [...hiddenStatuses, status];
+    persistHiddenStatuses(next);
+  };
+
+  const collapsedColumnCount = React.useMemo(
+    () =>
+      dynamicColumns.filter(
+        (c) => collapsedCols.includes(c.id) || (collapseEmptyCols && c.tasks.length === 0),
+      ).length,
+    [dynamicColumns, collapsedCols, collapseEmptyCols],
+  );
 
   // Gantt bounds
   const ganttTimeline = React.useMemo(() => {
@@ -1761,258 +2144,37 @@ export function TaskKanbanBoard({
     <div className="flex h-full flex-col">
       {/* Consolidated Single-Row Zoho-Style Tasks Toolbar */}
       <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-background px-4 py-2.5 lg:px-5">
-        {/* Left: Compact Icon Controls + Status ▾ + All Open ▾ + Kanban ▾ */}
+        {/* Left: Group-By, Smart Views ▾, Layout Switcher, Labeled Filters Popover, Sort & Activity */}
         <div className="flex flex-wrap items-center gap-1.5">
-          {/* Compact Filter Popover Icon */}
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button
-                type="button"
-                size="icon-sm"
-                variant={projectFilter || priorityFilter || search ? "secondary" : "ghost"}
-                title="Filter Tasks"
-                aria-label="Filter Tasks"
-                className="relative h-8 w-8"
-              >
-                <Filter className="size-3.5" />
-                {(projectFilter || priorityFilter || search) && (
-                  <span className="absolute top-1.5 right-1.5 size-1.5 rounded-full bg-primary" />
-                )}
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent align="start" className="w-72 p-3">
-              <div className="space-y-3">
-                <div className="flex items-center justify-between border-b pb-2">
-                  <p className="text-xs font-semibold">Filter Tasks</p>
-                  {hasActiveFilters && (
-                    <button
-                      type="button"
-                      onClick={clearAllFilters}
-                      className="text-[11px] font-medium text-primary hover:underline"
-                    >
-                      Clear all
-                    </button>
-                  )}
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="text-[11px] text-muted-foreground">Search</Label>
-                  <div className="relative">
-                    <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
-                    <Input
-                      value={search}
-                      onChange={(e) => setSearch(e.target.value)}
-                      placeholder="Key (SF-T1), title, tag..."
-                      className="h-8 pl-8 text-xs"
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="text-[11px] text-muted-foreground">Project</Label>
-                  <select
-                    value={projectFilter}
-                    onChange={(e) => setProjectFilter(e.target.value)}
-                    className="flex h-8 w-full rounded-md border border-input bg-background px-2 text-xs"
-                  >
-                    <option value="">All Projects</option>
-                    {initialBoard.projects.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="text-[11px] text-muted-foreground">Priority</Label>
-                  <select
-                    value={priorityFilter}
-                    onChange={(e) => setPriorityFilter(e.target.value as TaskPriority | "")}
-                    className="flex h-8 w-full rounded-md border border-input bg-background px-2 text-xs"
-                  >
-                    <option value="">All Priorities</option>
-                    <option value="URGENT">Urgent</option>
-                    <option value="HIGH">High</option>
-                    <option value="MEDIUM">Medium</option>
-                    <option value="LOW">Low</option>
-                  </select>
-                </div>
-              </div>
-            </PopoverContent>
-          </Popover>
-
-          {/* Compact Sort Icon */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                type="button"
-                size="icon-sm"
-                variant={sortBy !== "default" ? "secondary" : "ghost"}
-                title={`Sort: ${SORT_LABELS[sortBy]}`}
-                aria-label="Sort Tasks"
-                className="h-8 w-8"
-              >
-                <ArrowUpDown className="size-3.5" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-52">
-              <DropdownMenuLabel>Sort Tasks</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuRadioGroup
-                value={sortBy}
-                onValueChange={(val) => setSortBy(val as TaskSortBy)}
-              >
-                {(Object.keys(SORT_LABELS) as TaskSortBy[]).map((sk) => (
-                  <DropdownMenuRadioItem key={sk} value={sk} className="text-xs">
-                    {SORT_LABELS[sk]}
-                  </DropdownMenuRadioItem>
-                ))}
-              </DropdownMenuRadioGroup>
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          {/* Import / Export Icon */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                type="button"
-                size="icon-sm"
-                variant="ghost"
-                title="Import / Export Tasks"
-                aria-label="Import or Export Tasks"
-                className="h-8 w-8"
-              >
-                <FileSpreadsheet className="size-3.5" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-48">
-              <DropdownMenuLabel>Import / Export</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={handleExportTasksCsv}>
-                <Download className="size-3.5" />
-                Export Tasks (CSV)
-              </DropdownMenuItem>
-              {canWrite && (
-                <DropdownMenuItem onClick={() => setImportOpen(true)}>
-                  <Upload className="size-3.5" />
-                  Import Tasks (CSV)
-                </DropdownMenuItem>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          {/* Activity Log Icon */}
-          <Button
-            type="button"
-            size="icon-sm"
-            variant="ghost"
-            title="Tasks Activity Log"
-            aria-label="Tasks Activity Log"
-            onClick={() => setActivityOpen(true)}
-            className="h-8 w-8"
-          >
-            <Activity className="size-3.5" />
-          </Button>
-
-          {/* More (...) Overflow Menu */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                type="button"
-                size="icon-sm"
-                variant="ghost"
-                title="More Board Actions"
-                aria-label="More Board Actions"
-                className="h-8 w-8"
-              >
-                <MoreHorizontal className="size-3.5" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-52">
-              <DropdownMenuLabel>Board Preferences</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => setCollapsedCols([])}>
-                Expand All Columns
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() =>
-                  setCollapsedCols(
-                    dynamicColumns.filter((c) => c.tasks.length === 0).map((c) => c.id),
-                  )
-                }
-              >
-                Collapse Empty Columns
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => persistDisplayOptions(DEFAULT_CARD_OPTIONS)}>
-                Reset Card Fields
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          <span className="mx-1 hidden h-4 w-px bg-border sm:inline-block" />
-
-          {/* Status ▾ (Group By) Dropdown */}
-          {viewMode !== "gantt" && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  className="h-8 gap-1 px-2 text-xs font-semibold text-sky-600 hover:text-sky-700 dark:text-sky-400"
-                >
-                  <Layers className="size-3.5" />
-                  <span>{GROUP_BY_LABELS[groupBy]}</span>
-                  <ChevronDown className="size-3 opacity-70" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-48">
-                <DropdownMenuLabel>Group Board By</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuRadioGroup
-                  value={groupBy}
-                  onValueChange={(val) => setGroupBy(val as TaskGroupBy)}
-                >
-                  {(Object.keys(GROUP_BY_LABELS) as TaskGroupBy[]).map((k) => (
-                    <DropdownMenuRadioItem key={k} value={k}>
-                      {GROUP_BY_LABELS[k]}
-                    </DropdownMenuRadioItem>
-                  ))}
-                </DropdownMenuRadioGroup>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
-
-          {/* All Open / Saved Views ▾ Dropdown */}
+          {/* Smart View Presets (All Open ▾) */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
                 type="button"
                 size="sm"
-                variant="ghost"
-                className="h-8 gap-1 px-2 text-xs font-semibold text-sky-600 hover:text-sky-700 dark:text-sky-400"
+                variant="outline"
+                className="h-8 gap-1.5 bg-background px-2.5 text-xs font-semibold text-foreground"
               >
                 <span>{activeSavedViewLabel}</span>
                 <Badge variant="secondary" className="px-1.5 py-0 text-[10px] tabular-nums">
                   {activeSavedViewCount}
                 </Badge>
-                <ChevronDown className="size-3 opacity-70" />
+                <ChevronDown className="size-3 opacity-60" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-64">
-              <DropdownMenuLabel>Saved Task Views</DropdownMenuLabel>
+              <DropdownMenuLabel>Smart Task Views</DropdownMenuLabel>
               <DropdownMenuSeparator />
               <DropdownMenuRadioGroup value={savedView} onValueChange={selectSavedView}>
                 {(
                   [
                     "all_open",
-                    "all",
                     "my_open",
+                    "due_today",
                     "overdue",
-                    "created_by_me",
                     "unassigned",
+                    "completed",
+                    "all",
                   ] as TaskSavedView[]
                 ).map((viewKey) => (
                   <DropdownMenuRadioItem
@@ -2043,7 +2205,7 @@ export function TaskKanbanBoard({
                           onClick={(e) => {
                             e.stopPropagation();
                             persistCustomViews(customViews.filter((item) => item.id !== cv.id));
-                            if (savedView === cv.id) setSavedView("all");
+                            if (savedView === cv.id) setSavedView("all_open");
                           }}
                           className="rounded p-1 text-muted-foreground hover:text-destructive"
                         >
@@ -2077,7 +2239,39 @@ export function TaskKanbanBoard({
             </DropdownMenuContent>
           </DropdownMenu>
 
-          {/* Compact Layout Switcher Dropdown (Kanban ▾ / Classic / Gantt) */}
+          {/* Group-By Switcher (Status ▾) */}
+          {viewMode !== "gantt" && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="h-8 gap-1 px-2 text-xs font-semibold text-sky-600 hover:text-sky-700 dark:text-sky-400"
+                >
+                  <Layers className="size-3.5" />
+                  <span>Group: {GROUP_BY_LABELS[groupBy]}</span>
+                  <ChevronDown className="size-3 opacity-70" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-48">
+                <DropdownMenuLabel>Group Board By</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuRadioGroup
+                  value={groupBy}
+                  onValueChange={(val) => setGroupBy(val as TaskGroupBy)}
+                >
+                  {(Object.keys(GROUP_BY_LABELS) as TaskGroupBy[]).map((k) => (
+                    <DropdownMenuRadioItem key={k} value={k}>
+                      {GROUP_BY_LABELS[k]}
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+
+          {/* Layout Switcher Dropdown (Kanban ▾ / Classic / Gantt) */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -2120,7 +2314,249 @@ export function TaskKanbanBoard({
             </DropdownMenuContent>
           </DropdownMenu>
 
-          {/* Styled Project Filter Pill (only shown when active or quick-accessible) */}
+          {/* Dedicated Multi-Filter Popover */}
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button
+                type="button"
+                size="sm"
+                variant={hasActiveFilters ? "secondary" : "outline"}
+                className="h-8 gap-1.5 bg-background px-2.5 text-xs font-medium"
+              >
+                <Filter className="size-3.5 text-muted-foreground" />
+                <span>Filters</span>
+                {activeFilterCount > 0 && (
+                  <Badge className="h-4 px-1.5 py-0 text-[10px] tabular-nums">
+                    {activeFilterCount}
+                  </Badge>
+                )}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent align="start" className="w-80 p-3.5">
+              <div className="space-y-3.5">
+                <div className="flex items-center justify-between border-b pb-2">
+                  <p className="text-xs font-semibold">Filter Tasks</p>
+                  {hasActiveFilters && (
+                    <button
+                      type="button"
+                      onClick={clearAllFilters}
+                      className="text-[11px] font-medium text-primary hover:underline"
+                    >
+                      Clear all
+                    </button>
+                  )}
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="text-[11px] text-muted-foreground">Search</Label>
+                  <div className="relative">
+                    <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      placeholder="Key (SF-T1), title, tag..."
+                      className="h-8 pl-8 text-xs"
+                    />
+                  </div>
+                </div>
+
+                {/* Assignee Multi-Select */}
+                <div className="space-y-1.5">
+                  <Label className="text-[11px] text-muted-foreground">Assignee</Label>
+                  <div className="flex max-h-24 flex-wrap gap-1 overflow-y-auto">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setAssigneeFilters((prev) =>
+                          prev.includes("__unassigned__")
+                            ? prev.filter((id) => id !== "__unassigned__")
+                            : [...prev, "__unassigned__"],
+                        )
+                      }
+                      className={cn(
+                        "rounded-full border px-2 py-0.5 text-[11px] font-medium transition",
+                        assigneeFilters.includes("__unassigned__")
+                          ? "border-primary bg-primary/10 text-primary"
+                          : "border-border bg-background text-muted-foreground hover:bg-muted",
+                      )}
+                    >
+                      Unassigned
+                    </button>
+                    {initialBoard.members.map((m) => {
+                      const active = assigneeFilters.includes(m.id);
+                      return (
+                        <button
+                          key={m.id}
+                          type="button"
+                          onClick={() =>
+                            setAssigneeFilters((prev) =>
+                              prev.includes(m.id)
+                                ? prev.filter((id) => id !== m.id)
+                                : [...prev, m.id],
+                            )
+                          }
+                          className={cn(
+                            "rounded-full border px-2 py-0.5 text-[11px] font-medium transition",
+                            active
+                              ? "border-primary bg-primary/10 text-primary"
+                              : "border-border bg-background text-muted-foreground hover:bg-muted",
+                          )}
+                        >
+                          {m.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Priority Multi-Select */}
+                <div className="space-y-1.5">
+                  <Label className="text-[11px] text-muted-foreground">Priority</Label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {(["URGENT", "HIGH", "MEDIUM", "LOW"] as TaskPriority[]).map((pri) => {
+                      const active = priorityFilters.includes(pri);
+                      return (
+                        <button
+                          key={pri}
+                          type="button"
+                          onClick={() =>
+                            setPriorityFilters((prev) =>
+                              prev.includes(pri) ? prev.filter((p) => p !== pri) : [...prev, pri],
+                            )
+                          }
+                          className={cn(
+                            "rounded-md border px-2 py-0.5 text-[11px] font-medium transition",
+                            active
+                              ? "border-primary bg-primary/10 text-primary"
+                              : "border-border bg-background text-muted-foreground hover:bg-muted",
+                          )}
+                        >
+                          {pri.charAt(0) + pri.slice(1).toLowerCase()}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <Label className="text-[11px] text-muted-foreground">Project</Label>
+                    <select
+                      aria-label="Filter by Project"
+                      value={projectFilter}
+                      onChange={(e) => {
+                        setProjectFilter(e.target.value);
+                        setPhaseFilter("");
+                      }}
+                      className="flex h-8 w-full rounded-md border border-input bg-background px-2 text-xs"
+                    >
+                      <option value="">All Projects</option>
+                      {initialBoard.projects.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-[11px] text-muted-foreground">Phase / Task List</Label>
+                    <select
+                      aria-label="Filter by Phase"
+                      value={phaseFilter}
+                      onChange={(e) => setPhaseFilter(e.target.value)}
+                      className="flex h-8 w-full rounded-md border border-input bg-background px-2 text-xs"
+                    >
+                      <option value="">All Phases</option>
+                      {phaseFilterOptions.map((name) => (
+                        <option key={name} value={name}>
+                          {name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Due Date Range */}
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <Label className="text-[11px] text-muted-foreground">Due From</Label>
+                    <Input
+                      type="date"
+                      value={dueFrom}
+                      onChange={(e) => setDueFrom(e.target.value)}
+                      className="h-8 text-xs"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[11px] text-muted-foreground">Due To</Label>
+                    <Input
+                      type="date"
+                      value={dueTo}
+                      onChange={(e) => setDueTo(e.target.value)}
+                      className="h-8 text-xs"
+                    />
+                  </div>
+                </div>
+
+                {/* Has Logged Time Toggle */}
+                <label className="flex cursor-pointer items-center justify-between rounded-md border bg-muted/20 px-2.5 py-2 text-xs">
+                  <span className="font-medium">Has Logged Time</span>
+                  <input
+                    type="checkbox"
+                    checked={hasLoggedTime}
+                    onChange={(e) => setHasLoggedTime(e.target.checked)}
+                    className="size-3.5 accent-primary"
+                  />
+                </label>
+              </div>
+            </PopoverContent>
+          </Popover>
+
+          {/* Compact Sort Icon */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                size="icon-sm"
+                variant={sortBy !== "default" ? "secondary" : "ghost"}
+                title={`Sort: ${SORT_LABELS[sortBy]}`}
+                aria-label="Sort Tasks"
+                className="h-8 w-8"
+              >
+                <ArrowUpDown className="size-3.5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-52">
+              <DropdownMenuLabel>Sort Tasks</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuRadioGroup
+                value={sortBy}
+                onValueChange={(val) => setSortBy(val as TaskSortBy)}
+              >
+                {(Object.keys(SORT_LABELS) as TaskSortBy[]).map((sk) => (
+                  <DropdownMenuRadioItem key={sk} value={sk} className="text-xs">
+                    {SORT_LABELS[sk]}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {/* Activity Log Icon */}
+          <Button
+            type="button"
+            size="icon-sm"
+            variant="ghost"
+            title="Tasks Activity Log"
+            aria-label="Tasks Activity Log"
+            onClick={() => setActivityOpen(true)}
+            className="h-8 w-8"
+          >
+            <Activity className="size-3.5" />
+          </Button>
+
+          {/* Styled Project Filter Pill (quick project scope on wider viewports) */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -2137,7 +2573,13 @@ export function TaskKanbanBoard({
             <DropdownMenuContent align="start" className="max-h-72 w-56 overflow-y-auto">
               <DropdownMenuLabel>Filter by Project</DropdownMenuLabel>
               <DropdownMenuSeparator />
-              <DropdownMenuRadioGroup value={projectFilter} onValueChange={setProjectFilter}>
+              <DropdownMenuRadioGroup
+                value={projectFilter}
+                onValueChange={(val) => {
+                  setProjectFilter(val);
+                  setPhaseFilter("");
+                }}
+              >
                 <DropdownMenuRadioItem value="">All Projects</DropdownMenuRadioItem>
                 {initialBoard.projects.map((p) => (
                   <DropdownMenuRadioItem key={p.id} value={p.id} className="truncate">
@@ -2162,7 +2604,7 @@ export function TaskKanbanBoard({
           )}
         </div>
 
-        {/* Right: Automation, Split (+ Add Task ▾), Show Option */}
+        {/* Right: Search, Automation, Collapse Empty, Show Option, (+ Add Task ▾), More Actions (⋯) */}
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative hidden w-44 md:block">
             <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -2184,6 +2626,96 @@ export function TaskKanbanBoard({
             <Workflow className="size-3.5" />
             <span className="hidden sm:inline">Automation</span>
           </Button>
+
+          {/* Collapse Empty Columns Toggle */}
+          {viewMode === "kanban" && (
+            <Button
+              type="button"
+              size="sm"
+              variant={collapseEmptyCols ? "secondary" : "outline"}
+              onClick={toggleCollapseEmptyCols}
+              title="Toggle collapse for empty 0-task columns"
+              className="h-8 gap-1.5 bg-background text-xs font-medium"
+            >
+              <ChevronsLeft className="size-3.5 text-muted-foreground" />
+              <span className="hidden lg:inline">Collapse Empty</span>
+            </Button>
+          )}
+
+          {/* Show Option Card Field & Density Customizer */}
+          {viewMode === "kanban" && (
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-8 gap-1.5 bg-background text-xs font-medium"
+                >
+                  <SlidersHorizontal className="size-3.5 text-muted-foreground" />
+                  <span className="hidden sm:inline">Show Option</span>
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-64 p-3">
+                <div className="flex items-center justify-between border-b pb-2">
+                  <p className="text-xs font-semibold">Show Option</p>
+                  <button
+                    type="button"
+                    onClick={() => persistDisplayOptions(DEFAULT_CARD_OPTIONS)}
+                    className="text-[11px] font-medium text-primary hover:underline"
+                  >
+                    Reset
+                  </button>
+                </div>
+
+                {/* Card Density Segmented Switcher */}
+                <div className="mt-2.5 space-y-1.5 border-b pb-2.5">
+                  <p className="text-[11px] font-medium text-muted-foreground">Card Density</p>
+                  <div className="grid grid-cols-2 gap-1 rounded-md bg-muted p-0.5">
+                    {(["comfortable", "compact"] as CardDensity[]).map((mode) => (
+                      <button
+                        key={mode}
+                        type="button"
+                        onClick={() =>
+                          persistDisplayOptions({ ...displayOptions, density: mode })
+                        }
+                        className={cn(
+                          "rounded px-2 py-1 text-[11px] font-medium capitalize transition",
+                          displayOptions.density === mode
+                            ? "bg-background text-foreground shadow-2xs"
+                            : "text-muted-foreground hover:text-foreground",
+                        )}
+                      >
+                        {mode}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="mt-2 space-y-1.5">
+                  {CARD_OPTION_LABELS.map((opt) => (
+                    <label
+                      key={opt.key}
+                      className="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-xs hover:bg-muted/60"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={displayOptions[opt.key]}
+                        onChange={(e) =>
+                          persistDisplayOptions({
+                            ...displayOptions,
+                            [opt.key]: e.target.checked,
+                          })
+                        }
+                        className="size-3.5 accent-primary"
+                      />
+                      <span>{opt.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </PopoverContent>
+            </Popover>
+          )}
 
           {canWrite && initialBoard.projects.length > 0 && (
             <div className="inline-flex items-center rounded-md shadow-2xs">
@@ -2211,7 +2743,7 @@ export function TaskKanbanBoard({
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-52">
-                  <DropdownMenuLabel>Create &amp; Import</DropdownMenuLabel>
+                  <DropdownMenuLabel>Quick Create</DropdownMenuLabel>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
                     onClick={() => {
@@ -2233,65 +2765,48 @@ export function TaskKanbanBoard({
                     <ListChecks className="size-3.5 text-blue-600" />
                     New Subtask
                   </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => setImportOpen(true)}>
-                    <Upload className="size-3.5" />
-                    Import Tasks (CSV)
-                  </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
           )}
 
-          {/* Show Option Card Field Customizer */}
-          {viewMode === "kanban" && (
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="h-8 gap-1.5 bg-background text-xs font-medium"
-                >
-                  <SlidersHorizontal className="size-3.5 text-muted-foreground" />
-                  <span className="hidden sm:inline">Show Option</span>
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent align="end" className="w-60 p-3">
-                <div className="flex items-center justify-between border-b pb-2">
-                  <p className="text-xs font-semibold">Show Card Fields</p>
-                  <button
-                    type="button"
-                    onClick={() => persistDisplayOptions(DEFAULT_CARD_OPTIONS)}
-                    className="text-[11px] font-medium text-primary hover:underline"
-                  >
-                    Reset
-                  </button>
-                </div>
-                <div className="mt-2 space-y-1.5">
-                  {CARD_OPTION_LABELS.map((opt) => (
-                    <label
-                      key={opt.key}
-                      className="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-xs hover:bg-muted/60"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={displayOptions[opt.key]}
-                        onChange={(e) =>
-                          persistDisplayOptions({
-                            ...displayOptions,
-                            [opt.key]: e.target.checked,
-                          })
-                        }
-                        className="size-3.5 accent-primary"
-                      />
-                      <span>{opt.label}</span>
-                    </label>
-                  ))}
-                </div>
-              </PopoverContent>
-            </Popover>
-          )}
+          {/* Compact More Actions (⋯) Menu beside Add Task */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                size="icon-sm"
+                variant="outline"
+                title="More Actions"
+                aria-label="More Actions"
+                className="h-8 w-8 bg-background"
+              >
+                <MoreHorizontal className="size-3.5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-52">
+              <DropdownMenuLabel>Board Actions</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={handleExportTasksCsv}>
+                <Download className="size-3.5" />
+                Export CSV
+              </DropdownMenuItem>
+              {canWrite && (
+                <DropdownMenuItem onClick={() => setImportOpen(true)}>
+                  <Upload className="size-3.5" />
+                  Import Tasks (CSV)
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuItem onClick={() => setManageStatusesOpen(true)}>
+                <Kanban className="size-3.5" />
+                Manage Statuses
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={expandAllColumns}>
+                Expand All Columns
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
@@ -2418,6 +2933,8 @@ export function TaskKanbanBoard({
                                       <option value="TODO">Open / To Do</option>
                                       <option value="IN_PROGRESS">In Progress</option>
                                       <option value="IN_REVIEW">In Review</option>
+                                      <option value="TO_BE_TESTED">To be Tested</option>
+                                      <option value="ON_HOLD">On Hold</option>
                                       <option value="DONE">Closed / Done</option>
                                       <option value="CANCELLED">Cancelled</option>
                                     </select>
@@ -2470,17 +2987,18 @@ export function TaskKanbanBoard({
             <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
               <div className="flex items-center gap-2">
                 <span>
-                  Showing <strong className="text-foreground">{visibleTasks.length}</strong> task(s)
-                  across <strong className="text-foreground">{dynamicColumns.length}</strong>{" "}
-                  columns
+                  Showing <strong className="text-foreground">{visibleTasks.length}</strong>{" "}
+                  {visibleTasks.length === 1 ? "task" : "tasks"} across{" "}
+                  <strong className="text-foreground">{dynamicColumns.length}</strong>{" "}
+                  {dynamicColumns.length === 1 ? "column" : "columns"}
                 </span>
-                {collapsedCols.length > 0 && (
+                {collapsedColumnCount > 0 && (
                   <button
                     type="button"
-                    onClick={() => setCollapsedCols([])}
+                    onClick={expandAllColumns}
                     className="font-medium text-primary hover:underline"
                   >
-                    Expand all ({collapsedCols.length} collapsed)
+                    Expand all ({collapsedColumnCount} collapsed)
                   </button>
                 )}
               </div>
@@ -2520,36 +3038,44 @@ export function TaskKanbanBoard({
                 id={dndContextId}
                 sensors={sensors}
                 collisionDetection={closestCorners}
+                accessibility={{ announcements: dndAnnouncements }}
                 onDragStart={handleDragStart}
                 onDragEnd={handleDragEnd}
               >
                 <div className="flex min-h-[480px] w-max gap-4 pr-6">
-                  {dynamicColumns.map((col) => (
-                    <KanbanColumn
-                      key={col.id}
-                      col={col}
-                      todayIso={refTodayIso}
-                      canWrite={canWrite}
-                      collapsed={collapsedCols.includes(col.id)}
-                      onToggleCollapse={() => toggleColumnCollapse(col.id)}
-                      displayOptions={displayOptions}
-                      members={initialBoard.members}
-                      projects={initialBoard.projects}
-                      defaultProjectId={projectFilter}
-                      activeTimerTaskId={activeTimerTaskId}
-                      onAddInColumn={() => {
-                        setNewStatus(col.targetStatus ?? "TODO");
-                        if (col.targetPriority) setNewPriority(col.targetPriority);
-                        setCreateOpen(true);
-                      }}
-                      onQuickCreate={handleInlineQuickCreate}
-                      onOpenTask={(id) => setDetailTaskId(id)}
-                      onToggleComplete={handleToggleComplete}
-                      onStatusChange={handleStatusChange}
-                      onQuickUpdate={handleQuickUpdate}
-                      onToggleTimer={handleToggleTimer}
-                    />
-                  ))}
+                  {dynamicColumns.map((col) => {
+                    const isEmpty = col.tasks.length === 0;
+                    const isCollapsed =
+                      collapsedCols.includes(col.id) || (collapseEmptyCols && isEmpty);
+                    return (
+                      <KanbanColumn
+                        key={col.id}
+                        col={col}
+                        todayIso={refTodayIso}
+                        canWrite={canWrite}
+                        collapsed={isCollapsed}
+                        onToggleCollapse={() => toggleColumnCollapse(col.id, isEmpty)}
+                        displayOptions={displayOptions}
+                        members={initialBoard.members}
+                        projects={initialBoard.projects}
+                        defaultProjectId={projectFilter}
+                        activeTimerTaskId={activeTimerTaskId}
+                        onAddInColumn={() => {
+                          setNewStatus(col.targetStatus ?? "TODO");
+                          if (col.targetPriority) setNewPriority(col.targetPriority);
+                          setCreateOpen(true);
+                        }}
+                        onQuickCreate={handleInlineQuickCreate}
+                        onOpenTask={(id) => setDetailTaskId(id)}
+                        onToggleComplete={handleToggleComplete}
+                        onStatusChange={handleStatusChange}
+                        onQuickUpdate={handleQuickUpdate}
+                        onDuplicate={handleDuplicateTask}
+                        onDelete={handleDeleteTask}
+                        onToggleTimer={handleToggleTimer}
+                      />
+                    );
+                  })}
                 </div>
 
                 <DragOverlay>
@@ -2682,9 +3208,13 @@ export function TaskKanbanBoard({
                                         ? "bg-blue-600"
                                         : effStatus === "IN_REVIEW"
                                           ? "bg-amber-600"
-                                          : effStatus === "CANCELLED"
-                                            ? "bg-zinc-500"
-                                            : "bg-slate-600",
+                                          : effStatus === "TO_BE_TESTED"
+                                            ? "bg-orange-600"
+                                            : effStatus === "ON_HOLD"
+                                              ? "bg-yellow-600"
+                                              : effStatus === "CANCELLED"
+                                                ? "bg-zinc-500"
+                                                : "bg-slate-600",
                                 )}
                                 style={{ left: `${leftPct}%`, width: `${widthPct}%` }}
                               >
@@ -2780,6 +3310,8 @@ export function TaskKanbanBoard({
                   <option value="TODO">Open / To Do</option>
                   <option value="IN_PROGRESS">In Progress</option>
                   <option value="IN_REVIEW">In Review</option>
+                  <option value="TO_BE_TESTED">To be Tested</option>
+                  <option value="ON_HOLD">On Hold</option>
                   <option value="DONE">Closed / Done</option>
                   <option value="CANCELLED">Cancelled</option>
                 </select>
@@ -2900,6 +3432,22 @@ export function TaskKanbanBoard({
         onOpenChange={setActivityOpen}
         tasks={tasks}
         onOpenTask={(id) => setDetailTaskId(id)}
+      />
+
+      <ManageStatusesDialog
+        open={manageStatusesOpen}
+        onOpenChange={setManageStatusesOpen}
+        hiddenStatuses={hiddenStatuses}
+        onToggleStatusVisibility={toggleStatusVisibility}
+        onResetStatuses={() => persistHiddenStatuses([])}
+        autoMoveOverdue={automationRules.autoMoveOverdueToDelayed}
+        onToggleAutoMoveOverdue={(next) =>
+          persistAutomationRules({
+            ...automationRules,
+            autoMoveOverdueToDelayed: next,
+          })
+        }
+        countsByStatus={countsByStatus}
       />
     </div>
   );

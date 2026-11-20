@@ -7,6 +7,7 @@ import {
   Download,
   FileSpreadsheet,
   Flag,
+  Kanban,
   ListChecks,
   Loader2,
   Search,
@@ -42,7 +43,7 @@ import {
   importTasksAction,
   postCommentAction,
 } from "@/modules/projects/projects.actions";
-import type { TaskCardDTO } from "@/modules/projects/projects.types";
+import type { ExtendedTaskStatus, TaskCardDTO } from "@/modules/projects/projects.types";
 
 export interface TaskAutomationRulesState {
   autoMoveOverdueToDelayed: boolean;
@@ -253,9 +254,10 @@ export function ImportTasksDialog({
   const handleImport = () => {
     if (!projectId || rows.length === 0) return;
     const jobId = `import-tasks-${Date.now()}`;
+    const taskWord = rows.length === 1 ? "task" : "tasks";
     emitBackgroundTaskEvent({
       id: jobId,
-      label: `Importing ${rows.length} task(s)`,
+      label: `Importing ${rows.length} ${taskWord}`,
       progress: 30,
       status: "running",
     });
@@ -272,13 +274,14 @@ export function ImportTasksDialog({
         toast.error(res.error.message);
         return;
       }
+      const importedWord = res.data.count === 1 ? "task" : "tasks";
       emitBackgroundTaskEvent({
         id: jobId,
-        label: `Imported ${res.data.count} task(s)`,
+        label: `Imported ${res.data.count} ${importedWord}`,
         progress: 100,
         status: "completed",
       });
-      toast.success(`Imported ${res.data.count} task(s)`);
+      toast.success(`Imported ${res.data.count} ${importedWord}`);
       setRawCsv("");
       onOpenChange(false);
       router.refresh();
@@ -369,7 +372,7 @@ export function ImportTasksDialog({
           </Button>
           <Button type="button" disabled={isPending || rows.length === 0} onClick={handleImport}>
             {isPending && <Loader2 className="size-4 animate-spin" />}
-            Import {rows.length > 0 ? `${rows.length} Task(s)` : "Tasks"}
+            Import {rows.length > 0 ? `${rows.length} ${rows.length === 1 ? "Task" : "Tasks"}` : "Tasks"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -690,5 +693,172 @@ export function TaskActivityLogSheet({
         </div>
       </SheetContent>
     </Sheet>
+  );
+}
+
+/* ── Manage Statuses Dialog ────────────────────────────────────────────────── */
+
+export interface WorkflowStatusItemSpec {
+  status: ExtendedTaskStatus;
+  label: string;
+  dot: string;
+  description: string;
+  lockedVisible?: boolean;
+}
+
+const WORKFLOW_STATUS_ITEMS: WorkflowStatusItemSpec[] = [
+  {
+    status: "DELAYED",
+    label: "Delayed",
+    dot: "bg-rose-500",
+    description: "Computed / overdue tasks lane or explicitly flagged blockers.",
+  },
+  {
+    status: "TODO",
+    label: "Open",
+    dot: "bg-emerald-500",
+    description: "Ready-to-start backlog and upcoming deliverables.",
+    lockedVisible: true,
+  },
+  {
+    status: "IN_PROGRESS",
+    label: "In Progress",
+    dot: "bg-blue-500",
+    description: "Actively worked tasks with time tracking support.",
+  },
+  {
+    status: "IN_REVIEW",
+    label: "In Review",
+    dot: "bg-amber-500",
+    description: "Peer review, stakeholder preview, or copy approval.",
+  },
+  {
+    status: "TO_BE_TESTED",
+    label: "To be Tested",
+    dot: "bg-orange-500",
+    description: "QA verification and staging validation prior to sign-off.",
+  },
+  {
+    status: "ON_HOLD",
+    label: "On Hold",
+    dot: "bg-yellow-500",
+    description: "Paused externally on dependency, client feedback, or scope review.",
+  },
+  {
+    status: "DONE",
+    label: "Closed",
+    dot: "bg-teal-500",
+    description: "Completed work contributing 100% to project roll-ups.",
+  },
+  {
+    status: "CANCELLED",
+    label: "Cancelled",
+    dot: "bg-zinc-400",
+    description: "Deprioritized or dropped work kept for audit history.",
+  },
+];
+
+export function ManageStatusesDialog({
+  open,
+  onOpenChange,
+  hiddenStatuses,
+  onToggleStatusVisibility,
+  onResetStatuses,
+  autoMoveOverdue,
+  onToggleAutoMoveOverdue,
+  countsByStatus,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  hiddenStatuses: ExtendedTaskStatus[];
+  onToggleStatusVisibility: (status: ExtendedTaskStatus) => void;
+  onResetStatuses: () => void;
+  autoMoveOverdue: boolean;
+  onToggleAutoMoveOverdue: (next: boolean) => void;
+  countsByStatus: Record<ExtendedTaskStatus, number>;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Kanban className="size-4 text-primary" />
+            Manage Task Statuses
+          </DialogTitle>
+          <DialogDescription>
+            Inspect the 8-stage delivery workflow, choose which Kanban columns stay visible, and
+            configure overdue routing.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-3">
+          <div className="flex items-center justify-between gap-3 rounded-lg border bg-muted/25 p-3">
+            <div>
+              <p className="text-xs font-semibold">Auto-move overdue tasks to Delayed</p>
+              <p className="text-[11px] text-muted-foreground">
+                Tasks past their due date automatically appear in Delayed until completed or
+                rescheduled.
+              </p>
+            </div>
+            <label className="flex cursor-pointer items-center gap-2">
+              <input
+                type="checkbox"
+                checked={autoMoveOverdue}
+                onChange={(e) => onToggleAutoMoveOverdue(e.target.checked)}
+                className="size-4 accent-primary"
+              />
+            </label>
+          </div>
+
+          <div className="max-h-72 space-y-1.5 overflow-y-auto pr-1">
+            {WORKFLOW_STATUS_ITEMS.map((item, index) => {
+              const visible = item.lockedVisible || !hiddenStatuses.includes(item.status);
+              const count = countsByStatus[item.status] ?? 0;
+              return (
+                <div
+                  key={item.status}
+                  className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2 text-xs"
+                >
+                  <div className="flex min-w-0 items-start gap-2.5">
+                    <span className="mt-1 font-mono text-[10px] text-muted-foreground">
+                      {index + 1}.
+                    </span>
+                    <span className={`mt-1.5 size-2.5 shrink-0 rounded-full ${item.dot}`} />
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-foreground">{item.label}</span>
+                        <Badge variant="secondary" className="px-1.5 py-0 text-[10px] tabular-nums">
+                          {count}
+                        </Badge>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground">{item.description}</p>
+                    </div>
+                  </div>
+                  <label className="flex shrink-0 cursor-pointer items-center gap-1.5 text-[11px] text-muted-foreground">
+                    <input
+                      type="checkbox"
+                      checked={visible}
+                      disabled={item.lockedVisible}
+                      onChange={() => onToggleStatusVisibility(item.status)}
+                      className="size-3.5 accent-primary"
+                    />
+                    <span>Show</span>
+                  </label>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <DialogFooter className="flex items-center justify-between sm:justify-between">
+          <Button type="button" variant="ghost" size="sm" onClick={onResetStatuses}>
+            Show All 8 Columns
+          </Button>
+          <Button type="button" onClick={() => onOpenChange(false)}>
+            Done
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

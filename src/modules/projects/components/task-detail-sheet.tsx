@@ -137,10 +137,19 @@ export function TaskDetailSheet({
     dueDate?: string;
   }) => {
     const targetExtStatus = nextFields?.status ?? status;
+    const isExtendedMetaStatus =
+      targetExtStatus === "DELAYED" ||
+      targetExtStatus === "TO_BE_TESTED" ||
+      targetExtStatus === "ON_HOLD" ||
+      targetExtStatus === "CANCELLED";
     const dbStatus: TaskStatus =
-      targetExtStatus === "DELAYED" || targetExtStatus === "CANCELLED"
-        ? task.status
-        : targetExtStatus;
+      targetExtStatus === "TO_BE_TESTED"
+        ? "IN_REVIEW"
+        : targetExtStatus === "DELAYED" ||
+            targetExtStatus === "ON_HOLD" ||
+            targetExtStatus === "CANCELLED"
+          ? "TODO"
+          : targetExtStatus;
     const targetPriority = nextFields?.priority ?? priority;
     const targetAssignee = nextFields?.assigneeId ?? assigneeId;
     const targetDue = nextFields?.dueDate ?? dueDate;
@@ -167,10 +176,7 @@ export function TaskDetailSheet({
         title: title.trim() || task.title,
         description: description.trim() || null,
         status: dbStatus,
-        extendedStatus:
-          targetExtStatus === "DELAYED" || targetExtStatus === "CANCELLED"
-            ? targetExtStatus
-            : undefined,
+        extendedStatus: isExtendedMetaStatus ? targetExtStatus : undefined,
         priority: targetPriority,
         dueDate: targetDue || null,
         assignee: nextMember
@@ -409,9 +415,13 @@ export function TaskDetailSheet({
                         ? "bg-blue-500"
                         : status === "IN_REVIEW"
                           ? "bg-amber-500"
-                          : status === "CANCELLED"
-                            ? "bg-zinc-400"
-                            : "bg-emerald-500",
+                          : status === "TO_BE_TESTED"
+                            ? "bg-orange-500"
+                            : status === "ON_HOLD"
+                              ? "bg-yellow-500"
+                              : status === "CANCELLED"
+                                ? "bg-zinc-400"
+                                : "bg-emerald-500",
                 )}
               />
               <select
@@ -429,6 +439,8 @@ export function TaskDetailSheet({
                 <option value="TODO">Open</option>
                 <option value="IN_PROGRESS">In Progress</option>
                 <option value="IN_REVIEW">In Review</option>
+                <option value="TO_BE_TESTED">To be Tested</option>
+                <option value="ON_HOLD">On Hold</option>
                 <option value="DONE">Closed</option>
                 <option value="CANCELLED">Cancelled</option>
               </select>

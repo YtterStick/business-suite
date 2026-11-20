@@ -119,6 +119,8 @@ export type ExtendedTaskStatus =
   | "TODO"
   | "IN_PROGRESS"
   | "IN_REVIEW"
+  | "TO_BE_TESTED"
+  | "ON_HOLD"
   | "DONE"
   | "CANCELLED";
 
