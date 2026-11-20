@@ -241,6 +241,7 @@ export default async function CollaborationPage({
         }
         calendarEvents={calendarEvents}
         showZohoTabs
+        currentUserName={tenant.user.name}
         canWrite={can(tenant, "projects.comment.write")}
       />
     </div>

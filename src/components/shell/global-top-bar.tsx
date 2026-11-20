@@ -4,20 +4,27 @@ import * as React from "react";
 import type { MembershipRole, PortalProfile, UserType } from "@prisma/client";
 import {
   Bug,
+  Building2,
+  CalendarClock,
+  Check,
   CheckSquare,
   ChevronDown,
   Clock,
   Flag,
   FolderKanban,
   Laptop,
+  Loader2,
   LogOut,
   Menu,
   Moon,
   Plus,
   Receipt,
   Settings,
+  Shield,
   Sun,
+  UserCog,
   UserPlus,
+  Users,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -39,6 +46,14 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -46,6 +61,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Sheet,
   SheetContent,
@@ -58,8 +75,28 @@ import type { TopBarNotificationItem } from "@/lib/notifications";
 import { can, getZohoRoleLabel, isClientUser } from "@/lib/rbac";
 import { cn } from "@/lib/utils";
 import { InviteUsersDialog } from "@/modules/org/components/invite-users-dialog";
+import { updateMyProfileAction } from "@/modules/org/team.actions";
 
 export type { NotificationKind, TopBarNotificationItem } from "@/lib/notifications";
+
+type PresenceStatus = "available" | "busy" | "dnd" | "away";
+
+const PRESENCE_OPTIONS: Array<{
+  id: PresenceStatus;
+  label: string;
+  dotClass: string;
+}> = [
+  { id: "available", label: "Available", dotClass: "bg-emerald-500" },
+  { id: "busy", label: "Busy", dotClass: "bg-amber-500" },
+  { id: "dnd", label: "Do Not Disturb", dotClass: "bg-rose-500" },
+  { id: "away", label: "Away", dotClass: "bg-zinc-400" },
+];
+
+const PROFILE_BADGE_LABELS: Record<PortalProfile, string> = {
+  PORTAL_OWNER: "Portal Owner",
+  STANDARD: "Standard",
+  CLIENT: "Client",
+};
 
 interface GlobalTopBarProps {
   orgSlug: string;
@@ -97,9 +134,55 @@ export function GlobalTopBar({
   const [mobileOpen, setMobileOpen] = React.useState(false);
   const [inviteOpen, setInviteOpen] = React.useState(false);
   const [setupOpen, setSetupOpen] = React.useState(false);
+  const [profileOpen, setProfileOpen] = React.useState(false);
+  const [presence, setPresence] = React.useState<PresenceStatus>("available");
+
+  // Profile edit form state
+  const [profileName, setProfileName] = React.useState(user.name);
+  const [profileJobTitle, setProfileJobTitle] = React.useState(user.jobTitle ?? "");
+  const [profileAvatarUrl, setProfileAvatarUrl] = React.useState(user.avatarUrl ?? "");
+  const [savingProfile, startProfileTransition] = React.useTransition();
+
+  React.useEffect(() => {
+    setProfileName(user.name);
+    setProfileJobTitle(user.jobTitle ?? "");
+    setProfileAvatarUrl(user.avatarUrl ?? "");
+  }, [user.name, user.jobTitle, user.avatarUrl]);
+
+  React.useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(`tq_presence_${user.id}`);
+      if (saved === "available" || saved === "busy" || saved === "dnd" || saved === "away") {
+        setPresence(saved);
+      }
+    } catch {
+      // Ignore storage errors
+    }
+  }, [user.id]);
+
+  const updatePresence = (next: PresenceStatus) => {
+    setPresence(next);
+    try {
+      window.localStorage.setItem(`tq_presence_${user.id}`, next);
+    } catch {
+      // Ignore storage errors
+    }
+    const label = PRESENCE_OPTIONS.find((p) => p.id === next)?.label ?? next;
+    toast.success(`Status set to ${label}`);
+  };
+
+  const activePresence =
+    PRESENCE_OPTIONS.find((p) => p.id === presence) ?? PRESENCE_OPTIONS[0]!;
+
   const access = { role, portalProfile, userType };
   const isClient = isClientUser(access);
   const roleLabel = getZohoRoleLabel(access);
+  const resolvedProfile: PortalProfile =
+    isClient
+      ? "CLIENT"
+      : portalProfile ?? (role === "OWNER" ? "PORTAL_OWNER" : "STANDARD");
+  const profileBadgeLabel = PROFILE_BADGE_LABELS[resolvedProfile];
+
   const canInvite = can(access, "org.members.manage");
   const canManageProjects = can(access, "projects.project.manage");
   const canWriteTasks = can(access, "projects.project.write");
@@ -118,31 +201,40 @@ export function GlobalTopBar({
       return matchedNav.label;
     }
     const parts = rel.split("/").filter(Boolean);
-    if (parts.length >= 2) {
-      const seg = parts[1]!;
-      const matchedProject = recentProjects.find((p) => p.id === seg);
-      if (matchedProject) return matchedProject.name;
-      return seg
-        .split("-")
-        .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-        .join(" ");
+    if (parts[0] === "projects" && parts[1] && parts[1].length > 12) {
+      return "Project Workspace";
     }
     return null;
-  }, [pathname, orgSlug, activeModule.items, recentProjects]);
+  }, [pathname, orgSlug, activeModule.items]);
 
-  const triggerQuickCreate = (detail: string, targetPath?: string) => {
-    if (detail === "users") {
-      if (!canInvite) {
-        toast.error("Admin or Owner role required to invite users.");
-        return;
-      }
+  const triggerQuickCreate = (quickKey: string, targetPath?: string) => {
+    if (quickKey === "users") {
       setInviteOpen(true);
       return;
     }
-    if (targetPath) {
+    window.dispatchEvent(new CustomEvent("bs-quick-add", { detail: quickKey }));
+    if (targetPath && !pathname.endsWith(targetPath.split("?")[0] ?? "")) {
       router.push(getModuleHref(orgSlug, targetPath));
     }
-    window.dispatchEvent(new CustomEvent("bs-quick-add", { detail }));
+  };
+
+  const handleSaveProfile = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    startProfileTransition(async () => {
+      const res = await updateMyProfileAction({
+        orgSlug,
+        name: profileName,
+        jobTitle: profileJobTitle || null,
+        avatarUrl: profileAvatarUrl || null,
+      });
+      if (!res.ok) {
+        toast.error(res.error.message);
+        return;
+      }
+      toast.success("Profile updated");
+      setProfileOpen(false);
+      router.refresh();
+    });
   };
 
   return (
@@ -212,12 +304,8 @@ export function GlobalTopBar({
           <GlobalSearchCommand orgSlug={orgSlug} />
         </div>
 
-        {/* Right: Universal Quick-Create (+), Notifications Bell, Setup Gear, Role Badge */}
+        {/* Right: Universal Quick-Create (+), Notifications Bell, Theme, Setup Gear, Profile */}
         <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
-          <Badge variant="outline" className="hidden lg:inline-flex">
-            {roleLabel}
-          </Badge>
-
           {/* Contextual Shortcut for CRM & Finance + Universal Quick-Create for Projects */}
           {activeModule.id === "finance" && canWriteInvoices && (
             <Button asChild size="sm" variant="outline" className="hidden sm:inline-flex">
@@ -331,7 +419,7 @@ export function GlobalTopBar({
             </DropdownMenu>
           )}
 
-          {/* Zoho-Style Notification Center */}
+          {/* Notification Center */}
           <NotificationCenter
             orgSlug={orgSlug}
             userId={user.id}
@@ -385,14 +473,14 @@ export function GlobalTopBar({
             </Button>
           )}
 
-          {/* Active User Account Menu & Sign Out */}
+          {/* Active User Account Profile Menu & Sign Out */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
                 aria-label="User account menu"
                 title={`${user.name} (${roleLabel})`}
-                className="rounded-full ring-1 ring-border transition hover:ring-2 hover:ring-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="relative rounded-full ring-1 ring-border transition hover:ring-2 hover:ring-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <Avatar className="size-7">
                   {user.avatarUrl && <AvatarImage src={user.avatarUrl} alt={user.name} />}
@@ -400,34 +488,240 @@ export function GlobalTopBar({
                     {initials(user.name)}
                   </AvatarFallback>
                 </Avatar>
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    "absolute right-0 bottom-0 size-2 rounded-full ring-2 ring-background",
+                    activePresence.dotClass,
+                  )}
+                />
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-60">
-              <DropdownMenuLabel>
-                <p className="truncate text-sm font-semibold">{user.name}</p>
-                <p className="truncate text-xs font-normal text-muted-foreground">{user.email}</p>
-              </DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem className="justify-between" disabled>
-                <span>Role in {activeOrg.name}</span>
-                <Badge variant="outline">{roleLabel}</Badge>
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem asChild>
-                <form action="/api/auth/logout" method="post" className="w-full">
-                  <button
-                    type="submit"
-                    className="flex w-full items-center gap-2 text-left text-destructive"
-                  >
-                    <LogOut className="size-4" />
-                    <span>Sign out</span>
-                  </button>
-                </form>
-              </DropdownMenuItem>
+            <DropdownMenuContent align="end" className="w-80 p-0">
+              {/* Profile Summary Banner */}
+              <div className="flex items-start gap-3 border-b bg-muted/30 p-3.5">
+                <div className="relative shrink-0">
+                  <Avatar className="size-11 ring-1 ring-border">
+                    {user.avatarUrl && <AvatarImage src={user.avatarUrl} alt={user.name} />}
+                    <AvatarFallback className="bg-zinc-900 text-xs font-semibold text-zinc-100">
+                      {initials(user.name)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <span
+                    className={cn(
+                      "absolute right-0 bottom-0 size-3 rounded-full ring-2 ring-background",
+                      activePresence.dotClass,
+                    )}
+                  />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold text-foreground">{user.name}</p>
+                  <p className="truncate text-xs text-muted-foreground">{user.email}</p>
+                  {user.jobTitle && (
+                    <p className="mt-0.5 truncate text-[11px] font-medium text-foreground/80">
+                      {user.jobTitle}
+                    </p>
+                  )}
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                    <Badge variant="default" className="gap-1 px-1.5 py-0 text-[10px]">
+                      <Shield className="size-2.5" />
+                      {roleLabel}
+                    </Badge>
+                    <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">
+                      {profileBadgeLabel}
+                    </Badge>
+                  </div>
+                </div>
+              </div>
+
+              {/* Presence / Availability Selector */}
+              <div className="border-b px-3 py-2.5">
+                <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Status · {activePresence.label}
+                </p>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {PRESENCE_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => updatePresence(opt.id)}
+                      className={cn(
+                        "flex items-center gap-1.5 rounded-md border px-2 py-1 text-left text-[11px] font-medium transition",
+                        presence === opt.id
+                          ? "border-primary/40 bg-primary/10 text-foreground"
+                          : "border-transparent bg-muted/40 text-muted-foreground hover:bg-muted hover:text-foreground",
+                      )}
+                    >
+                      <span className={cn("size-2 shrink-0 rounded-full", opt.dotClass)} />
+                      <span className="truncate">{opt.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Account Links */}
+              <div className="p-1">
+                <DropdownMenuItem onSelect={() => setProfileOpen(true)} className="gap-2">
+                  <UserCog className="size-4 text-primary" />
+                  <span>Edit Profile &amp; Account</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link href={`/${orgSlug}/projects/tasks`} className="gap-2">
+                    <CheckSquare className="size-4 text-blue-600" />
+                    <span>My Tasks</span>
+                  </Link>
+                </DropdownMenuItem>
+                {!isClient && (
+                  <>
+                    <DropdownMenuItem asChild>
+                      <Link href={`/${orgSlug}/projects/timesheets`} className="gap-2">
+                        <CalendarClock className="size-4 text-emerald-600" />
+                        <span>My Timesheets</span>
+                      </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
+                      <Link href={`/${orgSlug}/projects/users`} className="gap-2">
+                        <Users className="size-4 text-violet-600" />
+                        <span>Team &amp; Permissions</span>
+                      </Link>
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </div>
+
+              <DropdownMenuSeparator className="my-0" />
+
+              {/* Workspaces Quick Switcher */}
+              <div className="p-1">
+                <p className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Workspaces ({organizations.length})
+                </p>
+                {organizations.map((org) => {
+                  const isCurrent = org.slug === orgSlug;
+                  return (
+                    <DropdownMenuItem key={org.id} asChild>
+                      <Link
+                        href={getModuleHref(org.slug, activeModule.defaultPath)}
+                        className="flex items-center justify-between gap-2"
+                      >
+                        <span className="flex min-w-0 items-center gap-2">
+                          <Building2 className="size-3.5 shrink-0 text-muted-foreground" />
+                          <span className="truncate text-xs font-medium">{org.name}</span>
+                        </span>
+                        {isCurrent && <Check className="size-3.5 shrink-0 text-primary" />}
+                      </Link>
+                    </DropdownMenuItem>
+                  );
+                })}
+                <DropdownMenuItem asChild>
+                  <Link href="/signup" className="gap-2 text-xs text-muted-foreground">
+                    <Plus className="size-3.5" />
+                    <span>Create New Workspace</span>
+                  </Link>
+                </DropdownMenuItem>
+              </div>
+
+              <DropdownMenuSeparator className="my-0" />
+
+              <div className="p-1">
+                <DropdownMenuItem asChild>
+                  <form action="/api/auth/logout" method="post" className="w-full">
+                    <button
+                      type="submit"
+                      className="flex w-full items-center gap-2 text-left text-destructive"
+                    >
+                      <LogOut className="size-4" />
+                      <span>Sign out</span>
+                    </button>
+                  </form>
+                </DropdownMenuItem>
+              </div>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
       </header>
+
+      {/* Edit Profile & Account Modal */}
+      <Dialog open={profileOpen} onOpenChange={setProfileOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <UserCog className="size-4 text-primary" />
+              Edit Profile &amp; Account
+            </DialogTitle>
+            <DialogDescription>
+              Update your display name, role title in {activeOrg.name}, and profile avatar URL.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleSaveProfile} className="space-y-4">
+            <div className="flex items-center gap-3 rounded-lg border bg-muted/20 p-3">
+              <Avatar className="size-12">
+                {profileAvatarUrl && <AvatarImage src={profileAvatarUrl} alt={profileName} />}
+                <AvatarFallback className="text-sm font-semibold">
+                  {initials(profileName || user.name)}
+                </AvatarFallback>
+              </Avatar>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-semibold">{profileName || user.name}</p>
+                <p className="truncate text-xs text-muted-foreground">{user.email}</p>
+                <div className="mt-1 flex items-center gap-1.5">
+                  <Badge variant="outline" className="px-1.5 py-0 text-[10px]">
+                    {roleLabel}
+                  </Badge>
+                  <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">
+                    {profileBadgeLabel}
+                  </Badge>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="my-profile-name">Full Name</Label>
+              <Input
+                id="my-profile-name"
+                value={profileName}
+                onChange={(e) => setProfileName(e.target.value)}
+                required
+                minLength={2}
+                maxLength={100}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="my-profile-job">Job Title / Role Description</Label>
+              <Input
+                id="my-profile-job"
+                value={profileJobTitle}
+                onChange={(e) => setProfileJobTitle(e.target.value)}
+                placeholder="e.g. Project Lead, Solutions Architect"
+                maxLength={120}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="my-profile-avatar">Avatar Image URL (optional)</Label>
+              <Input
+                id="my-profile-avatar"
+                value={profileAvatarUrl}
+                onChange={(e) => setProfileAvatarUrl(e.target.value)}
+                placeholder="https://..."
+                maxLength={500}
+              />
+            </div>
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setProfileOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={savingProfile}>
+                {savingProfile && <Loader2 className="size-4 animate-spin" />}
+                Save Profile
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       <InviteUsersDialog
         open={inviteOpen}

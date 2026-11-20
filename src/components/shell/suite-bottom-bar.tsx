@@ -88,6 +88,8 @@ export interface BottomBarChatItem {
   authorName: string;
   body: string;
   createdAt: string;
+  projectId?: string;
+  projectName?: string;
 }
 
 interface PinnedRoute {
@@ -138,6 +140,7 @@ export function SuiteBottomBar({
   projects,
   contacts,
   recentChats,
+  currentUserName = "You",
   canWriteProjects,
   canLogTime,
   canViewContacts = true,
@@ -147,6 +150,7 @@ export function SuiteBottomBar({
   projects: BottomBarProjectOption[];
   contacts: BottomBarContactItem[];
   recentChats: BottomBarChatItem[];
+  currentUserName?: string;
   canWriteProjects: boolean;
   canLogTime?: boolean;
   canViewContacts?: boolean;
@@ -347,9 +351,17 @@ export function SuiteBottomBar({
   }, [contacts, contactSearch]);
 
   // Quick Chats (synchronized with Collaboration Chat tab)
+  const [chatProjectId, setChatProjectId] = React.useState<string>("ALL");
+  const [composerChatProjectId, setComposerChatProjectId] = React.useState<string>(
+    projects[0]?.id ?? "workspace",
+  );
   const [chatMessage, setChatMessage] = React.useState("");
   const [localChats, setLocalChats] = React.useState<BottomBarChatItem[]>(recentChats);
   const [isSendingChat, startChatTransition] = React.useTransition();
+  const projectMap = React.useMemo(
+    () => new Map(projects.map((p) => [p.id, p.name])),
+    [projects],
+  );
 
   React.useEffect(() => {
     setLocalChats(recentChats);
@@ -360,36 +372,69 @@ export function SuiteBottomBar({
       const msg = (event as CustomEvent<BottomBarChatItem>).detail;
       if (!msg) return;
       setLocalChats((prev) =>
-        prev.some((c) => c.id === msg.id) ? prev : [msg, ...prev],
+        prev.some((c) => c.id === msg.id) ? prev : [...prev, msg],
       );
     };
     window.addEventListener("bs-chat-sync", onChatSync);
     return () => window.removeEventListener("bs-chat-sync", onChatSync);
   }, []);
 
+  const visibleDockChats = React.useMemo(() => {
+    return localChats
+      .filter((chat) => {
+        if (chatProjectId === "ALL") return true;
+        return (chat.projectId ?? "workspace") === chatProjectId;
+      })
+      .map((chat) => {
+        const topicMatch = chat.body.match(/^\[TOPIC:([^\]]+)\]\s*/);
+        const topic = topicMatch?.[1]?.trim() || null;
+        const cleanBody = topicMatch ? chat.body.slice(topicMatch[0].length) : chat.body;
+        return {
+          ...chat,
+          topic,
+          cleanBody,
+          resolvedProjectName:
+            chat.projectName ??
+            (chat.projectId && chat.projectId !== "workspace"
+              ? (projectMap.get(chat.projectId) ?? "Project")
+              : "General Workspace"),
+        };
+      })
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }, [localChats, chatProjectId, projectMap]);
+
   const handleSendChat = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const cleanBody = chatMessage.trim();
     if (!cleanBody) return;
+    const targetPid =
+      chatProjectId !== "ALL" ? chatProjectId : composerChatProjectId || "workspace";
+    const isWorkspace = targetPid === "workspace";
+    const targetProjectName = isWorkspace
+      ? "General Workspace"
+      : (projectMap.get(targetPid) ?? "Project");
+
     startChatTransition(async () => {
       const res = await postCommentAction({
         orgSlug,
-        entityType: "Workspace",
-        entityId: "workspace",
+        entityType: isWorkspace ? "Workspace" : "Project",
+        entityId: targetPid,
         body: cleanBody,
       });
       if (!res.ok) toast.error(res.error.message);
       else {
         const synced: BottomBarChatItem = {
           id: `live-chat-${Date.now()}`,
-          authorName: "You",
+          authorName: currentUserName || "You",
           body: cleanBody,
           createdAt: new Date().toISOString(),
+          projectId: targetPid,
+          projectName: targetProjectName,
         };
-        setLocalChats((prev) => [synced, ...prev]);
+        setLocalChats((prev) => [...prev, synced]);
         window.dispatchEvent(new CustomEvent<BottomBarChatItem>("bs-chat-sync", { detail: synced }));
         setChatMessage("");
-        toast.success("Message posted to Collaboration Chat");
+        toast.success(`Posted to ${targetProjectName}`);
         router.refresh();
       }
     });
@@ -1288,124 +1333,160 @@ export function SuiteBottomBar({
             </>
           )}
 
-          {activePanel === "chats" && (
-            <>
-              <SheetHeader className="border-b pb-4">
+          {(activePanel === "chats" || activePanel === "live-chat") && (
+            <div className="flex h-full flex-col">
+              <SheetHeader className="border-b pb-3">
                 <SheetTitle className="flex items-center gap-2">
-                  <MessageSquare className="size-4 text-violet-600" />
-                  Team Chats
+                  {activePanel === "live-chat" ? (
+                    <>
+                      <MessageCircle className="size-4 text-emerald-600" />
+                      Live Chat
+                      <Badge className="bg-emerald-600 text-[10px] text-white">Online</Badge>
+                    </>
+                  ) : (
+                    <>
+                      <MessageSquare className="size-4 text-violet-600" />
+                      Team Chats
+                    </>
+                  )}
                 </SheetTitle>
                 <SheetDescription>
-                  Recent collaboration messages across your organization.
+                  Select a project channel and chat in real time with Collaboration.
                 </SheetDescription>
+                <div className="flex items-center justify-between gap-2 pt-2">
+                  <select
+                    aria-label="Filter chat by project"
+                    value={chatProjectId}
+                    onChange={(e) => {
+                      const next = e.target.value;
+                      setChatProjectId(next);
+                      if (next !== "ALL") setComposerChatProjectId(next);
+                    }}
+                    className="h-8 flex-1 rounded-md border border-input bg-background px-2.5 text-xs font-medium"
+                  >
+                    <option value="ALL">All Projects &amp; Workspace</option>
+                    <option value="workspace">General Workspace</option>
+                    {projects.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                  <Link
+                    href={`/${orgSlug}/projects/collaboration`}
+                    onClick={() => setActivePanel(null)}
+                    className="shrink-0 text-xs font-medium text-primary hover:underline"
+                  >
+                    Full Chat →
+                  </Link>
+                </div>
               </SheetHeader>
-              <div className="space-y-4 p-4">
-                {canWriteProjects && (
-                  <form onSubmit={handleSendChat} className="space-y-2">
-                    <Input
-                      value={chatMessage}
-                      onChange={(e) => setChatMessage(e.target.value)}
-                      placeholder="Send a quick message to your team..."
-                      required
-                    />
-                    <div className="flex justify-between">
-                      <Link
-                        href={`/${orgSlug}/projects/collaboration`}
-                        onClick={() => setActivePanel(null)}
-                        className="text-xs font-medium text-primary hover:underline"
+
+              <div className="flex-1 space-y-2.5 overflow-y-auto p-4">
+                {visibleDockChats.length === 0 ? (
+                  <p className="py-10 text-center text-xs text-muted-foreground">
+                    No messages in this channel yet. Start the conversation below.
+                  </p>
+                ) : (
+                  visibleDockChats.map((chat) => {
+                    const isOwn =
+                      chat.authorName === currentUserName || chat.authorName === "You";
+                    return (
+                      <div
+                        key={chat.id}
+                        className={cn(
+                          "flex items-end gap-2",
+                          isOwn ? "justify-end" : "justify-start",
+                        )}
                       >
-                        Open full Collaboration →
-                      </Link>
-                      <Button type="submit" size="xs" disabled={isSendingChat}>
-                        {isSendingChat ? (
-                          <Loader2 className="size-3.5 animate-spin" />
-                        ) : (
-                          <Send className="size-3" />
+                        {!isOwn && (
+                          <Avatar className="size-6 shrink-0">
+                            <AvatarFallback className="text-[9px]">
+                              {initials(chat.authorName)}
+                            </AvatarFallback>
+                          </Avatar>
                         )}
-                        Send
-                      </Button>
-                    </div>
-                  </form>
-                )}
-
-                <div className="space-y-2.5">
-                  {localChats.length === 0 ? (
-                    <p className="py-6 text-center text-xs text-muted-foreground">
-                      No messages yet.
-                    </p>
-                  ) : (
-                    localChats.map((chat) => (
-                      <div key={chat.id} className="rounded-lg border bg-muted/20 p-3 text-xs">
-                        <div className="flex items-center justify-between font-semibold">
-                          <span>{chat.authorName}</span>
-                          <span className="font-normal text-muted-foreground">
-                            {formatDateTimeUtc(chat.createdAt)} UTC
-                          </span>
+                        <div
+                          className={cn(
+                            "flex max-w-[82%] flex-col gap-0.5",
+                            isOwn ? "items-end" : "items-start",
+                          )}
+                        >
+                          <div className="flex flex-wrap items-center gap-1.5 px-1 text-[10px]">
+                            <span className="font-semibold text-foreground">
+                              {isOwn ? "You" : chat.authorName}
+                            </span>
+                            <Badge variant="outline" className="px-1 py-0 text-[9px]">
+                              {chat.topic ?? chat.resolvedProjectName}
+                            </Badge>
+                            <span className="text-muted-foreground">
+                              {formatDateTimeUtc(chat.createdAt)}
+                            </span>
+                          </div>
+                          <div
+                            className={cn(
+                              "rounded-2xl px-3 py-2 text-xs leading-relaxed",
+                              isOwn
+                                ? "rounded-br-sm bg-indigo-600 text-white"
+                                : "rounded-bl-sm border bg-muted/60 text-foreground dark:border-zinc-800 dark:bg-zinc-900",
+                            )}
+                          >
+                            <p className="whitespace-pre-wrap break-words">{chat.cleanBody}</p>
+                          </div>
                         </div>
-                        <p className="mt-1 whitespace-pre-wrap text-foreground/90">{chat.body}</p>
                       </div>
-                    ))
-                  )}
-                </div>
+                    );
+                  })
+                )}
               </div>
-            </>
-          )}
 
-          {activePanel === "live-chat" && (
-            <>
-              <SheetHeader className="border-b pb-4">
-                <SheetTitle className="flex items-center gap-2">
-                  <MessageCircle className="size-4 text-emerald-600" />
-                  Live Chat Channel
-                  <Badge className="bg-emerald-600 text-white text-[10px]">Online</Badge>
-                </SheetTitle>
-                <SheetDescription>
-                  Real-time workspace chat room across CRM, Finance, and Projects.
-                </SheetDescription>
-              </SheetHeader>
-              <div className="space-y-4 p-4">
-                {canWriteProjects && (
-                  <form onSubmit={handleSendChat} className="space-y-2">
-                    <Input
+              {canWriteProjects && (
+                <form onSubmit={handleSendChat} className="space-y-2 border-t bg-background p-3">
+                  {chatProjectId === "ALL" && (
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className="shrink-0 text-[11px] text-muted-foreground">
+                        Post to:
+                      </span>
+                      <select
+                        aria-label="Select project to message"
+                        value={composerChatProjectId}
+                        onChange={(e) => setComposerChatProjectId(e.target.value)}
+                        className="h-7 flex-1 rounded-md border border-input bg-background px-2 text-xs"
+                      >
+                        <option value="workspace">General Workspace</option>
+                        {projects.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                  <div className="flex items-center gap-2 rounded-xl border border-input bg-muted/20 px-2.5 py-1.5">
+                    <input
+                      type="text"
                       value={chatMessage}
                       onChange={(e) => setChatMessage(e.target.value)}
-                      placeholder="Message team or project channel live..."
+                      placeholder={
+                        chatProjectId === "ALL"
+                          ? `Message in ${composerChatProjectId === "workspace" ? "General Workspace" : (projectMap.get(composerChatProjectId) ?? "Project")}...`
+                          : `Message in ${chatProjectId === "workspace" ? "General Workspace" : (projectMap.get(chatProjectId) ?? "Project")}...`
+                      }
                       required
+                      className="min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground"
                     />
-                    <div className="flex justify-end">
-                      <Button type="submit" size="xs" disabled={isSendingChat}>
-                        {isSendingChat ? (
-                          <Loader2 className="size-3.5 animate-spin" />
-                        ) : (
-                          <Send className="size-3" />
-                        )}
-                        Send Live Message
-                      </Button>
-                    </div>
-                  </form>
-                )}
-
-                <div className="space-y-2.5">
-                  {localChats.length === 0 ? (
-                    <p className="py-6 text-center text-xs text-muted-foreground">
-                      No live messages yet. Start a conversation above.
-                    </p>
-                  ) : (
-                    localChats.map((chat) => (
-                      <div key={chat.id} className="rounded-lg border bg-muted/20 p-3 text-xs">
-                        <div className="flex items-center justify-between font-semibold">
-                          <span>{chat.authorName}</span>
-                          <span className="font-normal text-muted-foreground">
-                            {formatDateTimeUtc(chat.createdAt)} UTC
-                          </span>
-                        </div>
-                        <p className="mt-1 whitespace-pre-wrap text-foreground/90">{chat.body}</p>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-            </>
+                    <Button type="submit" size="xs" disabled={isSendingChat || !chatMessage.trim()}>
+                      {isSendingChat ? (
+                        <Loader2 className="size-3.5 animate-spin" />
+                      ) : (
+                        <Send className="size-3" />
+                      )}
+                      Send
+                    </Button>
+                  </div>
+                </form>
+              )}
+            </div>
           )}
 
           {activePanel === "contacts" && (

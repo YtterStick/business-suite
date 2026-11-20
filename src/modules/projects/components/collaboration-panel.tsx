@@ -76,6 +76,7 @@ interface CollaborationPanelProps {
   calendarEvents?: CollaborationCalendarEvent[];
   fixedProjectId?: string;
   showZohoTabs?: boolean;
+  currentUserName?: string;
   canWrite: boolean;
 }
 
@@ -119,6 +120,7 @@ export function CollaborationPanel({
   calendarEvents = [],
   fixedProjectId,
   showZohoTabs = false,
+  currentUserName,
   canWrite,
 }: CollaborationPanelProps) {
   const router = useRouter();
@@ -668,6 +670,7 @@ export function CollaborationPanel({
           comments={comments}
           projects={projects}
           members={members}
+          currentUserName={currentUserName}
           canWrite={canWrite}
         />
       )}

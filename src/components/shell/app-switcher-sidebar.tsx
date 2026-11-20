@@ -81,6 +81,7 @@ export interface SidebarUserSummary {
   name: string;
   email: string;
   avatarUrl: string | null;
+  jobTitle?: string | null;
 }
 
 interface AppSwitcherSidebarProps {
@@ -324,22 +325,22 @@ export function AppSwitcherSidebar({
       {/* ── Primary Global App Switcher Rail ──────────────────────────────── */}
       <div className="flex w-16 flex-col items-center justify-between border-r bg-zinc-950 py-3 text-zinc-100">
         <div className="flex flex-col items-center gap-3">
-          {/* Organization Switcher Trigger */}
+          {/* Brand + Organization Switcher Trigger */}
           <DropdownMenu>
             <Tooltip>
               <TooltipTrigger asChild>
                 <DropdownMenuTrigger asChild>
                   <button
                     type="button"
-                    aria-label="Switch organization"
-                    className="flex size-10 items-center justify-center rounded-xl bg-gradient-to-br from-violet-600 to-indigo-600 text-xs font-bold tracking-wider text-white shadow-sm ring-1 ring-white/20 transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                    aria-label="Tactiq — Switch organization"
+                    className="tq-hover-animate flex size-10 items-center justify-center rounded-xl bg-zinc-900 ring-1 ring-white/15 transition hover:scale-105 hover:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
                   >
-                    {initials(activeOrg.name)}
+                    <TactiqMark animated className="size-6" />
                   </button>
                 </DropdownMenuTrigger>
               </TooltipTrigger>
               <TooltipContent side="right">
-                <p className="font-medium">{activeOrg.name}</p>
+                <p className="font-medium">Tactiq · {activeOrg.name}</p>
                 <p className="text-xs text-muted-foreground">Switch organization</p>
               </TooltipContent>
             </Tooltip>
@@ -421,18 +422,6 @@ export function AppSwitcherSidebar({
             })}
           </nav>
         </div>
-
-        {/* Bottom Tactiq Brand Badge */}
-        <div className="flex flex-col items-center gap-3">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <div className="tq-hover-animate flex size-8 items-center justify-center rounded-lg bg-zinc-900 transition-transform hover:scale-105">
-                <TactiqMark animated className="size-5" />
-              </div>
-            </TooltipTrigger>
-            <TooltipContent side="right">Tactiq</TooltipContent>
-          </Tooltip>
-        </div>
       </div>
 
       {/* ── Secondary Contextual Module Sidebar ───────────────────────────── */}
@@ -444,9 +433,6 @@ export function AppSwitcherSidebar({
               <span className="truncate text-sm font-semibold tracking-tight">
                 {activeModule.name}
               </span>
-              <Badge variant="secondary" className="px-1.5 py-0 text-[10px] font-medium">
-                {ROLE_LABEL[role]}
-              </Badge>
             </div>
             <p className="truncate text-[11px] text-muted-foreground">{activeOrg.name}</p>
           </div>

@@ -243,3 +243,48 @@ export async function updatePortalConfigAction(
     return updated;
   });
 }
+
+const myProfileSchema = z.object({
+  orgSlug: z.string().min(1),
+  name: z.string().trim().min(2, "Full name must be at least 2 characters.").max(100),
+  jobTitle: z.string().trim().max(120).optional().nullable(),
+  avatarUrl: z
+    .string()
+    .trim()
+    .max(500)
+    .optional()
+    .nullable()
+    .refine(
+      (val) => !val || /^https?:\/\//i.test(val) || val.startsWith("/"),
+      "Avatar URL must start with http(s):// or /.",
+    ),
+});
+
+export async function updateMyProfileAction(
+  rawInput: z.input<typeof myProfileSchema>,
+): Promise<ActionResult<{ name: string; jobTitle: string | null; avatarUrl: string | null }>> {
+  return runAction(async () => {
+    const parsed = myProfileSchema.safeParse(rawInput);
+    if (!parsed.success) {
+      throw new ValidationError(parsed.error.issues[0]?.message ?? "Invalid profile details.");
+    }
+    const { orgSlug, name, jobTitle, avatarUrl } = parsed.data;
+    const ctx = await assertTenant(orgSlug);
+    const cleanJobTitle = jobTitle?.trim() || null;
+    const cleanAvatarUrl = avatarUrl?.trim() || null;
+
+    await db.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id: ctx.user.id },
+        data: { name, avatarUrl: cleanAvatarUrl },
+      });
+      await tx.membership.update({
+        where: { id: ctx.membershipId },
+        data: { jobTitle: cleanJobTitle },
+      });
+    });
+
+    revalidatePath(`/${orgSlug}`, "layout");
+    return { name, jobTitle: cleanJobTitle, avatarUrl: cleanAvatarUrl };
+  });
+}

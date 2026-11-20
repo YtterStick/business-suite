@@ -230,7 +230,7 @@ export default async function SuiteLayout({ children, params }: SuiteLayoutProps
     }),
     db.membership.findMany({
       where: { organizationId: orgId },
-      select: { user: { select: { id: true, name: true } } },
+      select: { jobTitle: true, user: { select: { id: true, name: true } } },
     }),
   ]);
 
@@ -354,6 +354,7 @@ export default async function SuiteLayout({ children, params }: SuiteLayoutProps
     name: tenant.user.name,
     email: tenant.user.email,
     avatarUrl: tenant.user.avatarUrl,
+    jobTitle: members.find((m) => m.user.id === tenant.user.id)?.jobTitle ?? null,
   };
 
   return (
@@ -414,7 +415,13 @@ export default async function SuiteLayout({ children, params }: SuiteLayoutProps
               authorName: c.author?.name ?? "Team Member",
               body: c.body,
               createdAt: c.createdAt.toISOString(),
+              projectId: c.entityType === "Project" ? c.entityId : "workspace",
+              projectName:
+                c.entityType === "Project"
+                  ? (projectNameMap.get(c.entityId) ?? "Project")
+                  : "General Workspace",
             }))}
+          currentUserName={tenant.user.name}
           canWriteProjects={can(tenant, "projects.comment.write")}
           canLogTime={can(tenant, "projects.project.write")}
           canViewContacts={can(tenant, "crm.contact.read")}
