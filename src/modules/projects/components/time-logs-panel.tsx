@@ -19,6 +19,7 @@ import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -367,12 +368,42 @@ export function TimeLogsPanel({
       {/* Time Logs Table */}
       <div className="overflow-x-auto rounded-xl border bg-card dark:border-zinc-800 dark:bg-zinc-900/70">
         {visibleLogs.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-14 text-center">
-            <FileText className="mb-2 size-8 text-muted-foreground/50" />
-            <p className="text-sm font-medium text-foreground">No time logs match your filters</p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Click Log Time or use the live bottom dock timer to record work.
-            </p>
+          <div className="p-4">
+            <EmptyState
+              icon={Clock}
+              title={
+                logs.length === 0
+                  ? "No time logs recorded yet"
+                  : "No time logs match your filters"
+              }
+              description="Record billable or internal hours from a project task or via the quick bottom dock timer."
+              compact
+              action={
+                canWrite && projects.length > 0
+                  ? {
+                      label: "Log Time",
+                      icon: <Plus className="size-3.5" />,
+                      onClick: () => setOpen(true),
+                    }
+                  : undefined
+              }
+              secondaryAction={
+                projectFilter ||
+                billableFilter !== "ALL" ||
+                approvalFilter !== "ALL" ||
+                search.trim()
+                  ? {
+                      label: "Reset filters",
+                      onClick: () => {
+                        setProjectFilter("");
+                        setBillableFilter("ALL");
+                        setApprovalFilter("ALL");
+                        setSearch("");
+                      },
+                    }
+                  : undefined
+              }
+            />
           </div>
         ) : (
           <table className="w-full min-w-[920px] border-collapse text-left">

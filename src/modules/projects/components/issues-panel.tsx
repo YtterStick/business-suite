@@ -40,6 +40,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -780,10 +781,37 @@ export function IssuesPanel({
         {viewMode === "list" && (
           <div className="space-y-4">
             {groupedIssues.length === 0 ? (
-              <div className="flex flex-col items-center justify-center rounded-xl border border-dashed py-14 text-center dark:border-zinc-800">
-                <Bug className="mb-2 size-8 text-muted-foreground/50" />
-                <p className="text-sm font-medium">No issues match your filters</p>
-              </div>
+              <EmptyState
+                icon={Bug}
+                title={
+                  localIssues.length === 0
+                    ? "No issues logged yet"
+                    : "No issues match your filters"
+                }
+                description="Report bugs, blockers, and client feedback linked directly to delivery projects."
+                action={
+                  canWrite
+                    ? {
+                        label: "Report Issue",
+                        icon: <Plus className="size-3.5" />,
+                        onClick: () => setOpen(true),
+                      }
+                    : undefined
+                }
+                secondaryAction={
+                  projectFilter || severityFilter !== "ALL" || classFilter !== "ALL" || search.trim()
+                    ? {
+                        label: "Reset filters",
+                        onClick: () => {
+                          setProjectFilter("");
+                          setSeverityFilter("ALL");
+                          setClassFilter("ALL");
+                          setSearch("");
+                        },
+                      }
+                    : undefined
+                }
+              />
             ) : (
               groupedIssues.map((group) => (
                 <div
@@ -954,9 +982,21 @@ export function IssuesPanel({
           <Card className="dark:border-zinc-800 dark:bg-zinc-900/70">
             <CardContent className="p-4">
               {ganttTimeline.rows.length === 0 ? (
-                <p className="py-10 text-center text-sm text-muted-foreground">
-                  No issues to display on timeline.
-                </p>
+                <EmptyState
+                  icon={GanttChart}
+                  title="No issues to display on timeline"
+                  description="Report issues or adjust your filters to inspect target resolution dates on the timeline."
+                  compact
+                  action={
+                    canWrite
+                      ? {
+                          label: "Report Issue",
+                          icon: <Plus className="size-3.5" />,
+                          onClick: () => setOpen(true),
+                        }
+                      : undefined
+                  }
+                />
               ) : (
                 <div className="space-y-3 overflow-x-auto">
                   <div className="flex min-w-[720px] items-center border-b pb-2 text-[11px] font-medium text-muted-foreground dark:border-zinc-800">

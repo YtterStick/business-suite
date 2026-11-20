@@ -23,6 +23,7 @@ import { toast } from "sonner";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -668,13 +669,33 @@ export function MilestonesPanel({
 
       {/* Content */}
       {visiblePhases.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-xl border border-dashed py-14 text-center dark:border-zinc-800">
-          <Layers className="mb-2 size-8 text-muted-foreground/50" />
-          <p className="text-sm font-medium text-foreground">No phases match your filters</p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Adjust filters or add a new delivery phase to start tracking milestones.
-          </p>
-        </div>
+        <EmptyState
+          icon={Layers}
+          title={items.length === 0 ? "No delivery phases yet" : "No phases match your filters"}
+          description="Break client engagements into dated phases and milestones to track task completion and dependencies."
+          action={
+            canWrite && projects.length > 0
+              ? {
+                  label: "New Phase",
+                  icon: <Plus className="size-3.5" />,
+                  onClick: () => setCreateOpen(true),
+                }
+              : undefined
+          }
+          secondaryAction={
+            projectFilter || flagFilter !== "ALL" || statusFilter !== "ALL" || search.trim()
+              ? {
+                  label: "Reset filters",
+                  onClick: () => {
+                    setProjectFilter("");
+                    setFlagFilter("ALL");
+                    setStatusFilter("ALL");
+                    setSearch("");
+                  },
+                }
+              : undefined
+          }
+        />
       ) : viewMode === "table" ? (
         <div className="overflow-x-auto rounded-xl border bg-card dark:border-zinc-800 dark:bg-zinc-900/70">
           <table className="w-full min-w-[920px] border-collapse text-left">

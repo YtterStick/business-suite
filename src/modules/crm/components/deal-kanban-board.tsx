@@ -19,6 +19,7 @@ import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { addToTotals, formatCurrencyTotals } from "@/lib/format";
 import { CreateDealDialog } from "@/modules/crm/components/create-deal-dialog";
@@ -195,7 +196,7 @@ export function DealKanbanBoard({
   }, [optimisticStages]);
 
   const commitStageMove = React.useCallback(
-    (payload: OptimisticMovePayload, dealTitle: string) => {
+    (payload: OptimisticMovePayload, dealTitle: string, previousStageId?: string) => {
       const targetStage = boardStages.find((s) => s.id === payload.targetStageId);
 
       startTransition(async () => {
@@ -249,7 +250,23 @@ export function DealKanbanBoard({
             },
           });
         } else if (targetStage) {
-          toast.success(`Moved "${dealTitle}" to ${targetStage.name}`);
+          toast.success(`Moved "${dealTitle}" to ${targetStage.name}`, {
+            action: previousStageId
+              ? {
+                  label: "Undo",
+                  onClick: () =>
+                    commitStageMove(
+                      {
+                        dealId: payload.dealId,
+                        targetStageId: previousStageId,
+                        beforeDealId: null,
+                        afterDealId: null,
+                      },
+                      dealTitle,
+                    ),
+                }
+              : undefined,
+          });
         }
       });
     },
@@ -314,6 +331,7 @@ export function DealKanbanBoard({
         afterDealId,
       },
       sourceLoc.deal.title,
+      sourceLoc.stage.id,
     );
   };
 
@@ -333,6 +351,7 @@ export function DealKanbanBoard({
         afterDealId: null,
       },
       loc.deal.title,
+      loc.stage.id,
     );
   };
 
@@ -436,6 +455,29 @@ export function DealKanbanBoard({
 
       {/* Kanban Columns Canvas */}
       <div className="flex-1 overflow-x-auto overflow-y-hidden p-4 lg:p-6">
+        {visibleStages.every((stage) => stage.deals.length === 0) && (
+          <EmptyState
+            icon={TrendingUp}
+            title={searchQuery.trim() ? "No deals match your search" : "No deals in this pipeline yet"}
+            description="Create a CRM deal to track pipeline forecasts and auto-generate a Project and Draft Invoice when closed won."
+            compact
+            className="mb-4"
+            action={
+              canWrite
+                ? {
+                    label: "New Deal",
+                    icon: <Plus className="size-3.5" />,
+                    onClick: () => openCreateInStage(initialBoard.stages[0]?.id ?? ""),
+                  }
+                : undefined
+            }
+            secondaryAction={
+              searchQuery.trim()
+                ? { label: "Clear search", onClick: () => setSearchQuery("") }
+                : undefined
+            }
+          />
+        )}
         <DndContext
           id={dndContextId}
           sensors={sensors}

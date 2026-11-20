@@ -1,10 +1,13 @@
 "use server";
 
 import {
+  ContactLifecycleStage,
+  DealStatus,
   IssueSeverity,
   IssueStatus,
   MilestoneStatus,
   ProjectStatus,
+  StageType,
   TaskPriority,
   TaskStatus,
 } from "@prisma/client";
@@ -12,8 +15,12 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import type { ActionResult } from "@/lib/action-result";
+import { addDays, startOfUtcDay } from "@/lib/dates";
+import { db } from "@/lib/db";
 import { ValidationError } from "@/lib/errors";
 import { sanitizeRichHtml } from "@/lib/sanitize-html";
+import { provisionDealWonResources } from "@/modules/crm/deal-won.automation";
+import { ensureDefaultPipeline } from "@/modules/crm/deals.service";
 import {
   bulkArchiveProjects,
   bulkUpdateProjectsStatus,
@@ -42,7 +49,7 @@ import {
 } from "@/modules/projects/projects.service";
 import type { ExtendedTaskStatus, TaskCardDTO } from "@/modules/projects/projects.types";
 import { runAction } from "@/server/action";
-import { assertTenant } from "@/server/tenancy";
+import { assertTenant, authorize } from "@/server/tenancy";
 
 const createProjectSchema = z.object({
   orgSlug: z.string().min(1),
@@ -611,5 +618,154 @@ export async function deleteTaskMetaCommentAction(input: {
     await deleteCommentItem(ctx, input.commentId);
     revalidatePath(`/${input.orgSlug}/projects`, "layout");
     return null;
+  });
+}
+
+/**
+ * Seeds one complete, realistic CRM Deal -> Active Project (+ Phases/Tasks/TimeLog) -> Finance Invoice flow.
+ */
+export async function seedSampleWorkspaceAction(input: {
+  orgSlug: string;
+}): Promise<
+  ActionResult<{
+    projectId: string;
+    projectName: string;
+    invoiceNumber: string;
+    dealId: string;
+  }>
+> {
+  return runAction(async () => {
+    const ctx = await assertTenant(input.orgSlug);
+    authorize(ctx, "projects.project.manage");
+
+    const organizationId = ctx.organization.id;
+    const now = new Date();
+    const today = startOfUtcDay(now);
+
+    const seeded = await db.$transaction(async (tx) => {
+      const pipeline = await ensureDefaultPipeline(tx, organizationId);
+      const stages = await tx.pipelineStage.findMany({
+        where: { organizationId, pipelineId: pipeline.id },
+        orderBy: { position: "asc" },
+      });
+      const wonStage =
+        stages.find((s) => s.type === StageType.WON) ?? stages[stages.length - 1];
+      if (!wonStage) {
+        throw new ValidationError("No CRM pipeline stage found for this workspace.");
+      }
+
+      const existingCompany = await tx.company.findFirst({
+        where: { organizationId, name: "Northstar Studio" },
+        select: { id: true },
+      });
+      const company =
+        existingCompany ??
+        (await tx.company.create({
+          data: {
+            organizationId,
+            ownerId: ctx.user.id,
+            name: "Northstar Studio",
+            industry: "Creative & Digital Agency",
+            website: "https://northstar.example.com",
+          },
+          select: { id: true },
+        }));
+
+      const existingContact = await tx.contact.findFirst({
+        where: { organizationId, companyId: company.id },
+        select: { id: true },
+      });
+      const contact =
+        existingContact ??
+        (await tx.contact.create({
+          data: {
+            organizationId,
+            companyId: company.id,
+            ownerId: ctx.user.id,
+            firstName: "Elena",
+            lastName: "Reyes",
+            jobTitle: "Operations Director",
+            lifecycleStage: ContactLifecycleStage.CUSTOMER,
+          },
+          select: { id: true },
+        }));
+
+      const deal = await tx.deal.create({
+        data: {
+          organizationId,
+          pipelineId: pipeline.id,
+          stageId: wonStage.id,
+          companyId: company.id,
+          contactId: contact.id,
+          ownerId: ctx.user.id,
+          title: "Website Redesign & Client Portal",
+          amount: 250000,
+          currency: ctx.organization.defaultCurrency,
+          status: DealStatus.CLOSED_WON,
+          probability: wonStage.probability,
+          position: 1024,
+          expectedCloseDate: today,
+          closedAt: now,
+        },
+        select: { id: true },
+      });
+
+      const provisioned = await provisionDealWonResources(tx, {
+        organizationId,
+        dealId: deal.id,
+        actorId: ctx.user.id,
+      });
+
+      await tx.project.update({
+        where: { id: provisioned.project.id },
+        data: {
+          status: ProjectStatus.ACTIVE,
+          dueDate: startOfUtcDay(addDays(now, 30)),
+          tags: ["retainer", "client-portal"],
+        },
+      });
+
+      const projectTasks = await tx.task.findMany({
+        where: { organizationId, projectId: provisioned.project.id },
+        orderBy: { position: "asc" },
+        select: { id: true },
+      });
+
+      if (projectTasks[0]) {
+        await tx.task.update({
+          where: { id: projectTasks[0].id },
+          data: { status: TaskStatus.DONE, completedAt: now },
+        });
+      }
+      if (projectTasks[1]) {
+        await tx.task.update({
+          where: { id: projectTasks[1].id },
+          data: { status: TaskStatus.IN_PROGRESS },
+        });
+      }
+
+      await tx.timeLog.create({
+        data: {
+          organizationId,
+          projectId: provisioned.project.id,
+          taskId: projectTasks[0]?.id ?? null,
+          userId: ctx.user.id,
+          hours: 4.5,
+          billable: true,
+          loggedDate: today,
+          notes: "Kickoff workshop & delivery architecture alignment.",
+        },
+      });
+
+      return {
+        projectId: provisioned.project.id,
+        projectName: provisioned.project.name,
+        invoiceNumber: provisioned.invoice.number,
+        dealId: deal.id,
+      };
+    });
+
+    revalidatePath(`/${input.orgSlug}`, "layout");
+    return seeded;
   });
 }

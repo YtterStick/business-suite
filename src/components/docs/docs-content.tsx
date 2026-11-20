@@ -89,7 +89,7 @@ const APP_TONE: Record<string, string> = {
   Projects: "bg-violet-500/10 text-violet-700 ring-violet-500/25 dark:text-violet-300",
 };
 
-function Block({ block }: { block: DocBlock }) {
+function Block({ block, sectionId }: { block: DocBlock; sectionId: string }) {
   switch (block.type) {
     case "p":
       return (
@@ -113,17 +113,22 @@ function Block({ block }: { block: DocBlock }) {
     case "steps":
       return (
         <ol className="relative space-y-5 border-l pl-6">
-          {block.items.map((step, i) => (
-            <li key={i} className="relative">
-              <span className="absolute top-0 -left-[37px] flex size-6 items-center justify-center rounded-full border bg-background text-xs font-semibold">
-                {i + 1}
-              </span>
-              <p className="font-semibold">{step.title}</p>
-              <p className="mt-1 leading-7 text-muted-foreground">
-                <Inline text={step.text} />
-              </p>
-            </li>
-          ))}
+          {block.items.map((step, i) => {
+            const stepId = `${sectionId}-step-${i + 1}`;
+            return (
+              <li key={i} className="relative">
+                <span className="absolute top-0 -left-[37px] flex size-6 items-center justify-center rounded-full border bg-background text-xs font-semibold">
+                  {i + 1}
+                </span>
+                <h3 id={stepId} data-toc-title={step.title} className="scroll-mt-32 font-semibold">
+                  {step.title}
+                </h3>
+                <p className="mt-1 leading-7 text-muted-foreground">
+                  <Inline text={step.text} />
+                </p>
+              </li>
+            );
+          })}
         </ol>
       );
     case "callout": {
@@ -223,8 +228,8 @@ export function DocsContent({ article, intro }: { article: DocArticle; intro?: R
   const group = getDocGroupTitle(article.slug);
 
   return (
-    <div className="grid gap-10 xl:grid-cols-[minmax(0,1fr)_14rem]">
-      <article className="min-w-0 max-w-3xl">
+    <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_13.5rem] xl:grid-cols-[minmax(0,1fr)_15rem]">
+      <article data-docs-article className="min-w-0 max-w-3xl">
         {intro}
         <nav aria-label="Breadcrumb" className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <Link href="/docs" className="hover:text-foreground">
@@ -242,8 +247,12 @@ export function DocsContent({ article, intro }: { article: DocArticle; intro?: R
 
         <div className="mt-10 space-y-14">
           {article.sections.map((section) => (
-            <section key={section.id} id={section.id} className="scroll-mt-32">
-              <h2 className="group flex items-center gap-2 text-xl font-semibold tracking-tight">
+            <section key={section.id} className="scroll-mt-32">
+              <h2
+                id={section.id}
+                data-toc-title={section.title}
+                className="group flex scroll-mt-32 items-center gap-2 text-xl font-semibold tracking-tight"
+              >
                 {section.title}
                 <a
                   href={`#${section.id}`}
@@ -255,7 +264,7 @@ export function DocsContent({ article, intro }: { article: DocArticle; intro?: R
               </h2>
               <div className="mt-4 space-y-5">
                 {section.blocks.map((block, i) => (
-                  <Block key={i} block={block} />
+                  <Block key={i} block={block} sectionId={section.id} />
                 ))}
               </div>
             </section>
@@ -292,9 +301,9 @@ export function DocsContent({ article, intro }: { article: DocArticle; intro?: R
         </div>
       </article>
 
-      <aside className="hidden xl:block">
+      <aside className="hidden lg:block">
         <div className="sticky top-36">
-          <DocsToc items={article.sections.map((s) => ({ id: s.id, title: s.title }))} />
+          <DocsToc items={article.sections.map((s) => ({ id: s.id, title: s.title, level: 2 }))} />
         </div>
       </aside>
     </div>

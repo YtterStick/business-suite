@@ -5,7 +5,10 @@ import {
   ArrowRight,
   BookOpen,
   ChevronDown,
+  Layers,
   Menu,
+  ShieldCheck,
+  Workflow,
   X,
 } from "lucide-react";
 import Link from "next/link";
@@ -25,6 +28,27 @@ import {
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 import type { MarketingViewer } from "@/server/marketing";
+
+const PRODUCT_ITEMS = [
+  {
+    id: "features",
+    label: "Features",
+    description: "Explore CRM, Finance, and Projects on a single data model.",
+    icon: Layers,
+  },
+  {
+    id: "workflow",
+    label: "How It Connects",
+    description: "Follow an engagement from won deal to project delivery and billing.",
+    icon: Workflow,
+  },
+  {
+    id: "capabilities",
+    label: "Capabilities",
+    description: "Global ⌘K search, role-based access, automations, and reporting.",
+    icon: ShieldCheck,
+  },
+] as const;
 
 export function Navbar({ viewer }: { viewer: MarketingViewer | null }) {
   const pathname = usePathname();
@@ -94,15 +118,43 @@ export function Navbar({ viewer }: { viewer: MarketingViewer | null }) {
           <TactiqLogo markClassName="size-7" wordmarkClassName="text-lg" />
         </Link>
 
-        {/* Center: desktop navigation */}
-        <nav aria-label="Main" className="hidden items-center gap-0.5 lg:flex">
-          <button
-            type="button"
-            onClick={() => scrollToSection("features")}
-            className={linkClass(false)}
-          >
-            Features
-          </button>
+        {/* Center: clean 5-item desktop navigation */}
+        <nav aria-label="Main" className="hidden items-center gap-1 md:flex">
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              className={cn(linkClass(false), "inline-flex items-center gap-1 outline-none")}
+            >
+              Product
+              <ChevronDown className="size-3.5 opacity-70" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="start"
+              sideOffset={10}
+              onCloseAutoFocus={(e) => e.preventDefault()}
+              className="w-80 p-2"
+            >
+              {PRODUCT_ITEMS.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <DropdownMenuItem
+                    key={item.id}
+                    onSelect={() => scrollToSection(item.id)}
+                    className="cursor-pointer items-start gap-3 rounded-md p-2.5"
+                  >
+                    <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border bg-muted/50 text-indigo-500">
+                      <Icon className="size-4" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-semibold">{item.label}</span>
+                      <span className="block text-xs leading-snug text-muted-foreground">
+                        {item.description}
+                      </span>
+                    </span>
+                  </DropdownMenuItem>
+                );
+              })}
+            </DropdownMenuContent>
+          </DropdownMenu>
 
           <DropdownMenu>
             <DropdownMenuTrigger
@@ -150,7 +202,7 @@ export function Navbar({ viewer }: { viewer: MarketingViewer | null }) {
                   <DropdownMenuSeparator />
                   <div className="px-2 py-1.5">
                     <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                      Jump to {viewer.workspaceName ?? "workspace"}
+                      Open in {viewer.workspaceName ?? "workspace"}
                     </p>
                     <div className="grid grid-cols-3 gap-1.5">
                       {SUITE_APPS.map((app) => (
@@ -172,24 +224,10 @@ export function Navbar({ viewer }: { viewer: MarketingViewer | null }) {
 
           <button
             type="button"
-            onClick={() => scrollToSection("workflow")}
-            className={linkClass(false)}
-          >
-            How It Connects
-          </button>
-          <button
-            type="button"
             onClick={() => scrollToSection("use-cases")}
             className={linkClass(false)}
           >
             Use Cases
-          </button>
-          <button
-            type="button"
-            onClick={() => scrollToSection("capabilities")}
-            className={linkClass(false)}
-          >
-            Capabilities
           </button>
           <Link href="/docs" className={linkClass(isDocs)}>
             Documentation
@@ -203,7 +241,7 @@ export function Navbar({ viewer }: { viewer: MarketingViewer | null }) {
           </button>
         </nav>
 
-        {/* Right: actions + mobile drawer trigger */}
+        {/* Right: theme + auth CTAs + mobile drawer trigger */}
         <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
           <ThemeToggle />
 
@@ -217,7 +255,7 @@ export function Navbar({ viewer }: { viewer: MarketingViewer | null }) {
             </Button>
           ) : (
             <Button asChild size="xs" className="h-8 px-2.5 sm:hidden">
-              <Link href="/signup">Get Started</Link>
+              <Link href="/signup">Sign Up Free</Link>
             </Button>
           )}
 
@@ -246,7 +284,7 @@ export function Navbar({ viewer }: { viewer: MarketingViewer | null }) {
               <Button
                 variant="outline"
                 size="icon-sm"
-                className="lg:hidden"
+                className="md:hidden"
                 aria-label="Open navigation menu"
               >
                 <Menu className="size-4" />
@@ -308,7 +346,7 @@ export function Navbar({ viewer }: { viewer: MarketingViewer | null }) {
                 <div className="my-4 h-px bg-border" />
 
                 <p className="px-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                  Explore
+                  Product &amp; Guides
                 </p>
                 <nav className="mt-1.5 flex flex-col gap-0.5" aria-label="Mobile">
                   {([

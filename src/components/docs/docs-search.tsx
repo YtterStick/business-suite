@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { FileText, Hash, Menu, Search } from "lucide-react";
+import { FileText, Hash, Menu, PanelLeftClose, PanelLeftOpen, Search } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
@@ -20,9 +20,38 @@ import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/s
 /** Sticky docs sub-header: mobile nav trigger, breadcrumb, and search. */
 export function DocsTopBar() {
   const [mobileOpen, setMobileOpen] = React.useState(false);
+  const [sidebarHidden, setSidebarHidden] = React.useState(false);
+
+  React.useEffect(() => {
+    try {
+      setSidebarHidden(window.localStorage.getItem("tq_docs_sidebar") === "hidden");
+    } catch {
+      // ignore
+    }
+    const handleSync = (event: Event) => {
+      const nextHidden = (event as CustomEvent<{ hidden: boolean }>).detail?.hidden;
+      if (typeof nextHidden === "boolean") {
+        setSidebarHidden(nextHidden);
+      }
+    };
+    window.addEventListener("tq-docs-sidebar-toggle", handleSync);
+    return () => window.removeEventListener("tq-docs-sidebar-toggle", handleSync);
+  }, []);
+
+  const toggleDesktopSidebar = () => {
+    const next = !sidebarHidden;
+    setSidebarHidden(next);
+    try {
+      window.localStorage.setItem("tq_docs_sidebar", next ? "hidden" : "shown");
+    } catch {
+      // ignore
+    }
+    window.dispatchEvent(new CustomEvent("tq-docs-sidebar-toggle", { detail: { hidden: next } }));
+  };
+
   return (
     <div className="sticky top-16 z-40 h-12 border-b bg-background/85 backdrop-blur-xl dark:bg-[#0D0E12]/85">
-      <div className="mx-auto flex h-full max-w-[90rem] items-center gap-3 px-4 sm:px-6 lg:px-8">
+      <div className="mx-auto flex h-full max-w-[90rem] items-center gap-2.5 px-4 sm:px-6 lg:px-8">
         <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
           <SheetTrigger asChild>
             <button
@@ -38,6 +67,15 @@ export function DocsTopBar() {
             <DocsNavList onNavigate={() => setMobileOpen(false)} />
           </SheetContent>
         </Sheet>
+        <button
+          type="button"
+          onClick={toggleDesktopSidebar}
+          aria-label={sidebarHidden ? "Show documentation sidebar" : "Hide documentation sidebar"}
+          title={sidebarHidden ? "Show navigation" : "Hide navigation"}
+          className="hidden rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground lg:inline-flex"
+        >
+          {sidebarHidden ? <PanelLeftOpen className="size-4" /> : <PanelLeftClose className="size-4" />}
+        </button>
         <Link href="/docs" className="text-sm font-semibold">
           Docs
         </Link>

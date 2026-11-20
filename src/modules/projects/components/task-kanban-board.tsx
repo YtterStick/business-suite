@@ -63,6 +63,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -2300,11 +2301,33 @@ export function TaskKanbanBoard({
         {viewMode === "list" && (
           <div className="space-y-4">
             {dynamicColumns.every((g) => g.tasks.length === 0) ? (
-              <Card>
-                <CardContent className="flex h-36 items-center justify-center text-sm text-muted-foreground">
-                  No tasks match the current filter.
-                </CardContent>
-              </Card>
+              <EmptyState
+                icon={ListChecks}
+                title={
+                  tasks.length === 0
+                    ? "No tasks in this workspace yet"
+                    : "No tasks match your current filters"
+                }
+                description="Break projects into actionable deliverables, set dependencies, or import tasks from a CSV file."
+                action={
+                  canWrite && initialBoard.projects.length > 0
+                    ? {
+                        label: "New Task",
+                        icon: <Plus className="size-3.5" />,
+                        onClick: () => setCreateOpen(true),
+                      }
+                    : undefined
+                }
+                secondaryAction={
+                  canWrite && initialBoard.projects.length > 0
+                    ? {
+                        label: "Import CSV",
+                        icon: <Upload className="size-3.5" />,
+                        onClick: () => setImportOpen(true),
+                      }
+                    : undefined
+                }
+              />
             ) : (
               dynamicColumns
                 .filter((g) => g.tasks.length > 0)
@@ -2554,8 +2577,31 @@ export function TaskKanbanBoard({
           <Card>
             <CardContent className="overflow-x-auto p-0">
               {ganttTimeline.rows.length === 0 ? (
-                <div className="flex h-36 items-center justify-center text-sm text-muted-foreground">
-                  No tasks match the current filter.
+                <div className="p-4">
+                  <EmptyState
+                    icon={GanttChart}
+                    title="No tasks to show on timeline"
+                    description="Create tasks with due dates or import a schedule via CSV to view dependencies on the Gantt chart."
+                    compact
+                    action={
+                      canWrite && initialBoard.projects.length > 0
+                        ? {
+                            label: "New Task",
+                            icon: <Plus className="size-3.5" />,
+                            onClick: () => setCreateOpen(true),
+                          }
+                        : undefined
+                    }
+                    secondaryAction={
+                      canWrite && initialBoard.projects.length > 0
+                        ? {
+                            label: "Import CSV",
+                            icon: <Upload className="size-3.5" />,
+                            onClick: () => setImportOpen(true),
+                          }
+                        : undefined
+                    }
+                  />
                 </div>
               ) : (
                 <div className="min-w-[760px]">

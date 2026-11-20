@@ -24,6 +24,7 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -418,9 +419,37 @@ export function InvoicesWorkspace({
             <TableBody>
               {filteredInvoices.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={10} className="h-28 text-center text-muted-foreground">
-                    No invoices match this filter. Click &ldquo;New Invoice&rdquo; or close a CRM
-                    deal won to generate one.
+                  <TableCell colSpan={10} className="p-4">
+                    <EmptyState
+                      icon={Wallet}
+                      title={
+                        workspace.invoices.length === 0
+                          ? "No invoices yet"
+                          : "No invoices match this filter"
+                      }
+                      description="Create an invoice directly in Finance or close a CRM deal as Won to auto-generate one."
+                      compact
+                      action={
+                        canWrite
+                          ? {
+                              label: "New Invoice",
+                              icon: <Plus className="size-3.5" />,
+                              onClick: () => setSheetOpen(true),
+                            }
+                          : undefined
+                      }
+                      secondaryAction={
+                        statusTab !== "ALL" || search.trim()
+                          ? {
+                              label: "Clear filters",
+                              onClick: () => {
+                                setStatusTab("ALL");
+                                setSearch("");
+                              },
+                            }
+                          : undefined
+                      }
+                    />
                   </TableCell>
                 </TableRow>
               ) : (

@@ -4,7 +4,6 @@ import * as React from "react";
 import type { ProjectStatus } from "@prisma/client";
 import {
   Activity,
-  AlignJustify,
   Archive,
   ArchiveRestore,
   ArrowDown,
@@ -13,48 +12,42 @@ import {
   BookmarkPlus,
   Briefcase,
   ChevronDown,
-  Columns3,
   Copy,
   Download,
   ExternalLink,
   EyeOff,
-  Filter,
   FolderKanban,
-  GanttChart,
   GripVertical,
-  Kanban,
   Layers,
-  List,
+  Loader2,
   Lock,
   MoreHorizontal,
   MoreVertical,
   Pencil,
   Plus,
   Receipt,
-  Rows3,
   Search,
   SlidersHorizontal,
   Sparkles,
   Trash2,
   Upload,
-  Workflow,
   X,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
+import { TableSkeleton } from "@/components/shell/route-skeletons";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuSub,
   DropdownMenuSubContent,
@@ -62,7 +55,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Table,
   TableBody,
@@ -86,6 +78,12 @@ import {
   saveCustomTemplate,
 } from "@/modules/projects/components/project-workspace-overlays";
 import {
+  ProjectsToolbar,
+  type ProjectViewMode,
+  type SavedProjectView,
+  type TableDensity,
+} from "@/modules/projects/components/projects-toolbar";
+import {
   getTagPillClass,
   isProjectOverdue,
   ProjectsAutomationDialog,
@@ -97,7 +95,9 @@ import {
   bulkUpdateProjectsStatusAction,
   cloneProjectAction,
   deleteProjectsAction,
+  seedSampleWorkspaceAction,
   toggleProjectArchiveAction,
+  updateProjectStatusAction,
 } from "@/modules/projects/projects.actions";
 import type {
   ProjectSummaryDTO,
@@ -106,16 +106,11 @@ import type {
 } from "@/modules/projects/projects.types";
 
 type ZohoProjectsTab = "active" | "templates" | "groups" | "public" | "archived";
-type ViewMode = "list" | "board" | "gantt";
-type SavedProjectView = "all" | "active" | "mine" | "delayed" | "archived";
-type TableDensity = "comfortable" | "compact";
 type SortField =
-  | "id"
   | "name"
   | "completion"
   | "owner"
   | "status"
-  | "tasks"
   | "phases"
   | "issues"
   | "startDate"
@@ -124,18 +119,15 @@ type SortField =
 type SortDirection = "asc" | "desc";
 
 type ColumnKey =
-  | "id"
   | "name"
+  | "status"
   | "completion"
   | "owner"
-  | "status"
+  | "timeline"
+  | "budget"
   | "connected"
-  | "tasks"
   | "phases"
   | "issues"
-  | "startDate"
-  | "dueDate"
-  | "budget"
   | "tags";
 
 interface ColumnDef {
@@ -146,51 +138,43 @@ interface ColumnDef {
 }
 
 const COLUMN_DEFS: Record<ColumnKey, ColumnDef> = {
-  id: { key: "id", label: "ID", sortable: "id" },
-  name: { key: "name", label: "Project Name", required: true, sortable: "name" },
-  completion: { key: "completion", label: "% Completion", sortable: "completion" },
-  owner: { key: "owner", label: "Owner", sortable: "owner" },
+  name: { key: "name", label: "Project", required: true, sortable: "name" },
   status: { key: "status", label: "Status", sortable: "status" },
+  completion: { key: "completion", label: "Progress", sortable: "completion" },
+  owner: { key: "owner", label: "Owner", sortable: "owner" },
+  timeline: { key: "timeline", label: "Timeline", sortable: "dueDate" },
+  budget: { key: "budget", label: "Budget", sortable: "budget" },
   connected: { key: "connected", label: "Connected Apps" },
-  tasks: { key: "tasks", label: "Tasks", sortable: "tasks" },
   phases: { key: "phases", label: "Phases", sortable: "phases" },
   issues: { key: "issues", label: "Issues", sortable: "issues" },
-  startDate: { key: "startDate", label: "Start Date", sortable: "startDate" },
-  dueDate: { key: "dueDate", label: "End Date", sortable: "dueDate" },
-  budget: { key: "budget", label: "Budget", sortable: "budget" },
   tags: { key: "tags", label: "Tags" },
 };
 
 const DEFAULT_COLUMN_ORDER: ColumnKey[] = [
-  "id",
   "name",
+  "status",
   "completion",
   "owner",
-  "status",
+  "timeline",
+  "budget",
   "connected",
-  "tasks",
   "phases",
   "issues",
-  "startDate",
-  "dueDate",
-  "budget",
   "tags",
 ];
 
+/** 7 high-signal default columns; Phases, Issues & Tags live under Display -> Columns. */
 const DEFAULT_VISIBLE_COLUMNS: Record<ColumnKey, boolean> = {
-  id: true,
   name: true,
+  status: true,
   completion: true,
   owner: true,
-  status: true,
-  connected: true,
-  tasks: true,
-  phases: true,
-  issues: true,
-  startDate: true,
-  dueDate: true,
+  timeline: true,
   budget: true,
-  tags: true,
+  connected: true,
+  phases: false,
+  issues: false,
+  tags: false,
 };
 
 const BUILTIN_TEMPLATES: Array<{
@@ -238,14 +222,6 @@ const PROJECT_STATUSES: Array<{ value: ProjectStatus; label: string; dot: string
   { value: "CANCELLED", label: "Cancelled", dot: "bg-rose-500" },
 ];
 
-const SAVED_VIEW_LABELS: Record<SavedProjectView, string> = {
-  all: "All Projects",
-  active: "Active Projects",
-  mine: "My Projects",
-  delayed: "Delayed Projects",
-  archived: "Archived",
-};
-
 const TABS: Array<{ id: ZohoProjectsTab; label: string }> = [
   { id: "active", label: "Active Projects" },
   { id: "templates", label: "Project Templates" },
@@ -279,9 +255,11 @@ export function ProjectsWorkspace({
 }: ProjectsWorkspaceProps) {
   const router = useRouter();
   const [activeTab, setActiveTab] = React.useState<ZohoProjectsTab>("active");
-  const [viewMode, setViewMode] = React.useState<ViewMode>("list");
+  const [viewMode, setViewMode] = React.useState<ProjectViewMode>("list");
   const [savedView, setSavedView] = React.useState<SavedProjectView>("all");
   const [density, setDensity] = React.useState<TableDensity>("comfortable");
+  const [onboardingDismissed, setOnboardingDismissed] = React.useState(false);
+  const [isSeeding, setIsSeeding] = React.useState(false);
 
   // Multi-criteria advanced filters
   const [filterOwnerId, setFilterOwnerId] = React.useState<string>("");
@@ -322,7 +300,10 @@ export function ProjectsWorkspace({
   React.useEffect(() => {
     setCustomTemplates(loadCustomTemplates(orgSlug));
     try {
-      const savedOrder = window.localStorage.getItem(`bs_proj_col_order_${orgSlug}`);
+      setOnboardingDismissed(
+        window.localStorage.getItem(`bs_onboarding_banner_dismissed_${orgSlug}`) === "1",
+      );
+      const savedOrder = window.localStorage.getItem(`bs_proj_col_order_v2_${orgSlug}`);
       if (savedOrder) {
         const parsed = JSON.parse(savedOrder) as ColumnKey[];
         if (Array.isArray(parsed) && parsed.length === DEFAULT_COLUMN_ORDER.length) {
@@ -330,7 +311,7 @@ export function ProjectsWorkspace({
           if (valid) setColumnOrder(parsed);
         }
       }
-      const savedVis = window.localStorage.getItem(`bs_proj_col_vis_${orgSlug}`);
+      const savedVis = window.localStorage.getItem(`bs_proj_col_vis_v2_${orgSlug}`);
       if (savedVis) {
         const parsed = JSON.parse(savedVis) as Partial<Record<ColumnKey, boolean>>;
         setVisibleColumns({ ...DEFAULT_VISIBLE_COLUMNS, ...parsed, name: true });
@@ -361,7 +342,7 @@ export function ProjectsWorkspace({
   const persistColumnOrder = (next: ColumnKey[]) => {
     setColumnOrder(next);
     try {
-      window.localStorage.setItem(`bs_proj_col_order_${orgSlug}`, JSON.stringify(next));
+      window.localStorage.setItem(`bs_proj_col_order_v2_${orgSlug}`, JSON.stringify(next));
     } catch {
       // Ignore
     }
@@ -371,7 +352,7 @@ export function ProjectsWorkspace({
     const safe = { ...next, name: true };
     setVisibleColumns(safe);
     try {
-      window.localStorage.setItem(`bs_proj_col_vis_${orgSlug}`, JSON.stringify(safe));
+      window.localStorage.setItem(`bs_proj_col_vis_v2_${orgSlug}`, JSON.stringify(safe));
     } catch {
       // Ignore
     }
@@ -545,9 +526,6 @@ export function ProjectsWorkspace({
     return [...filtered].sort((a: ProjectSummaryDTO, b: ProjectSummaryDTO) => {
       let result = 0;
       switch (sortField) {
-        case "id":
-          result = (projectCodeIndexMap.get(a.id) ?? 0) - (projectCodeIndexMap.get(b.id) ?? 0);
-          break;
         case "name":
           result = a.name.localeCompare(b.name);
           break;
@@ -559,9 +537,6 @@ export function ProjectsWorkspace({
           break;
         case "status":
           result = a.status.localeCompare(b.status);
-          break;
-        case "tasks":
-          result = a.taskCount - b.taskCount;
           break;
         case "phases":
           result = a.milestoneCount - b.milestoneCount;
@@ -595,7 +570,6 @@ export function ProjectsWorkspace({
     search,
     sortField,
     sortDir,
-    projectCodeIndexMap,
   ]);
 
   // Keep selectedIds pruned to visible projects
@@ -632,6 +606,57 @@ export function ProjectsWorkspace({
     );
   };
 
+  const handleDismissOnboarding = () => {
+    setOnboardingDismissed(true);
+    try {
+      window.localStorage.setItem(`bs_onboarding_banner_dismissed_${orgSlug}`, "1");
+    } catch {
+      // Ignore
+    }
+  };
+
+  const handleLoadSampleData = () => {
+    setIsSeeding(true);
+    startTransition(async () => {
+      try {
+        const res = await seedSampleWorkspaceAction({ orgSlug });
+        if (!res.ok) {
+          toast.error(res.error.message);
+          return;
+        }
+        toast.success(`Sample workspace loaded`, {
+          description: `Created "${res.data.projectName}" and invoice ${res.data.invoiceNumber}.`,
+        });
+        router.refresh();
+      } finally {
+        setIsSeeding(false);
+      }
+    });
+  };
+
+  const handleRowStatusChange = (
+    projectId: string,
+    name: string,
+    nextStatus: ProjectStatus,
+    previousStatus: ProjectStatus,
+  ) => {
+    if (nextStatus === previousStatus) return;
+    startTransition(async () => {
+      const res = await updateProjectStatusAction({ orgSlug, projectId, status: nextStatus });
+      if (!res.ok) {
+        toast.error(res.error.message);
+        return;
+      }
+      toast.success(`"${name}" moved to ${nextStatus.replace("_", " ")}`, {
+        action: {
+          label: "Undo",
+          onClick: () => handleRowStatusChange(projectId, name, previousStatus, nextStatus),
+        },
+      });
+      router.refresh();
+    });
+  };
+
   const handleToggleArchive = (projectId: string, isArchived: boolean, name: string) => {
     startTransition(async () => {
       const res = await toggleProjectArchiveAction({ orgSlug, projectId, isArchived });
@@ -639,16 +664,21 @@ export function ProjectsWorkspace({
         toast.error(res.error.message);
         return;
       }
-      toast.success(isArchived ? `Archived "${name}"` : `Restored "${name}"`);
+      toast.success(isArchived ? `Archived "${name}"` : `Restored "${name}"`, {
+        action: {
+          label: "Undo",
+          onClick: () => handleToggleArchive(projectId, !isArchived, name),
+        },
+      });
+      router.refresh();
     });
   };
 
-  const handleBulkArchive = (isArchived: boolean) => {
-    if (selectedVisibleIds.length === 0) return;
+  const runBulkArchive = (ids: string[], isArchived: boolean, withUndo = true) => {
     startTransition(async () => {
       const res = await bulkArchiveProjectsAction({
         orgSlug,
-        projectIds: selectedVisibleIds,
+        projectIds: ids,
         isArchived,
       });
       if (!res.ok) {
@@ -660,16 +690,39 @@ export function ProjectsWorkspace({
         isArchived
           ? `Archived ${res.data.count} project(s)`
           : `Restored ${res.data.count} project(s)`,
+        withUndo
+          ? {
+              action: {
+                label: "Undo",
+                onClick: () => runBulkArchive(ids, !isArchived, false),
+              },
+            }
+          : undefined,
       );
+      router.refresh();
     });
+  };
+
+  const handleBulkArchive = (isArchived: boolean) => {
+    if (selectedVisibleIds.length === 0) return;
+    runBulkArchive([...selectedVisibleIds], isArchived, true);
   };
 
   const handleBulkStatusChange = (status: ProjectStatus) => {
     if (selectedVisibleIds.length === 0) return;
+    const ids = [...selectedVisibleIds];
+    const previousGroups = new Map<ProjectStatus, string[]>();
+    for (const proj of filteredAndSortedProjects) {
+      if (ids.includes(proj.id)) {
+        const list = previousGroups.get(proj.status) ?? [];
+        list.push(proj.id);
+        previousGroups.set(proj.status, list);
+      }
+    }
     startTransition(async () => {
       const res = await bulkUpdateProjectsStatusAction({
         orgSlug,
-        projectIds: selectedVisibleIds,
+        projectIds: ids,
         status,
       });
       if (!res.ok) {
@@ -677,7 +730,27 @@ export function ProjectsWorkspace({
         return;
       }
       setSelectedIds([]);
-      toast.success(`Updated ${res.data.count} project(s) to ${status.replace("_", " ")}`);
+      toast.success(`Updated ${res.data.count} project(s) to ${status.replace("_", " ")}`, {
+        action: {
+          label: "Undo",
+          onClick: () => {
+            startTransition(async () => {
+              await Promise.all(
+                Array.from(previousGroups.entries()).map(([prevStatus, groupIds]) =>
+                  bulkUpdateProjectsStatusAction({
+                    orgSlug,
+                    projectIds: groupIds,
+                    status: prevStatus,
+                  }),
+                ),
+              );
+              toast.success("Reverted project status update");
+              router.refresh();
+            });
+          },
+        },
+      });
+      router.refresh();
     });
   };
 
@@ -850,20 +923,14 @@ export function ProjectsWorkspace({
     const hasFinanceLink = project.budget !== null || project.expenseCount > 0;
 
     switch (colKey) {
-      case "id":
-        return (
-          <TableCell
-            key={colKey}
-            className={cn("font-mono text-xs whitespace-nowrap text-muted-foreground", cellPad)}
-          >
-            PRJ-{String(codeNum).padStart(3, "0")}
-          </TableCell>
-        );
       case "name":
         return (
           <TableCell key={colKey} className={cn("min-w-52", cellPad)}>
             <div className="flex flex-col gap-0.5">
               <div className="flex items-center gap-1.5">
+                <span className="rounded border bg-muted/50 px-1.5 py-0 font-mono text-[10px] font-medium text-muted-foreground">
+                  PRJ-{String(codeNum).padStart(3, "0")}
+                </span>
                 <Link
                   href={`/${orgSlug}/projects/${project.id}`}
                   className={cn(
@@ -896,12 +963,26 @@ export function ProjectsWorkspace({
             </div>
           </TableCell>
         );
+      case "status":
+        return (
+          <TableCell key={colKey} className={cn("whitespace-nowrap", cellPad)}>
+            <Badge variant="secondary" className={density === "compact" ? "text-[10px]" : ""}>
+              {project.status.replace("_", " ")}
+            </Badge>
+          </TableCell>
+        );
       case "completion":
         return (
-          <TableCell key={colKey} className={cn("min-w-32", cellPad)}>
+          <TableCell key={colKey} className={cn("min-w-36", cellPad)}>
             <div className="space-y-1">
-              <div className="flex items-center justify-between text-xs tabular-nums">
+              <div className="flex items-center justify-between gap-2 text-xs tabular-nums">
                 <span className="font-semibold">{project.completionPercent}%</span>
+                <Link
+                  href={`/${orgSlug}/projects/tasks?projectId=${project.id}`}
+                  className="text-[11px] text-muted-foreground hover:text-foreground hover:underline"
+                >
+                  {project.doneTaskCount}/{project.taskCount} tasks
+                </Link>
               </div>
               <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
                 <div
@@ -934,12 +1015,31 @@ export function ProjectsWorkspace({
             )}
           </TableCell>
         );
-      case "status":
+      case "timeline":
         return (
-          <TableCell key={colKey} className={cn("whitespace-nowrap", cellPad)}>
-            <Badge variant="secondary" className={density === "compact" ? "text-[10px]" : ""}>
-              {project.status.replace("_", " ")}
-            </Badge>
+          <TableCell key={colKey} className={cn("text-xs whitespace-nowrap", cellPad)}>
+            {project.startDate || project.dueDate ? (
+              <span className="inline-flex items-center gap-1 text-muted-foreground">
+                <span>
+                  {project.startDate ? formatDate(project.startDate, { withYear: true }) : "—"}
+                </span>
+                <span>→</span>
+                <span className={overdue ? "font-semibold text-rose-600" : ""}>
+                  {project.dueDate ? formatDate(project.dueDate, { withYear: true }) : "—"}
+                </span>
+              </span>
+            ) : (
+              <span className="text-muted-foreground">—</span>
+            )}
+          </TableCell>
+        );
+      case "budget":
+        return (
+          <TableCell
+            key={colKey}
+            className={cn("text-xs font-medium tabular-nums whitespace-nowrap", cellPad)}
+          >
+            {project.budget !== null ? formatCurrency(project.budget, project.currency) : "—"}
           </TableCell>
         );
       case "connected":
@@ -985,20 +1085,6 @@ export function ProjectsWorkspace({
             </div>
           </TableCell>
         );
-      case "tasks":
-        return (
-          <TableCell key={colKey} className={cn("whitespace-nowrap", cellPad)}>
-            <Link
-              href={`/${orgSlug}/projects/tasks?projectId=${project.id}`}
-              className="inline-flex items-center gap-1.5 hover:opacity-80"
-            >
-              <span className="text-sm font-medium tabular-nums">{project.taskCount}</span>
-              <Badge variant="outline" className="px-1.5 py-0 text-[10px] tabular-nums">
-                {project.doneTaskCount}/{project.taskCount}
-              </Badge>
-            </Link>
-          </TableCell>
-        );
       case "phases":
         return (
           <TableCell
@@ -1022,37 +1108,6 @@ export function ProjectsWorkspace({
             >
               {project.openIssueCount}/{project.issueCount}
             </Link>
-          </TableCell>
-        );
-      case "startDate":
-        return (
-          <TableCell
-            key={colKey}
-            className={cn("text-xs whitespace-nowrap text-muted-foreground", cellPad)}
-          >
-            {project.startDate ? formatDate(project.startDate, { withYear: true }) : "—"}
-          </TableCell>
-        );
-      case "dueDate":
-        return (
-          <TableCell
-            key={colKey}
-            className={cn(
-              "text-xs whitespace-nowrap",
-              overdue ? "font-semibold text-rose-600" : "text-muted-foreground",
-              cellPad,
-            )}
-          >
-            {project.dueDate ? formatDate(project.dueDate, { withYear: true }) : "—"}
-          </TableCell>
-        );
-      case "budget":
-        return (
-          <TableCell
-            key={colKey}
-            className={cn("text-xs font-medium tabular-nums whitespace-nowrap", cellPad)}
-          >
-            {project.budget !== null ? formatCurrency(project.budget, project.currency) : "—"}
           </TableCell>
         );
       case "tags":
@@ -1101,68 +1156,7 @@ export function ProjectsWorkspace({
               />
             </div>
 
-            {/* Split Button: Project Templates */}
-            <div className="inline-flex items-center rounded-md shadow-2xs">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => handleTabChange("templates")}
-                className="h-9 rounded-r-none border-r-0 px-3 text-xs"
-              >
-                <Layers className="size-3.5 text-violet-600" />
-                Project Templates
-              </Button>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    aria-label="Project templates options"
-                    className="h-9 rounded-l-none px-2"
-                  >
-                    <ChevronDown className="size-3.5" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-56">
-                  <DropdownMenuLabel>Quick Launch Template</DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                  {BUILTIN_TEMPLATES.filter((t) => t.key !== "NONE").map((tpl) => (
-                    <DropdownMenuItem
-                      key={tpl.key}
-                      disabled={!canWrite}
-                      onClick={() => openNewWithTemplate(tpl.key)}
-                    >
-                      <Layers className="size-3.5 text-violet-600" />
-                      {tpl.title}
-                    </DropdownMenuItem>
-                  ))}
-                  {customTemplates.length > 0 && (
-                    <>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuLabel>Saved Custom Templates</DropdownMenuLabel>
-                      {customTemplates.map((ct) => (
-                        <DropdownMenuItem
-                          key={ct.id}
-                          disabled={!canWrite}
-                          onClick={() => openNewWithTemplate("NONE")}
-                        >
-                          <BookmarkPlus className="size-3.5 text-emerald-600" />
-                          <span className="truncate">{ct.title}</span>
-                        </DropdownMenuItem>
-                      ))}
-                    </>
-                  )}
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => handleTabChange("templates")}>
-                    Browse All Templates
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-
-            {/* Split Button: New Project */}
+            {/* Split Button: New Project (nested templates & import) */}
             {canWrite && (
               <div className="inline-flex items-center rounded-md shadow-2xs">
                 <Button
@@ -1206,6 +1200,20 @@ export function ProjectsWorkspace({
                             {tpl.title}
                           </DropdownMenuItem>
                         ))}
+                        {customTemplates.length > 0 && (
+                          <>
+                            <DropdownMenuSeparator />
+                            {customTemplates.map((ct) => (
+                              <DropdownMenuItem
+                                key={ct.id}
+                                onClick={() => openNewWithTemplate("NONE")}
+                              >
+                                <BookmarkPlus className="size-3.5 text-emerald-600" />
+                                <span className="truncate">{ct.title}</span>
+                              </DropdownMenuItem>
+                            ))}
+                          </>
+                        )}
                       </DropdownMenuSubContent>
                     </DropdownMenuSub>
                     <DropdownMenuSeparator />
@@ -1276,461 +1284,218 @@ export function ProjectsWorkspace({
         </nav>
       </div>
 
-      {/* Zoho-Style Sub-Toolbar (View Switcher, Saved Views, Advanced Filter, Density, Columns, Automation) */}
+      {/* Consolidated Projects Sub-Toolbar */}
       {showProjectCollection && (
-        <div className="border-b bg-muted/20 px-4 py-2.5 lg:px-6">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex flex-wrap items-center gap-2">
-              {/* View Switcher */}
-              <div
-                className="inline-flex items-center rounded-lg border bg-background p-0.5 shadow-2xs"
-                role="group"
-                aria-label="Project view switcher"
-              >
-                <button
-                  type="button"
-                  onClick={() => setViewMode("list")}
-                  className={cn(
-                    "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition",
-                    viewMode === "list"
-                      ? "bg-primary text-primary-foreground"
-                      : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  <List className="size-3.5" />
-                  List View
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setViewMode("board")}
-                  className={cn(
-                    "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition",
-                    viewMode === "board"
-                      ? "bg-primary text-primary-foreground"
-                      : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  <Kanban className="size-3.5" />
-                  Board
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setViewMode("gantt")}
-                  className={cn(
-                    "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition",
-                    viewMode === "gantt"
-                      ? "bg-primary text-primary-foreground"
-                      : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  <GanttChart className="size-3.5" />
-                  Gantt
-                </button>
+        <ProjectsToolbar
+          viewMode={viewMode}
+          onViewModeChange={setViewMode}
+          activeFilterCount={activeAdvancedFilterCount}
+          onOpenAutomation={() => setAutomationOpen(true)}
+          shownCount={filteredAndSortedProjects.length}
+          filterPopoverContent={
+            <div className="space-y-3.5">
+              <div className="flex items-center justify-between border-b pb-2">
+                <div className="flex items-center gap-1.5">
+                  <SlidersHorizontal className="size-3.5 text-primary" />
+                  <p className="text-xs font-semibold">Advanced Filters</p>
+                </div>
+                {activeAdvancedFilterCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={clearAdvancedFilters}
+                    className="text-[11px] font-medium text-primary hover:underline"
+                  >
+                    Clear all
+                  </button>
+                )}
               </div>
 
-              {/* Saved View Switcher Dropdown */}
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="h-8 gap-1.5 bg-background text-xs font-medium"
-                  >
-                    <FolderKanban className="size-3.5 text-primary" />
-                    <span>{SAVED_VIEW_LABELS[savedView]}</span>
-                    <ChevronDown className="size-3 opacity-60" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" className="w-52">
-                  <DropdownMenuLabel>Saved Project Views</DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuRadioGroup
-                    value={savedView}
-                    onValueChange={(val) => handleSavedViewChange(val as SavedProjectView)}
-                  >
-                    {(Object.keys(SAVED_VIEW_LABELS) as SavedProjectView[]).map((viewKey) => (
-                      <DropdownMenuRadioItem
-                        key={viewKey}
-                        value={viewKey}
-                        className="flex items-center justify-between"
-                      >
-                        <span>{SAVED_VIEW_LABELS[viewKey]}</span>
-                        <Badge variant="secondary" className="ml-2 px-1.5 py-0 text-[10px]">
-                          {savedViewCounts[viewKey]}
-                        </Badge>
-                      </DropdownMenuRadioItem>
-                    ))}
-                  </DropdownMenuRadioGroup>
-                </DropdownMenuContent>
-              </DropdownMenu>
-
-              {/* Multi-Criteria Advanced Filter Popover */}
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={activeAdvancedFilterCount > 0 ? "secondary" : "outline"}
-                    className={cn(
-                      "h-8 gap-1.5 text-xs",
-                      activeAdvancedFilterCount === 0 && "bg-background",
-                    )}
-                  >
-                    <Filter className="size-3.5" />
-                    <span>Filters</span>
-                    {activeAdvancedFilterCount > 0 && (
-                      <Badge className="h-4 px-1 text-[10px]">{activeAdvancedFilterCount}</Badge>
-                    )}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent align="start" className="w-80 p-3.5">
-                  <div className="space-y-3.5">
-                    <div className="flex items-center justify-between border-b pb-2">
-                      <div className="flex items-center gap-1.5">
-                        <SlidersHorizontal className="size-3.5 text-primary" />
-                        <p className="text-xs font-semibold">Advanced Filters</p>
-                      </div>
-                      {activeAdvancedFilterCount > 0 && (
-                        <button
-                          type="button"
-                          onClick={clearAdvancedFilters}
-                          className="text-[11px] font-medium text-primary hover:underline"
-                        >
-                          Clear all
-                        </button>
-                      )}
-                    </div>
-
-                    {/* Owner */}
-                    <div className="space-y-1">
-                      <label className="text-[11px] font-medium text-muted-foreground">Owner</label>
-                      <select
-                        value={filterOwnerId}
-                        onChange={(e) => setFilterOwnerId(e.target.value)}
-                        className="flex h-8 w-full rounded-md border border-input bg-background px-2.5 text-xs"
-                      >
-                        <option value="">Any Owner</option>
-                        <option value="__unassigned__">Unassigned</option>
-                        {workspace.members.map((m) => (
-                          <option key={m.id} value={m.id}>
-                            {m.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    {/* Status multi-select */}
-                    <div className="space-y-1.5">
-                      <p className="text-[11px] font-medium text-muted-foreground">Status</p>
-                      <div className="grid grid-cols-2 gap-1.5">
-                        {PROJECT_STATUSES.map((st) => {
-                          const checked = filterStatuses.includes(st.value);
-                          return (
-                            <label
-                              key={st.value}
-                              className="flex cursor-pointer items-center gap-1.5 rounded border px-2 py-1 text-xs hover:bg-muted/40"
-                            >
-                              <input
-                                type="checkbox"
-                                checked={checked}
-                                onChange={() =>
-                                  setFilterStatuses((prev) =>
-                                    prev.includes(st.value)
-                                      ? prev.filter((item) => item !== st.value)
-                                      : [...prev, st.value],
-                                  )
-                                }
-                                className="size-3.5 accent-primary"
-                              />
-                              <span className={cn("size-2 rounded-full", st.dot)} />
-                              <span>{st.label}</span>
-                            </label>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    {/* Date Range */}
-                    <div className="space-y-1">
-                      <p className="text-[11px] font-medium text-muted-foreground">Date Range</p>
-                      <div className="grid grid-cols-2 gap-2">
-                        <Input
-                          type="date"
-                          aria-label="Filter start date from"
-                          value={filterDateFrom}
-                          onChange={(e) => setFilterDateFrom(e.target.value)}
-                          className="h-8 text-xs"
-                        />
-                        <Input
-                          type="date"
-                          aria-label="Filter due date to"
-                          value={filterDateTo}
-                          onChange={(e) => setFilterDateTo(e.target.value)}
-                          className="h-8 text-xs"
-                        />
-                      </div>
-                    </div>
-
-                    {/* Tags */}
-                    {allAvailableTags.length > 0 && (
-                      <div className="space-y-1.5">
-                        <p className="text-[11px] font-medium text-muted-foreground">Tags</p>
-                        <div className="flex max-h-24 flex-wrap gap-1 overflow-y-auto">
-                          {allAvailableTags.map((tag) => {
-                            const selected = filterTags.includes(tag);
-                            return (
-                              <button
-                                key={tag}
-                                type="button"
-                                onClick={() =>
-                                  setFilterTags((prev) =>
-                                    prev.includes(tag)
-                                      ? prev.filter((t) => t !== tag)
-                                      : [...prev, tag],
-                                  )
-                                }
-                                className={cn(
-                                  "rounded-md border px-2 py-0.5 text-[11px] transition",
-                                  selected
-                                    ? "border-primary bg-primary text-primary-foreground"
-                                    : "border-input bg-background text-muted-foreground hover:text-foreground",
-                                )}
-                              >
-                                #{tag}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </PopoverContent>
-              </Popover>
-
-              <Badge variant="secondary" className="text-xs tabular-nums">
-                {filteredAndSortedProjects.length} shown
-              </Badge>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              {/* Density Switcher (Compact / Comfortable) */}
-              {viewMode === "list" && (
-                <div
-                  className="inline-flex items-center rounded-lg border bg-background p-0.5"
-                  role="group"
-                  aria-label="Table row density"
+              <div className="space-y-1">
+                <label className="text-[11px] font-medium text-muted-foreground">Owner</label>
+                <select
+                  value={filterOwnerId}
+                  onChange={(e) => setFilterOwnerId(e.target.value)}
+                  className="flex h-8 w-full rounded-md border border-input bg-background px-2.5 text-xs"
                 >
-                  <button
-                    type="button"
-                    onClick={() => updateDensity("comfortable")}
-                    title="Comfortable row height"
-                    className={cn(
-                      "inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition",
-                      density === "comfortable"
-                        ? "bg-muted text-foreground"
-                        : "text-muted-foreground hover:text-foreground",
-                    )}
-                  >
-                    <Rows3 className="size-3.5" />
-                    <span className="hidden sm:inline">Comfortable</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => updateDensity("compact")}
-                    title="Compact row height"
-                    className={cn(
-                      "inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition",
-                      density === "compact"
-                        ? "bg-muted text-foreground"
-                        : "text-muted-foreground hover:text-foreground",
-                    )}
-                  >
-                    <AlignJustify className="size-3.5" />
-                    <span className="hidden sm:inline">Compact</span>
-                  </button>
+                  <option value="">Any Owner</option>
+                  <option value="__unassigned__">Unassigned</option>
+                  {workspace.members.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-1.5">
+                <p className="text-[11px] font-medium text-muted-foreground">Status</p>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {PROJECT_STATUSES.map((st) => {
+                    const checked = filterStatuses.includes(st.value);
+                    return (
+                      <label
+                        key={st.value}
+                        className="flex cursor-pointer items-center gap-1.5 rounded border px-2 py-1 text-xs hover:bg-muted/40"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() =>
+                            setFilterStatuses((prev) =>
+                              prev.includes(st.value)
+                                ? prev.filter((item) => item !== st.value)
+                                : [...prev, st.value],
+                            )
+                          }
+                          className="size-3.5 accent-primary"
+                        />
+                        <span className={cn("size-2 rounded-full", st.dot)} />
+                        <span>{st.label}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <p className="text-[11px] font-medium text-muted-foreground">Date Range</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <Input
+                    type="date"
+                    aria-label="Filter start date from"
+                    value={filterDateFrom}
+                    onChange={(e) => setFilterDateFrom(e.target.value)}
+                    className="h-8 text-xs"
+                  />
+                  <Input
+                    type="date"
+                    aria-label="Filter due date to"
+                    value={filterDateTo}
+                    onChange={(e) => setFilterDateTo(e.target.value)}
+                    className="h-8 text-xs"
+                  />
+                </div>
+              </div>
+
+              {allAvailableTags.length > 0 && (
+                <div className="space-y-1.5">
+                  <p className="text-[11px] font-medium text-muted-foreground">Tags</p>
+                  <div className="flex max-h-24 flex-wrap gap-1 overflow-y-auto">
+                    {allAvailableTags.map((tag) => {
+                      const selected = filterTags.includes(tag);
+                      return (
+                        <button
+                          key={tag}
+                          type="button"
+                          onClick={() =>
+                            setFilterTags((prev) =>
+                              prev.includes(tag)
+                                ? prev.filter((t) => t !== tag)
+                                : [...prev, tag],
+                            )
+                          }
+                          className={cn(
+                            "rounded-md border px-2 py-0.5 text-[11px] transition",
+                            selected
+                              ? "border-primary bg-primary text-primary-foreground"
+                              : "border-input bg-background text-muted-foreground hover:text-foreground",
+                          )}
+                        >
+                          #{tag}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
-
-              {/* Column Customization & Reorder Popover (Synced with DnD Headers) */}
-              {viewMode === "list" && (
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button
+            </div>
+          }
+          displayProps={{
+            viewMode,
+            savedView,
+            savedViewCounts,
+            onSavedViewChange: handleSavedViewChange,
+            density,
+            onDensityChange: updateDensity,
+            columns: availableColumnOrder.map((key) => ({
+              key,
+              label: COLUMN_DEFS[key].label,
+              required: COLUMN_DEFS[key].required,
+            })),
+            visibleColumns,
+            onToggleColumn: (key, checked) =>
+              persistVisibleColumns({ ...visibleColumns, [key]: checked }),
+            onMoveColumn: moveColumnStep,
+            onReorderColumns: reorderColumns,
+            onResetColumns: () => {
+              persistVisibleColumns(DEFAULT_VISIBLE_COLUMNS);
+              persistColumnOrder(DEFAULT_COLUMN_ORDER);
+            },
+          }}
+          activeFilterChips={
+            activeAdvancedFilterCount > 0 ? (
+              <div className="mt-2.5 flex flex-wrap items-center gap-1.5 border-t pt-2 text-xs">
+                <span className="text-[11px] font-medium text-muted-foreground">
+                  Active filters:
+                </span>
+                {filterOwnerId && (
+                  <Badge variant="secondary" className="gap-1 text-[11px]">
+                    Owner:{" "}
+                    {filterOwnerId === "__unassigned__"
+                      ? "Unassigned"
+                      : workspace.members.find((m) => m.id === filterOwnerId)?.name ?? "Member"}
+                    <button type="button" onClick={() => setFilterOwnerId("")}>
+                      <X className="size-3" />
+                    </button>
+                  </Badge>
+                )}
+                {filterStatuses.map((st) => (
+                  <Badge key={st} variant="secondary" className="gap-1 text-[11px]">
+                    Status: {st.replace("_", " ")}
+                    <button
                       type="button"
-                      size="sm"
-                      variant="outline"
-                      className="h-8 gap-1.5 bg-background text-xs"
+                      onClick={() => setFilterStatuses((prev) => prev.filter((s) => s !== st))}
                     >
-                      <Columns3 className="size-3.5" />
-                      Columns
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent align="end" className="w-64 p-3">
-                    <div className="flex items-center justify-between border-b pb-2">
-                      <div>
-                        <p className="text-xs font-semibold">Columns &amp; Order</p>
-                        <p className="text-[10px] text-muted-foreground">
-                          Drag or toggle columns to customize table.
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          persistVisibleColumns(DEFAULT_VISIBLE_COLUMNS);
-                          persistColumnOrder(DEFAULT_COLUMN_ORDER);
-                        }}
-                        className="text-[11px] font-medium text-primary hover:underline"
-                      >
-                        Reset
-                      </button>
-                    </div>
-                    <div className="mt-2 max-h-72 space-y-1 overflow-y-auto">
-                      {availableColumnOrder.map((colKey, idx) => {
-                        const col = COLUMN_DEFS[colKey];
-                        return (
-                          <div
-                            key={colKey}
-                            draggable
-                            onDragStart={() => setDraggedCol(colKey)}
-                            onDragOver={(e) => {
-                              e.preventDefault();
-                              setDragOverCol(colKey);
-                            }}
-                            onDrop={(e) => {
-                              e.preventDefault();
-                              if (draggedCol) reorderColumns(draggedCol, colKey);
-                              setDraggedCol(null);
-                              setDragOverCol(null);
-                            }}
-                            onDragEnd={() => {
-                              setDraggedCol(null);
-                              setDragOverCol(null);
-                            }}
-                            className={cn(
-                              "flex items-center justify-between gap-2 rounded-md px-1.5 py-1 text-xs hover:bg-muted/60",
-                              dragOverCol === colKey && "ring-1 ring-primary",
-                            )}
-                          >
-                            <div className="flex min-w-0 flex-1 items-center gap-2">
-                              <GripVertical className="size-3.5 shrink-0 cursor-grab text-muted-foreground/70" />
-                              <input
-                                type="checkbox"
-                                disabled={col.required}
-                                checked={visibleColumns[colKey]}
-                                onChange={(e) =>
-                                  persistVisibleColumns({
-                                    ...visibleColumns,
-                                    [colKey]: e.target.checked,
-                                  })
-                                }
-                                className="size-3.5 accent-primary"
-                              />
-                              <span className="truncate">{col.label}</span>
-                            </div>
-                            <div className="flex items-center gap-0.5">
-                              <button
-                                type="button"
-                                disabled={idx === 0}
-                                aria-label={`Move ${col.label} up`}
-                                onClick={() => moveColumnStep(colKey, -1)}
-                                className="rounded p-0.5 text-muted-foreground hover:bg-background hover:text-foreground disabled:opacity-30"
-                              >
-                                <ArrowUp className="size-3" />
-                              </button>
-                              <button
-                                type="button"
-                                disabled={idx === availableColumnOrder.length - 1}
-                                aria-label={`Move ${col.label} down`}
-                                onClick={() => moveColumnStep(colKey, 1)}
-                                className="rounded p-0.5 text-muted-foreground hover:bg-background hover:text-foreground disabled:opacity-30"
-                              >
-                                <ArrowDown className="size-3" />
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </PopoverContent>
-                </Popover>
-              )}
-
-              {/* Automation Button */}
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={() => setAutomationOpen(true)}
-                className="h-8 gap-1.5 border-emerald-500/30 bg-background text-xs text-emerald-700 hover:bg-emerald-500/10 dark:text-emerald-300"
-              >
-                <Workflow className="size-3.5" />
-                Automation
-              </Button>
-            </div>
-          </div>
-
-          {/* Active Advanced Filter Chips */}
-          {activeAdvancedFilterCount > 0 && (
-            <div className="mt-2.5 flex flex-wrap items-center gap-1.5 border-t pt-2 text-xs">
-              <span className="text-[11px] font-medium text-muted-foreground">Active filters:</span>
-              {filterOwnerId && (
-                <Badge variant="secondary" className="gap-1 text-[11px]">
-                  Owner:{" "}
-                  {filterOwnerId === "__unassigned__"
-                    ? "Unassigned"
-                    : workspace.members.find((m) => m.id === filterOwnerId)?.name ?? "Member"}
-                  <button type="button" onClick={() => setFilterOwnerId("")}>
-                    <X className="size-3" />
-                  </button>
-                </Badge>
-              )}
-              {filterStatuses.map((st) => (
-                <Badge key={st} variant="secondary" className="gap-1 text-[11px]">
-                  Status: {st.replace("_", " ")}
-                  <button
-                    type="button"
-                    onClick={() => setFilterStatuses((prev) => prev.filter((s) => s !== st))}
-                  >
-                    <X className="size-3" />
-                  </button>
-                </Badge>
-              ))}
-              {(filterDateFrom || filterDateTo) && (
-                <Badge variant="secondary" className="gap-1 text-[11px]">
-                  Dates: {filterDateFrom || "Any"} → {filterDateTo || "Any"}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setFilterDateFrom("");
-                      setFilterDateTo("");
-                    }}
-                  >
-                    <X className="size-3" />
-                  </button>
-                </Badge>
-              )}
-              {filterTags.map((tag) => (
-                <Badge key={tag} variant="secondary" className="gap-1 text-[11px]">
-                  #{tag}
-                  <button
-                    type="button"
-                    onClick={() => setFilterTags((prev) => prev.filter((t) => t !== tag))}
-                  >
-                    <X className="size-3" />
-                  </button>
-                </Badge>
-              ))}
-              <button
-                type="button"
-                onClick={clearAdvancedFilters}
-                className="ml-1 text-[11px] font-medium text-primary hover:underline"
-              >
-                Reset all
-              </button>
-            </div>
-          )}
-        </div>
+                      <X className="size-3" />
+                    </button>
+                  </Badge>
+                ))}
+                {(filterDateFrom || filterDateTo) && (
+                  <Badge variant="secondary" className="gap-1 text-[11px]">
+                    Dates: {filterDateFrom || "Any"} → {filterDateTo || "Any"}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFilterDateFrom("");
+                        setFilterDateTo("");
+                      }}
+                    >
+                      <X className="size-3" />
+                    </button>
+                  </Badge>
+                )}
+                {filterTags.map((tag) => (
+                  <Badge key={tag} variant="secondary" className="gap-1 text-[11px]">
+                    #{tag}
+                    <button
+                      type="button"
+                      onClick={() => setFilterTags((prev) => prev.filter((t) => t !== tag))}
+                    >
+                      <X className="size-3" />
+                    </button>
+                  </Badge>
+                ))}
+                <button
+                  type="button"
+                  onClick={clearAdvancedFilters}
+                  className="ml-1 text-[11px] font-medium text-primary hover:underline"
+                >
+                  Reset all
+                </button>
+              </div>
+            ) : undefined
+          }
+        />
       )}
 
       {/* Contextual Bulk Action Toolbar */}
@@ -1814,8 +1579,51 @@ export function ProjectsWorkspace({
       )}
 
       {/* Tab Body */}
-      <div className="p-4 lg:p-6">
-        {activeTab === "templates" ? (
+      <div className="space-y-4 p-4 lg:p-6">
+        {workspace.projects.length === 0 && canWrite && !onboardingDismissed && (
+          <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border bg-gradient-to-r from-indigo-500/10 via-violet-500/5 to-cyan-400/10 p-4 dark:border-zinc-800">
+            <div className="flex items-start gap-3">
+              <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg bg-indigo-500/15 text-indigo-600 dark:text-indigo-400">
+                <Sparkles className="size-4" />
+              </span>
+              <div>
+                <p className="text-sm font-semibold">Start faster with sample connected data</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Load 1 CRM deal → 1 active project (with phases, tasks &amp; time log) → 1 linked Finance invoice to explore how Tactiq connects end to end.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                size="sm"
+                disabled={isSeeding}
+                onClick={handleLoadSampleData}
+                className="gap-1.5"
+              >
+                {isSeeding ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  <Sparkles className="size-3.5" />
+                )}
+                Load Sample Data
+              </Button>
+              <Button
+                type="button"
+                size="icon-sm"
+                variant="ghost"
+                aria-label="Dismiss onboarding banner"
+                onClick={handleDismissOnboarding}
+              >
+                <X className="size-4" />
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {isSeeding ? (
+          <TableSkeleton columns={visibleColCount} rows={5} compact={density === "compact"} />
+        ) : activeTab === "templates" ? (
           <div className="space-y-6">
             <div className="grid gap-4 md:grid-cols-3">
               {BUILTIN_TEMPLATES.map((tpl) => (
@@ -1888,11 +1696,22 @@ export function ProjectsWorkspace({
         ) : activeTab === "groups" ? (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {workspace.groups.length === 0 ? (
-              <Card className="sm:col-span-2 lg:col-span-3">
-                <CardContent className="flex h-32 items-center justify-center text-sm text-muted-foreground">
-                  No project groups yet. Create one inside the New Project drawer.
-                </CardContent>
-              </Card>
+              <div className="sm:col-span-2 lg:col-span-3">
+                <EmptyState
+                  icon={FolderKanban}
+                  title="No project groups yet"
+                  description="Organize related client or departmental projects into structured folders directly from the New Project drawer."
+                  action={
+                    canWrite
+                      ? {
+                          label: "New Project",
+                          icon: <Plus className="size-3.5" />,
+                          onClick: () => openNewWithTemplate("NONE"),
+                        }
+                      : undefined
+                  }
+                />
+              </div>
             ) : (
               workspace.groups.map((g) => (
                 <Card key={g.id}>
@@ -2052,11 +1871,50 @@ export function ProjectsWorkspace({
                 <TableBody>
                   {filteredAndSortedProjects.length === 0 ? (
                     <TableRow>
-                      <TableCell
-                        colSpan={visibleColCount}
-                        className="h-28 text-center text-muted-foreground"
-                      >
-                        No projects found matching the current view and filters.
+                      <TableCell colSpan={visibleColCount} className="p-4">
+                        <EmptyState
+                          icon={FolderKanban}
+                          title={
+                            workspace.projects.length === 0
+                              ? "No projects in this workspace yet"
+                              : "No projects match your current view"
+                          }
+                          description="Create your first delivery project, import an existing CSV sheet, or load sample connected data."
+                          compact
+                          action={
+                            canWrite
+                              ? workspace.projects.length === 0
+                                ? {
+                                    label: "New Project",
+                                    icon: <Plus className="size-3.5" />,
+                                    onClick: () => openNewWithTemplate("NONE"),
+                                  }
+                                : {
+                                    label: "Reset Filters",
+                                    onClick: () => {
+                                      clearAdvancedFilters();
+                                      setSearch("");
+                                      handleSavedViewChange("all");
+                                    },
+                                  }
+                              : undefined
+                          }
+                          secondaryAction={
+                            canWrite
+                              ? workspace.projects.length === 0
+                                ? {
+                                    label: "Load Sample Data",
+                                    icon: <Sparkles className="size-3.5" />,
+                                    onClick: handleLoadSampleData,
+                                  }
+                                : {
+                                    label: "Import CSV",
+                                    icon: <Upload className="size-3.5" />,
+                                    onClick: () => setImportOpen(true),
+                                  }
+                              : undefined
+                          }
+                        />
                       </TableCell>
                     </TableRow>
                   ) : (
@@ -2136,6 +1994,31 @@ export function ProjectsWorkspace({
                                         <Pencil className="size-3.5" />
                                         Edit Details
                                       </DropdownMenuItem>
+                                      <DropdownMenuSub>
+                                        <DropdownMenuSubTrigger>
+                                          <Sparkles className="size-3.5" />
+                                          Change Status
+                                        </DropdownMenuSubTrigger>
+                                        <DropdownMenuSubContent className="w-44">
+                                          {PROJECT_STATUSES.map((st) => (
+                                            <DropdownMenuItem
+                                              key={st.value}
+                                              disabled={st.value === project.status}
+                                              onClick={() =>
+                                                handleRowStatusChange(
+                                                  project.id,
+                                                  project.name,
+                                                  st.value,
+                                                  project.status,
+                                                )
+                                              }
+                                            >
+                                              <span className={cn("size-2 rounded-full", st.dot)} />
+                                              {st.label}
+                                            </DropdownMenuItem>
+                                          ))}
+                                        </DropdownMenuSubContent>
+                                      </DropdownMenuSub>
                                       <DropdownMenuItem onClick={() => handleCloneProject(project)}>
                                         <Copy className="size-3.5" />
                                         Clone Project

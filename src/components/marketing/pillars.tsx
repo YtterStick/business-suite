@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ArrowRight, ArrowUp, BookOpen, Check, ExternalLink } from "lucide-react";
+import { ArrowRight, BookOpen, Check, Eye } from "lucide-react";
 import Link from "next/link";
 
 import {
@@ -10,14 +10,24 @@ import {
   SUITE_APPS,
   type SuiteAppId,
 } from "@/components/marketing/apps";
+import { HeroPreviewTabs } from "@/components/marketing/hero-preview-tabs";
 import { SectionHeading } from "@/components/marketing/section-heading";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import type { MarketingViewer } from "@/server/marketing";
 
 export function Pillars({ viewer }: { viewer: MarketingViewer | null }) {
   const [selectedApp, setSelectedApp] = React.useState<SuiteAppId>("projects");
+  const [previewOpen, setPreviewOpen] = React.useState(false);
+  const [previewModuleName, setPreviewModuleName] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     const syncFromHash = () => {
@@ -53,12 +63,9 @@ export function Pillars({ viewer }: { viewer: MarketingViewer | null }) {
     }
   };
 
-  const previewInShowcase = () => {
-    window.dispatchEvent(new CustomEvent("tq-select-app", { detail: selectedApp }));
-    document.getElementById("workspace-preview")?.scrollIntoView({
-      behavior: "smooth",
-      block: "center",
-    });
+  const openInlinePreview = (moduleTitle: string | null = null) => {
+    setPreviewModuleName(moduleTitle);
+    setPreviewOpen(true);
   };
 
   const active = getSuiteApp(selectedApp);
@@ -203,11 +210,14 @@ export function Pillars({ viewer }: { viewer: MarketingViewer | null }) {
             </div>
 
             <div className="flex flex-wrap items-center gap-2.5">
-              <Button asChild size="sm">
-                <Link href={openHref}>
-                  {viewer?.workspaceSlug ? `Open ${active.name}` : `Get Started with ${active.name}`}
-                  <ArrowRight className="size-3.5" />
-                </Link>
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                onClick={() => openInlinePreview(null)}
+              >
+                <Eye className="size-3.5" />
+                Preview UI
               </Button>
               <Button asChild size="sm" variant="outline">
                 <Link href={active.docsHref}>
@@ -215,37 +225,52 @@ export function Pillars({ viewer }: { viewer: MarketingViewer | null }) {
                   Read {active.name} Guide
                 </Link>
               </Button>
-              <Button type="button" size="sm" variant="ghost" onClick={previewInShowcase}>
-                Preview UI
-                <ArrowUp className="size-3.5" />
+              <Button asChild size="sm">
+                <Link href={openHref}>
+                  {viewer?.workspaceSlug ? `Open ${active.name}` : "Get Started Free"}
+                  <ArrowRight className="size-3.5" />
+                </Link>
               </Button>
             </div>
           </div>
 
           <div className="mt-6 grid gap-3.5 sm:grid-cols-2 sm:gap-4">
-            {active.modules.map((mod) =>
-              viewer?.workspaceSlug ? (
-                <Link
-                  key={mod.name}
-                  href={`/${viewer.workspaceSlug}${mod.path}`}
-                  className="group flex items-start justify-between gap-3 rounded-xl border bg-background/60 p-4 transition-colors hover:border-foreground/20 hover:bg-accent/40"
-                >
-                  <div>
-                    <p className="text-sm font-semibold group-hover:text-primary">{mod.name}</p>
-                    <p className="mt-1 text-sm text-muted-foreground">{mod.description}</p>
-                  </div>
-                  <ExternalLink className="mt-0.5 size-4 shrink-0 text-muted-foreground opacity-60 transition-opacity group-hover:opacity-100" />
-                </Link>
-              ) : (
-                <div key={mod.name} className="rounded-xl border bg-background/60 p-4">
-                  <p className="text-sm font-semibold">{mod.name}</p>
+            {active.modules.map((mod) => (
+              <button
+                key={mod.name}
+                type="button"
+                onClick={() => openInlinePreview(mod.name)}
+                className="group flex items-start justify-between gap-3 rounded-xl border bg-background/60 p-4 text-left transition-colors hover:border-foreground/20 hover:bg-accent/40"
+              >
+                <div>
+                  <p className="text-sm font-semibold group-hover:text-primary">{mod.name}</p>
                   <p className="mt-1 text-sm text-muted-foreground">{mod.description}</p>
                 </div>
-              ),
-            )}
+                <span className="mt-0.5 inline-flex shrink-0 items-center gap-1 rounded-md border bg-muted/40 px-2 py-0.5 text-[10px] font-medium text-muted-foreground transition-colors group-hover:text-foreground">
+                  <Eye className="size-3" />
+                  Preview
+                </span>
+              </button>
+            ))}
           </div>
         </div>
       </div>
+
+      {/* Inline Interactive UI Preview Modal */}
+      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-4xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ActiveIcon className={cn("size-4", active.iconColor)} />
+              {previewModuleName ? `${active.name} — ${previewModuleName}` : `${active.name} Workspace Preview`}
+            </DialogTitle>
+            <DialogDescription>
+              Interactive preview of Tactiq {active.name}. Switch tabs below to inspect CRM, Finance, and Projects together.
+            </DialogDescription>
+          </DialogHeader>
+          <HeroPreviewTabs viewer={viewer} initialTab={selectedApp} />
+        </DialogContent>
+      </Dialog>
     </section>
   );
 }

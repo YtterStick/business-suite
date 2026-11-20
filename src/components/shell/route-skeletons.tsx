@@ -1,5 +1,46 @@
 import { Skeleton } from "@/components/ui/skeleton";
 
+/** Inline shape-matched skeleton for table containers during transitions or loads. */
+export function TableSkeleton({
+  columns = 7,
+  rows = 6,
+  compact = false,
+}: {
+  columns?: number;
+  rows?: number;
+  compact?: boolean;
+}) {
+  return (
+    <div
+      className="overflow-hidden rounded-xl border bg-card dark:border-zinc-800 dark:bg-zinc-900/70"
+      aria-busy="true"
+      aria-label="Loading table rows"
+    >
+      <div
+        className="grid gap-3 border-b bg-muted/40 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-950/60"
+        style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}
+      >
+        {Array.from({ length: columns }).map((_, i) => (
+          <Skeleton key={i} className="h-3.5 w-20" />
+        ))}
+      </div>
+      <div className="divide-y dark:divide-zinc-800">
+        {Array.from({ length: rows }).map((_, r) => (
+          <div
+            key={r}
+            className={`grid items-center gap-3 px-4 ${compact ? "py-2" : "py-3.5"}`}
+            style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}
+          >
+            {Array.from({ length: columns }).map((__, c) => (
+              <Skeleton key={c} className={c === 0 ? "h-4 w-36" : "h-3.5 w-20"} />
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function TablePageSkeleton({
   columns = 6,
   rows = 7,
@@ -42,29 +83,7 @@ export function TablePageSkeleton({
         <Skeleton className="h-8 w-28" />
       </div>
 
-      <div className="overflow-hidden rounded-xl border bg-card dark:border-zinc-800 dark:bg-zinc-900/70">
-        <div
-          className="grid gap-3 border-b bg-muted/40 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-950/60"
-          style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}
-        >
-          {Array.from({ length: columns }).map((_, i) => (
-            <Skeleton key={i} className="h-3.5 w-20" />
-          ))}
-        </div>
-        <div className="divide-y dark:divide-zinc-800">
-          {Array.from({ length: rows }).map((_, r) => (
-            <div
-              key={r}
-              className="grid items-center gap-3 px-4 py-3.5"
-              style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}
-            >
-              {Array.from({ length: columns }).map((__, c) => (
-                <Skeleton key={c} className={c === 0 ? "h-4 w-36" : "h-3.5 w-20"} />
-              ))}
-            </div>
-          ))}
-        </div>
-      </div>
+      <TableSkeleton columns={columns} rows={rows} />
     </div>
   );
 }

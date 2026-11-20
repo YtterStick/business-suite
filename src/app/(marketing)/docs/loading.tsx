@@ -2,7 +2,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 export default function DocsLoading() {
   return (
-    <div className="grid gap-10 xl:grid-cols-[minmax(0,1fr)_14rem]" aria-busy="true">
+    <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_13.5rem] xl:grid-cols-[minmax(0,1fr)_15rem]" aria-busy="true">
       <div className="max-w-3xl space-y-4">
         <Skeleton className="h-4 w-40" />
         <Skeleton className="h-10 w-2/3" />
@@ -20,7 +20,7 @@ export default function DocsLoading() {
           <Skeleton className="h-4 w-3/4" />
         </div>
       </div>
-      <div className="hidden space-y-2 xl:block">
+      <div className="hidden space-y-2 lg:block">
         <Skeleton className="h-3 w-24" />
         <Skeleton className="h-4 w-full" />
         <Skeleton className="h-4 w-5/6" />

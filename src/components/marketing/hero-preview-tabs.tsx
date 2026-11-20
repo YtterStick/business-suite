@@ -23,10 +23,20 @@ const SWITCH_SKELETON_MS = 380;
  * Interactive browser mockup for the Hero section showcasing Tactiq's
  * unified CRM, Finance, and Projects workspaces across desktop and mobile.
  */
-export function HeroPreviewTabs({ viewer = null }: { viewer?: MarketingViewer | null }) {
-  const [active, setActive] = React.useState<SuiteAppId>("projects");
+export function HeroPreviewTabs({
+  viewer = null,
+  initialTab = "projects",
+}: {
+  viewer?: MarketingViewer | null;
+  initialTab?: SuiteAppId;
+}) {
+  const [active, setActive] = React.useState<SuiteAppId>(initialTab);
   const [loading, setLoading] = React.useState(false);
-  const [interacted, setInteracted] = React.useState(false);
+  const [interacted, setInteracted] = React.useState(initialTab !== "projects");
+
+  React.useEffect(() => {
+    setActive(initialTab);
+  }, [initialTab]);
 
   const switchTo = React.useCallback((next: SuiteAppId) => {
     setLoading(true);
