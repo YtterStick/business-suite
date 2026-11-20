@@ -10,17 +10,10 @@ import {
   SUITE_APPS,
   type SuiteAppId,
 } from "@/components/marketing/apps";
-import { HeroPreviewTabs } from "@/components/marketing/hero-preview-tabs";
+import { ModulePreviewDialog } from "@/components/marketing/module-preview-dialog";
 import { SectionHeading } from "@/components/marketing/section-heading";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import type { MarketingViewer } from "@/server/marketing";
 
@@ -187,7 +180,7 @@ export function Pillars({ viewer }: { viewer: MarketingViewer | null }) {
           className="mt-8 scroll-mt-24 overflow-hidden rounded-2xl border bg-card p-5 sm:p-8 dark:bg-white/[0.02]"
         >
           <div className="flex flex-col gap-5 border-b pb-6 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex items-start gap-3.5 sm:gap-4">
+            <div className="flex min-w-0 flex-1 items-start gap-3.5 sm:gap-4">
               <span
                 className={cn(
                   "flex size-11 shrink-0 items-center justify-center rounded-xl ring-1 sm:size-12",
@@ -205,27 +198,28 @@ export function Pillars({ viewer }: { viewer: MarketingViewer | null }) {
                     {active.tagline}
                   </Badge>
                 </div>
-                <p className="mt-1 max-w-2xl text-sm text-muted-foreground">{active.description}</p>
+                <p className="mt-1 max-w-xl text-sm text-muted-foreground">{active.description}</p>
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2.5">
+            <div className="flex shrink-0 flex-wrap items-center gap-2.5 lg:flex-nowrap lg:justify-end">
               <Button
                 type="button"
                 size="sm"
                 variant="secondary"
+                className="whitespace-nowrap"
                 onClick={() => openInlinePreview(null)}
               >
                 <Eye className="size-3.5" />
                 Preview UI
               </Button>
-              <Button asChild size="sm" variant="outline">
+              <Button asChild size="sm" variant="outline" className="whitespace-nowrap">
                 <Link href={active.docsHref}>
                   <BookOpen className="size-3.5" />
                   Read {active.name} Guide
                 </Link>
               </Button>
-              <Button asChild size="sm">
+              <Button asChild size="sm" className="whitespace-nowrap">
                 <Link href={openHref}>
                   {viewer?.workspaceSlug ? `Open ${active.name}` : "Get Started Free"}
                   <ArrowRight className="size-3.5" />
@@ -256,21 +250,16 @@ export function Pillars({ viewer }: { viewer: MarketingViewer | null }) {
         </div>
       </div>
 
-      {/* Inline Interactive UI Preview Modal */}
-      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-4xl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <ActiveIcon className={cn("size-4", active.iconColor)} />
-              {previewModuleName ? `${active.name} — ${previewModuleName}` : `${active.name} Workspace Preview`}
-            </DialogTitle>
-            <DialogDescription>
-              Interactive preview of Tactiq {active.name}. Switch tabs below to inspect CRM, Finance, and Projects together.
-            </DialogDescription>
-          </DialogHeader>
-          <HeroPreviewTabs viewer={viewer} initialTab={selectedApp} />
-        </DialogContent>
-      </Dialog>
+      {/* Inline Interactive Module UI Preview Modal */}
+      <ModulePreviewDialog
+        open={previewOpen}
+        onOpenChange={setPreviewOpen}
+        appId={selectedApp}
+        moduleName={previewModuleName}
+        onSelectApp={(id) => chooseApp(id)}
+        onSelectModule={setPreviewModuleName}
+        viewer={viewer}
+      />
     </section>
   );
 }
