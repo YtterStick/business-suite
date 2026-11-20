@@ -599,7 +599,7 @@ export function CollaborationPanel({
                               </>
                             )}
                             <span>•</span>
-                            <span>{formatDateTimeUtc(item.createdAt)} UTC</span>
+                            <span>{formatDateTimeUtc(item.createdAt)}</span>
                           </div>
 
                           {/* Expanded description for activity entries */}

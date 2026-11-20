@@ -343,7 +343,10 @@ export default async function SuiteLayout({ children, params }: SuiteLayoutProps
     name: tenant.organization.name,
     slug: tenant.organization.slug,
     defaultCurrency: tenant.organization.defaultCurrency,
-    timezone: tenant.organization.timezone,
+    timezone:
+      !tenant.organization.timezone || tenant.organization.timezone === "UTC"
+        ? "Asia/Manila"
+        : tenant.organization.timezone,
     invoicePrefix: orgDetails?.invoicePrefix ?? "INV-",
     quotePrefix: orgDetails?.quotePrefix ?? "QT-",
     defaultPaymentTermsDays: orgDetails?.defaultPaymentTermsDays ?? 30,

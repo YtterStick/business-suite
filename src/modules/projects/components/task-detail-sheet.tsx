@@ -863,7 +863,7 @@ export function TaskDetailSheet({
                       <div className="flex items-center justify-between">
                         <span className="font-semibold">{c.authorName}</span>
                         <span className="text-[10px] text-muted-foreground">
-                          {formatDateTimeUtc(c.createdAt)} UTC
+                          {formatDateTimeUtc(c.createdAt)}
                         </span>
                       </div>
                       <p className="mt-1 whitespace-pre-wrap">{c.body}</p>
@@ -990,7 +990,7 @@ export function TaskDetailSheet({
                       </p>
                     </div>
                     <span className="shrink-0 text-[10px] text-muted-foreground">
-                      {formatDateTimeUtc(act.createdAt)} UTC
+                      {formatDateTimeUtc(act.createdAt)}
                     </span>
                   </div>
                 ))

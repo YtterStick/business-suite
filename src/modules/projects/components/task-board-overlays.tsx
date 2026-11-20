@@ -35,6 +35,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import { formatDateTimeUtc } from "@/lib/format";
 import { emitBackgroundTaskEvent } from "@/modules/projects/components/project-workspace-overlays";
 import {
   createMilestoneAction,
@@ -680,7 +681,7 @@ export function TaskActivityLogSheet({
                     {entry.summary} · {entry.projectName}
                   </p>
                   <p className="mt-1 text-[10px] text-muted-foreground">
-                    {entry.createdAt.slice(0, 16).replace("T", " ")} UTC
+                    {formatDateTimeUtc(entry.createdAt)}
                   </p>
                 </button>
               ))

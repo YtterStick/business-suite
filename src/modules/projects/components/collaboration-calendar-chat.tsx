@@ -49,7 +49,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { formatDateTimeUtc, initials } from "@/lib/format";
+import { formatDateTimeUtc, formatTime, initials } from "@/lib/format";
 import { emitWorkspaceNotification } from "@/lib/notifications";
 import { cn } from "@/lib/utils";
 import { postCommentAction } from "@/modules/projects/projects.actions";
@@ -385,7 +385,7 @@ function formatMessageTime(iso: string): string {
   if (!iso) return "";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
-  return d.toISOString().slice(11, 16) + " UTC";
+  return formatTime(iso);
 }
 
 function formatDateSeparator(iso: string): string {
@@ -896,7 +896,7 @@ export function CollaborationChatTab({
                         <p className="truncate text-xs font-semibold">{conv.title}</p>
                         {lastMsg && (
                           <span className="shrink-0 text-[10px] text-muted-foreground">
-                            {formatMessageTime(lastMsg.createdAt).replace(" UTC", "")}
+                            {formatMessageTime(lastMsg.createdAt)}
                           </span>
                         )}
                       </div>

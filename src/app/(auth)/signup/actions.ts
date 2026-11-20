@@ -78,7 +78,7 @@ export async function signupAction(
           name: organizationName,
           slug,
           defaultCurrency,
-          timezone: defaultCurrency === "PHP" ? "Asia/Manila" : "UTC",
+          timezone: "Asia/Manila",
         },
         select: { id: true, slug: true },
       });

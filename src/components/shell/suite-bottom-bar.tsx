@@ -66,7 +66,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import { formatDateTimeUtc, initials } from "@/lib/format";
+import { formatDateTimeUtc, formatTime, initials } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { createTimeLogAction, postCommentAction } from "@/modules/projects/projects.actions";
 
@@ -241,7 +241,7 @@ export function SuiteBottomBar({
         }>
       ).detail;
       if (!detail?.id) return;
-      const nowTime = new Date().toISOString().slice(11, 16) + " UTC";
+      const nowTime = formatTime(new Date().toISOString());
       setBgTasks((prev) => {
         const exists = prev.some((t) => t.id === detail.id);
         if (exists) {

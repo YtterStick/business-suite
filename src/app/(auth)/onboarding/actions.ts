@@ -52,7 +52,7 @@ export async function createWorkspaceAction(formData: FormData): Promise<void> {
         name: parsed.data.workspaceName,
         slug,
         defaultCurrency: parsed.data.defaultCurrency,
-        timezone: "UTC",
+        timezone: "Asia/Manila",
       },
       select: { id: true, slug: true },
     });

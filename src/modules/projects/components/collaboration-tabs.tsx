@@ -309,7 +309,7 @@ export function CollaborationPagesTab({
                 <CardTitle className="text-lg">{activePage.title}</CardTitle>
                 <CardDescription className="text-xs">
                   By {activePage.authorName}
-                  {activePage.createdAt ? ` · ${formatDateTimeUtc(activePage.createdAt)} UTC` : ""}
+                  {activePage.createdAt ? ` · ${formatDateTimeUtc(activePage.createdAt)}` : ""}
                 </CardDescription>
               </div>
 
@@ -616,8 +616,7 @@ export function CollaborationForumsTab({
                 </div>
                 <CardTitle className="mt-1 text-base">{activeTopic.title}</CardTitle>
                 <CardDescription className="text-xs">
-                  Started by {activeTopic.authorName} · {formatDateTimeUtc(activeTopic.createdAt)}{" "}
-                  UTC
+                  Started by {activeTopic.authorName} · {formatDateTimeUtc(activeTopic.createdAt)}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4 p-4">
@@ -635,7 +634,7 @@ export function CollaborationForumsTab({
                       <div className="flex items-center justify-between font-semibold">
                         <span>{reply.authorName}</span>
                         <span className="font-normal text-muted-foreground">
-                          {formatDateTimeUtc(reply.createdAt)} UTC
+                          {formatDateTimeUtc(reply.createdAt)}
                         </span>
                       </div>
                       <p className="mt-1 whitespace-pre-wrap text-foreground/90">{reply.body}</p>

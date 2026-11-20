@@ -1,5 +1,7 @@
 const LOCALE = "en-US";
 
+export const DEFAULT_TIMEZONE = "Asia/Manila";
+
 export function formatCurrency(
   amount: number,
   currency: string,
@@ -51,13 +53,24 @@ export function formatDate(isoDate: string, options: { withYear?: boolean } = {}
   }).format(new Date(isoDate));
 }
 
-export function formatDateTimeUtc(isoDate: string): string {
+export function formatDateTimeUtc(
+  isoDate: string,
+  timeZone: string = DEFAULT_TIMEZONE,
+): string {
   return new Intl.DateTimeFormat(LOCALE, {
     month: "short",
     day: "numeric",
     hour: "numeric",
     minute: "2-digit",
-    timeZone: "UTC",
+    timeZone,
+  }).format(new Date(isoDate));
+}
+
+export function formatTime(isoDate: string, timeZone: string = DEFAULT_TIMEZONE): string {
+  return new Intl.DateTimeFormat(LOCALE, {
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone,
   }).format(new Date(isoDate));
 }
 

@@ -34,6 +34,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import { formatDateTimeUtc } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { TagChipsInput } from "@/modules/projects/components/tag-chips-input";
 import {
@@ -778,7 +779,7 @@ export function ProjectActivityLogSheet({
                   </div>
                   <p className="mt-1 text-foreground/90">{log.summary}</p>
                   <p className="mt-1.5 text-[10px] text-muted-foreground">
-                    {log.createdAt.slice(0, 16).replace("T", " ")} UTC
+                    {formatDateTimeUtc(log.createdAt)}
                   </p>
                 </div>
               ))
