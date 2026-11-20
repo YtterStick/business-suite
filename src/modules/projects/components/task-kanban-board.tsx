@@ -884,7 +884,10 @@ function KanbanColumn({
     col.targetPriority ?? "MEDIUM",
   );
   const [saving, setSaving] = React.useState(false);
-  const allowQuickAdd = col.targetStatus !== "DELAYED" && col.targetStatus !== "CANCELLED";
+  const allowQuickAdd =
+    col.targetStatus !== "DELAYED" &&
+    col.targetStatus !== "DONE" &&
+    col.targetStatus !== "CANCELLED";
 
   React.useEffect(() => {
     if (defaultProjectId) setQuickProjectId(defaultProjectId);
@@ -922,8 +925,8 @@ function KanbanColumn({
         <button
           type="button"
           onClick={onToggleCollapse}
-          title={`Expand ${col.label}`}
-          aria-label={`Expand ${col.label}`}
+          title={`Expand ${col.label} column`}
+          aria-label={`Expand ${col.label} column`}
           className="mb-3 rounded p-1 text-muted-foreground hover:bg-background hover:text-foreground"
         >
           <ChevronsRight className="size-3.5" />
@@ -989,8 +992,8 @@ function KanbanColumn({
           <button
             type="button"
             onClick={onToggleCollapse}
-            title={`Collapse ${col.label}`}
-            aria-label={`Collapse ${col.label}`}
+            title={`Collapse ${col.label} column`}
+            aria-label={`Collapse ${col.label} column`}
             className="rounded p-1 text-muted-foreground transition hover:bg-background hover:text-foreground"
           >
             <ChevronsLeft className="size-3.5" />
@@ -1138,7 +1141,7 @@ export function TaskKanbanBoard({
 
   const [tasks, setTasks] = React.useState<TaskCardDTO[]>(initialBoard.tasks);
   const [viewMode, setViewMode] = React.useState<TaskViewMode>("kanban");
-  const [savedView, setSavedView] = React.useState<string>("all_open");
+  const [savedView, setSavedView] = React.useState<string>("all");
   const [customViews, setCustomViews] = React.useState<CustomTaskSavedView[]>([]);
   const [customViewDraft, setCustomViewDraft] = React.useState("");
   const [groupBy, setGroupBy] = React.useState<TaskGroupBy>("status");
@@ -1523,7 +1526,7 @@ export function TaskKanbanBoard({
   const activeSavedViewLabel =
     TASK_SAVED_VIEW_LABELS[savedView as TaskSavedView] ??
     customViews.find((v) => v.id === savedView)?.name ??
-    "All Open";
+    "All Tasks";
 
   const activeSavedViewCount =
     savedView in savedViewCounts
@@ -1585,10 +1588,20 @@ export function TaskKanbanBoard({
     }, 350);
   };
 
+  const isOpenOnlyView =
+    savedView === "all_open" ||
+    savedView === "my_open" ||
+    savedView === "due_today" ||
+    savedView === "overdue";
+
   // Dynamic Columns for Kanban & List Grouping
   const dynamicColumns = React.useMemo<DynamicColumnSpec[]>(() => {
     if (groupBy === "status") {
-      return STATUS_COLUMNS.filter((col) => !hiddenStatuses.includes(col.status)).map((col) => ({
+      return STATUS_COLUMNS.filter(
+        (col) =>
+          !hiddenStatuses.includes(col.status) &&
+          (!isOpenOnlyView || (col.status !== "DONE" && col.status !== "CANCELLED")),
+      ).map((col) => ({
         id: `status:${col.status}`,
         label: col.label,
         dot: col.dot,
@@ -1683,6 +1696,8 @@ export function TaskKanbanBoard({
     visibleTasks,
     refTodayIso,
     automationRules.autoMoveOverdueToDelayed,
+    hiddenStatuses,
+    isOpenOnlyView,
     initialBoard.members,
     initialBoard.projects,
   ]);
@@ -1739,23 +1754,43 @@ export function TaskKanbanBoard({
         return;
       }
 
-      if (options?.undoFromStatus) {
-        const revertStatus = options.undoFromStatus;
+      if (targetExtStatus === "DONE") {
+        const closedHidden =
+          isOpenOnlyView || hiddenStatuses.includes("DONE") || savedView === "unassigned";
         toast.success(
-          targetExtStatus === "DONE"
-            ? `Task "${current.title}" closed`
-            : `Task "${current.title}" reopened`,
+          automationRules.autoCompleteRollupOnClosed
+            ? `Task "${current.title}" closed · Project completion updated`
+            : `Task "${current.title}" closed`,
           {
             action: {
               label: "Undo",
-              onClick: () => handleStatusChange(taskId, revertStatus),
+              onClick: () => handleStatusChange(taskId, currentEff),
             },
+            ...(closedHidden
+              ? {
+                  cancel: {
+                    label: "View Completed",
+                    onClick: () => {
+                      if (hiddenStatuses.includes("DONE")) {
+                        persistHiddenStatuses(hiddenStatuses.filter((s) => s !== "DONE"));
+                      }
+                      setSavedView("completed");
+                    },
+                  },
+                }
+              : {}),
           },
         );
+      } else if (options?.undoFromStatus) {
+        const revertStatus = options.undoFromStatus;
+        toast.success(`Task "${current.title}" reopened`, {
+          action: {
+            label: "Undo",
+            onClick: () => handleStatusChange(taskId, revertStatus),
+          },
+        });
       } else if (targetExtStatus === "IN_REVIEW" && automationRules.autoAssignReviewerInReview) {
         toast.success(`Moved to In Review · Reviewer notified automatically`);
-      } else if (targetExtStatus === "DONE" && automationRules.autoCompleteRollupOnClosed) {
-        toast.success(`Task closed · Project completion roll-up updated`);
       } else {
         toast.success(`Task moved to ${STATUS_LABELS[targetExtStatus]}`);
       }
@@ -2143,7 +2178,7 @@ export function TaskKanbanBoard({
   return (
     <div className="flex h-full flex-col">
       {/* Consolidated Single-Row Zoho-Style Tasks Toolbar */}
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-background px-4 py-2.5 lg:px-5">
+      <div className="flex flex-wrap items-center justify-between gap-1.5 border-b bg-background px-3 py-1.5 lg:px-4">
         {/* Left: Group-By, Smart Views ▾, Layout Switcher, Labeled Filters Popover, Sort & Activity */}
         <div className="flex flex-wrap items-center gap-1.5">
           {/* Smart View Presets (All Open ▾) */}
@@ -2520,8 +2555,8 @@ export function TaskKanbanBoard({
                 type="button"
                 size="icon-sm"
                 variant={sortBy !== "default" ? "secondary" : "ghost"}
-                title={`Sort: ${SORT_LABELS[sortBy]}`}
-                aria-label="Sort Tasks"
+                title={`Sort tasks (${SORT_LABELS[sortBy]})`}
+                aria-label="Sort tasks"
                 className="h-8 w-8"
               >
                 <ArrowUpDown className="size-3.5" />
@@ -2548,47 +2583,13 @@ export function TaskKanbanBoard({
             type="button"
             size="icon-sm"
             variant="ghost"
-            title="Tasks Activity Log"
-            aria-label="Tasks Activity Log"
+            title="View task activity log"
+            aria-label="View task activity log"
             onClick={() => setActivityOpen(true)}
             className="h-8 w-8"
           >
             <Activity className="size-3.5" />
           </Button>
-
-          {/* Styled Project Filter Pill (quick project scope on wider viewports) */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="hidden h-8 max-w-44 gap-1.5 bg-background text-xs font-medium xl:inline-flex"
-              >
-                <FolderKanban className="size-3.5 shrink-0 text-violet-600" />
-                <span className="truncate">{activeProjectLabel}</span>
-                <ChevronDown className="size-3 shrink-0 opacity-60" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="max-h-72 w-56 overflow-y-auto">
-              <DropdownMenuLabel>Filter by Project</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuRadioGroup
-                value={projectFilter}
-                onValueChange={(val) => {
-                  setProjectFilter(val);
-                  setPhaseFilter("");
-                }}
-              >
-                <DropdownMenuRadioItem value="">All Projects</DropdownMenuRadioItem>
-                {initialBoard.projects.map((p) => (
-                  <DropdownMenuRadioItem key={p.id} value={p.id} className="truncate">
-                    {p.name}
-                  </DropdownMenuRadioItem>
-                ))}
-              </DropdownMenuRadioGroup>
-            </DropdownMenuContent>
-          </DropdownMenu>
 
           {hasActiveFilters && (
             <Button
@@ -2604,14 +2605,15 @@ export function TaskKanbanBoard({
           )}
         </div>
 
-        {/* Right: Search, Automation, Collapse Empty, Show Option, (+ Add Task ▾), More Actions (⋯) */}
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="relative hidden w-44 md:block">
+        {/* Right: Search, Automation, Show Option, (+ Add Task ▾), More Actions (⋯) */}
+        <div className="flex flex-wrap items-center gap-1.5">
+          <div className="relative hidden w-36 md:block xl:w-44">
             <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search key, title..."
+              aria-label="Search tasks"
               className="h-8 pl-8 text-xs"
             />
           </div>
@@ -2620,29 +2622,16 @@ export function TaskKanbanBoard({
             type="button"
             size="sm"
             variant="outline"
+            title="Configure workflow automation rules"
+            aria-label="Workflow automation rules"
             onClick={() => setAutomationOpen(true)}
-            className="h-8 gap-1.5 border-emerald-500/30 bg-background text-xs text-emerald-700 hover:bg-emerald-500/10 dark:text-emerald-300"
+            className="h-8 gap-1.5 border-emerald-500/30 bg-background px-2.5 text-xs text-emerald-700 hover:bg-emerald-500/10 dark:text-emerald-300"
           >
             <Workflow className="size-3.5" />
-            <span className="hidden sm:inline">Automation</span>
+            <span className="hidden 2xl:inline">Automation</span>
           </Button>
 
-          {/* Collapse Empty Columns Toggle */}
-          {viewMode === "kanban" && (
-            <Button
-              type="button"
-              size="sm"
-              variant={collapseEmptyCols ? "secondary" : "outline"}
-              onClick={toggleCollapseEmptyCols}
-              title="Toggle collapse for empty 0-task columns"
-              className="h-8 gap-1.5 bg-background text-xs font-medium"
-            >
-              <ChevronsLeft className="size-3.5 text-muted-foreground" />
-              <span className="hidden lg:inline">Collapse Empty</span>
-            </Button>
-          )}
-
-          {/* Show Option Card Field & Density Customizer */}
+          {/* Show Option Card Field, Density & Column Customizer */}
           {viewMode === "kanban" && (
             <Popover>
               <PopoverTrigger asChild>
@@ -2650,7 +2639,8 @@ export function TaskKanbanBoard({
                   type="button"
                   size="sm"
                   variant="outline"
-                  className="h-8 gap-1.5 bg-background text-xs font-medium"
+                  title="Customize card fields, density, and empty columns"
+                  className="h-8 gap-1.5 bg-background px-2.5 text-xs font-medium"
                 >
                   <SlidersHorizontal className="size-3.5 text-muted-foreground" />
                   <span className="hidden sm:inline">Show Option</span>
@@ -2667,6 +2657,17 @@ export function TaskKanbanBoard({
                     Reset
                   </button>
                 </div>
+
+                {/* Collapse Empty Columns Toggle */}
+                <label className="mt-2.5 flex cursor-pointer items-center justify-between rounded-md border bg-muted/25 px-2.5 py-1.5 text-xs">
+                  <span className="font-medium">Collapse Empty Columns</span>
+                  <input
+                    type="checkbox"
+                    checked={collapseEmptyCols}
+                    onChange={toggleCollapseEmptyCols}
+                    className="size-3.5 accent-primary"
+                  />
+                </label>
 
                 {/* Card Density Segmented Switcher */}
                 <div className="mt-2.5 space-y-1.5 border-b pb-2.5">
@@ -2736,6 +2737,7 @@ export function TaskKanbanBoard({
                   <Button
                     type="button"
                     size="sm"
+                    title="More creation options"
                     aria-label="Add task options"
                     className="h-8 rounded-l-none px-1.5"
                   >
@@ -2777,8 +2779,8 @@ export function TaskKanbanBoard({
                 type="button"
                 size="icon-sm"
                 variant="outline"
-                title="More Actions"
-                aria-label="More Actions"
+                title="More board actions"
+                aria-label="More board actions"
                 className="h-8 w-8 bg-background"
               >
                 <MoreHorizontal className="size-3.5" />
@@ -2802,7 +2804,12 @@ export function TaskKanbanBoard({
                 Manage Statuses
               </DropdownMenuItem>
               <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={toggleCollapseEmptyCols}>
+                <ChevronsLeft className="size-3.5" />
+                {collapseEmptyCols ? "Expand Empty Columns" : "Collapse Empty Columns"}
+              </DropdownMenuItem>
               <DropdownMenuItem onClick={expandAllColumns}>
+                <ChevronsRight className="size-3.5" />
                 Expand All Columns
               </DropdownMenuItem>
             </DropdownMenuContent>
@@ -2811,7 +2818,7 @@ export function TaskKanbanBoard({
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 overflow-auto p-4 lg:p-6">
+      <div className="flex-1 overflow-auto px-3 py-2.5 lg:px-5 lg:py-3">
         {/* 1. CLASSIC LIST VIEW */}
         {viewMode === "list" && (
           <div className="space-y-4">
@@ -2990,6 +2997,7 @@ export function TaskKanbanBoard({
                   Showing <strong className="text-foreground">{visibleTasks.length}</strong>{" "}
                   {visibleTasks.length === 1 ? "task" : "tasks"} across{" "}
                   <strong className="text-foreground">{dynamicColumns.length}</strong>{" "}
+                  {isOpenOnlyView && groupBy === "status" ? "open " : ""}
                   {dynamicColumns.length === 1 ? "column" : "columns"}
                 </span>
                 {collapsedColumnCount > 0 && (
@@ -3009,7 +3017,7 @@ export function TaskKanbanBoard({
                   variant="outline"
                   disabled={!canScrollLeft}
                   aria-label="Scroll board left"
-                  title="Scroll left"
+                  title="Scroll board left"
                   onClick={() => scrollKanban(-340)}
                 >
                   <ChevronLeft className="size-3.5" />
@@ -3020,7 +3028,7 @@ export function TaskKanbanBoard({
                   variant="outline"
                   disabled={!canScrollRight}
                   aria-label="Scroll board right"
-                  title="Scroll right"
+                  title="Scroll board right"
                   onClick={() => scrollKanban(340)}
                 >
                   <ChevronRight className="size-3.5" />
