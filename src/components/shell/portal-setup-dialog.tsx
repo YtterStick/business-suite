@@ -54,6 +54,7 @@ export interface PortalConfigSummary {
   invoicePrefix: string;
   quotePrefix: string;
   defaultPaymentTermsDays: number;
+  restrictEmployeeReopen?: boolean;
 }
 
 type SetupSection = "portal" | "statuses" | "roles" | "blueprints";
@@ -123,6 +124,9 @@ export function PortalSetupDialog({
   const [portalName, setPortalName] = React.useState(portalConfig.name);
   const [currency, setCurrency] = React.useState(portalConfig.defaultCurrency || "PHP");
   const [timezone, setTimezone] = React.useState(portalConfig.timezone || "Asia/Manila");
+  const [restrictEmployeeReopen, setRestrictEmployeeReopen] = React.useState(
+    Boolean(portalConfig.restrictEmployeeReopen),
+  );
   const [isSaving, startTransition] = React.useTransition();
 
   // Organization Hours & Holidays
@@ -160,6 +164,7 @@ export function PortalSetupDialog({
     setPortalName(portalConfig.name);
     setCurrency(portalConfig.defaultCurrency || "PHP");
     setTimezone(portalConfig.timezone || "Asia/Manila");
+    setRestrictEmployeeReopen(Boolean(portalConfig.restrictEmployeeReopen));
   }, [portalConfig]);
 
   React.useEffect(() => {
@@ -204,6 +209,7 @@ export function PortalSetupDialog({
         name: portalName,
         defaultCurrency: currency === "USD" ? "USD" : "PHP",
         timezone,
+        restrictEmployeeReopen,
       });
       if (!res.ok) {
         toast.error(res.error.message);
@@ -623,6 +629,50 @@ export function PortalSetupDialog({
                     Hierarchical authority (`Administrator &gt; Manager &gt; Employee`) paired with
                     Portal Profiles (`Portal Owner`, `Standard`, `Client`).
                   </p>
+                </div>
+
+                {/* Task Reopen Permissions Toggle */}
+                <div className="flex items-start justify-between gap-3 rounded-lg border bg-muted/20 p-3.5">
+                  <div className="space-y-0.5">
+                    <p className="text-xs font-semibold">
+                      Restrict reopening closed tasks to Admins &amp; Managers
+                    </p>
+                    <p className="text-[11px] text-muted-foreground">
+                      When enabled, Employees cannot reopen Closed or Cancelled tasks (tasks linked
+                      to approved timesheets or billed Finance invoices are always locked).
+                    </p>
+                  </div>
+                  <label className="flex shrink-0 cursor-pointer items-center gap-2 text-xs font-medium">
+                    <input
+                      type="checkbox"
+                      checked={restrictEmployeeReopen}
+                      disabled={!canManageSettings || isSaving}
+                      onChange={(e) => {
+                        const nextVal = e.target.checked;
+                        setRestrictEmployeeReopen(nextVal);
+                        startTransition(async () => {
+                          const res = await updatePortalConfigAction({
+                            orgSlug,
+                            name: portalName,
+                            defaultCurrency: currency === "USD" ? "USD" : "PHP",
+                            timezone,
+                            restrictEmployeeReopen: nextVal,
+                          });
+                          if (!res.ok) {
+                            setRestrictEmployeeReopen(!nextVal);
+                            toast.error(res.error.message);
+                            return;
+                          }
+                          toast.success(
+                            nextVal
+                              ? "Closed task reopening restricted to Admins & Managers"
+                              : "Employees allowed to reopen unlocked closed tasks",
+                          );
+                        });
+                      }}
+                      className="size-4 accent-primary"
+                    />
+                  </label>
                 </div>
 
                 <div className="overflow-x-auto rounded-lg border">

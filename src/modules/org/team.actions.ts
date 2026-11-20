@@ -210,25 +210,43 @@ const portalConfigSchema = z.object({
   name: z.string().trim().min(2, "Portal name must be at least 2 characters.").max(120),
   defaultCurrency: z.enum(["PHP", "USD"]),
   timezone: z.string().trim().min(2).max(60),
+  restrictEmployeeReopen: z.boolean().optional(),
 });
 
 export async function updatePortalConfigAction(
   rawInput: z.input<typeof portalConfigSchema>,
-): Promise<ActionResult<{ name: string; defaultCurrency: string; timezone: string }>> {
+): Promise<
+  ActionResult<{
+    name: string;
+    defaultCurrency: string;
+    timezone: string;
+    restrictEmployeeReopen: boolean;
+  }>
+> {
   return runAction(async () => {
     const parsed = portalConfigSchema.safeParse(rawInput);
     if (!parsed.success) {
       throw new ValidationError(parsed.error.issues[0]?.message ?? "Invalid portal configuration.");
     }
-    const { orgSlug, name, defaultCurrency, timezone } = parsed.data;
+    const { orgSlug, name, defaultCurrency, timezone, restrictEmployeeReopen } = parsed.data;
     const ctx = await assertTenant(orgSlug);
     authorize(ctx, "org.settings.manage");
 
     const updated = await db.$transaction(async (tx) => {
       const org = await tx.organization.update({
         where: { id: ctx.organization.id },
-        data: { name, defaultCurrency, timezone },
-        select: { name: true, defaultCurrency: true, timezone: true },
+        data: {
+          name,
+          defaultCurrency,
+          timezone,
+          ...(restrictEmployeeReopen !== undefined ? { restrictEmployeeReopen } : {}),
+        },
+        select: {
+          name: true,
+          defaultCurrency: true,
+          timezone: true,
+          restrictEmployeeReopen: true,
+        },
       });
       await recordAudit(tx, {
         organizationId: ctx.organization.id,
@@ -236,12 +254,18 @@ export async function updatePortalConfigAction(
         entityType: "Organization",
         entityId: ctx.organization.id,
         action: "organization.portal_updated",
-        metadata: { name, defaultCurrency, timezone },
+        metadata: {
+          name,
+          defaultCurrency,
+          timezone,
+          ...(restrictEmployeeReopen !== undefined ? { restrictEmployeeReopen } : {}),
+        },
       });
       return org;
     });
 
     revalidatePath(`/${orgSlug}`, "layout");
+    revalidatePath(`/${orgSlug}/projects/tasks`);
     return updated;
   });
 }

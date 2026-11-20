@@ -44,6 +44,8 @@ function renderEntityIcon(entityType: GlobalSearchItemDTO["entityType"]) {
       return <FileText className="size-4 text-teal-600" />;
     case "project":
       return <FolderKanban className="size-4 text-violet-600" />;
+    case "task":
+      return <FileText className="size-4 text-sky-600" />;
   }
 }
 

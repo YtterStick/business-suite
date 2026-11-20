@@ -140,6 +140,11 @@ export interface TaskCardDTO {
   position: number;
   startDate?: string | null;
   dueDate: string | null;
+  completedAt?: string | null;
+  updatedAt?: string | null;
+  isArchived?: boolean;
+  reopenLocked?: boolean;
+  reopenLockReason?: string | null;
   assignee: { id: string; name: string; avatarUrl: string | null } | null;
   tags?: string[];
   subtasks?: TaskSubtaskItem[];
@@ -162,6 +167,10 @@ export interface TasksBoardDTO {
   projects: Array<{ id: string; name: string }>;
   milestones?: Array<{ id: string; projectId: string; name: string }>;
   members: Array<{ id: string; name: string }>;
+  restrictEmployeeReopen?: boolean;
+  canManageArchive?: boolean;
+  canAlwaysReopen?: boolean;
+  isClient?: boolean;
 }
 
 export interface CommentDTO {

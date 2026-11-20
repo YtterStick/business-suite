@@ -18,6 +18,7 @@ import { CSS } from "@dnd-kit/utilities";
 import type { TaskPriority, TaskStatus } from "@prisma/client";
 import {
   Activity,
+  Archive,
   ArrowRightLeft,
   ArrowUpDown,
   BookmarkPlus,
@@ -44,6 +45,7 @@ import {
   List,
   ListChecks,
   Loader2,
+  Lock,
   MoreHorizontal,
   MoreVertical,
   Pause,
@@ -64,6 +66,14 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import {
   DropdownMenu,
@@ -115,6 +125,7 @@ import {
 } from "@/modules/projects/components/task-board-overlays";
 import { TaskDetailSheet } from "@/modules/projects/components/task-detail-sheet";
 import {
+  archiveClosedTasksAction,
   createTaskAction,
   deleteTaskAction,
   moveTaskStatusAction,
@@ -135,9 +146,11 @@ type TaskSavedView =
   | "overdue"
   | "unassigned"
   | "completed"
+  | "archived"
   | "all";
 type TaskSortBy = "default" | "due_asc" | "due_desc" | "priority" | "key" | "title";
 type CardDensity = "comfortable" | "compact";
+type ClosedWindow = "14d" | "30d" | "all";
 
 interface CustomTaskSavedView {
   id: string;
@@ -212,6 +225,7 @@ const TASK_SAVED_VIEW_LABELS: Record<TaskSavedView, string> = {
   overdue: "Overdue",
   unassigned: "Unassigned",
   completed: "Completed",
+  archived: "Archived Tasks",
   all: "All Tasks",
 };
 
@@ -424,6 +438,8 @@ function TaskCardView({
   const taskKey = task.taskKey ?? `TSK-${task.id.slice(-4).toUpperCase()}`;
   const compact = displayOptions.density === "compact";
   const currentStatus = getEffectiveStatus(task, todayIso, false);
+  const isLocked = Boolean(task.reopenLocked);
+  const lockTooltip = task.reopenLockReason ?? "Locked — Cannot reopen";
 
   return (
     <div
@@ -449,7 +465,7 @@ function TaskCardView({
       {/* Top Row: [Drag] + Task Key + [ ] Complete Checkbox on left; Timer + Expand + Quick Menu (⋮) on right */}
       <div className={cn("flex items-center justify-between gap-1.5", compact ? "mb-1" : "mb-1.5")}>
         <div className="flex min-w-0 items-center gap-1.5">
-          {canWrite && (
+          {canWrite && !isLocked && (
             <button
               type="button"
               aria-label={`Drag ${task.title}`}
@@ -467,20 +483,36 @@ function TaskCardView({
           {displayOptions.completeCheckbox && (
             <button
               type="button"
-              disabled={!canWrite}
+              disabled={!canWrite || isLocked}
               onClick={onToggleComplete}
-              title={isDone ? "Reopen task" : "Mark Closed"}
-              aria-label={isDone ? `Mark ${task.title} incomplete` : `Mark ${task.title} complete`}
+              title={isLocked ? lockTooltip : isDone ? "Reopen task" : "Mark Closed"}
+              aria-label={
+                isLocked
+                  ? lockTooltip
+                  : isDone
+                    ? `Mark ${task.title} incomplete`
+                    : `Mark ${task.title} complete`
+              }
               data-no-card-open
               className={cn(
                 "flex size-3.5 shrink-0 items-center justify-center rounded-[3px] border transition",
                 isDone
                   ? "border-emerald-600 bg-emerald-600 text-white"
                   : "border-muted-foreground/40 bg-transparent hover:border-primary",
+                isLocked && "cursor-not-allowed opacity-70",
               )}
             >
               {isDone && <Check className="size-2.5" />}
             </button>
+          )}
+          {isLocked && (
+            <span
+              title={lockTooltip}
+              aria-label={lockTooltip}
+              className="inline-flex items-center text-amber-600 dark:text-amber-400"
+            >
+              <Lock className="size-3" />
+            </span>
           )}
         </div>
 
@@ -537,12 +569,12 @@ function TaskCardView({
                     <Copy className="size-3.5" />
                     Duplicate
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={onToggleComplete}>
+                  <DropdownMenuItem disabled={isLocked} onClick={onToggleComplete}>
                     <CheckCircle2 className="size-3.5 text-emerald-600" />
                     {isDone ? "Reopen Task" : "Mark Closed"}
                   </DropdownMenuItem>
                   <DropdownMenuSub>
-                    <DropdownMenuSubTrigger>
+                    <DropdownMenuSubTrigger disabled={isLocked}>
                       <ArrowRightLeft className="size-3.5" />
                       Move Status
                     </DropdownMenuSubTrigger>
@@ -797,7 +829,7 @@ function SortableTaskCard({
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: task.id,
-    disabled: !canWrite,
+    disabled: !canWrite || Boolean(task.reopenLocked),
   });
 
   return (
@@ -835,6 +867,11 @@ function KanbanColumn({
   projects,
   defaultProjectId,
   activeTimerTaskId,
+  visibleLimit,
+  onLoadMore,
+  onViewAllInList,
+  canManageArchive,
+  onArchiveClosed,
   onAddInColumn,
   onQuickCreate,
   onOpenTask,
@@ -855,6 +892,11 @@ function KanbanColumn({
   projects: Array<{ id: string; name: string }>;
   defaultProjectId: string;
   activeTimerTaskId: string | null;
+  visibleLimit?: number;
+  onLoadMore?: () => void;
+  onViewAllInList?: () => void;
+  canManageArchive?: boolean;
+  onArchiveClosed?: (olderThanDays?: number) => void;
   onAddInColumn: () => void;
   onQuickCreate: (payload: {
     status: ExtendedTaskStatus;
@@ -989,6 +1031,32 @@ function KanbanColumn({
               <Plus className="size-3.5" />
             </button>
           )}
+          {col.targetStatus === "DONE" && canManageArchive && col.tasks.length > 0 && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  title="Archive closed tasks"
+                  aria-label="Closed column archive actions"
+                  className="rounded p-1 text-muted-foreground transition hover:bg-background hover:text-foreground"
+                >
+                  <MoreVertical className="size-3.5" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuLabel>Archive Closed Tasks</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => onArchiveClosed?.(30)}>
+                  <Archive className="size-3.5" />
+                  Archive tasks closed &gt; 30 days
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => onArchiveClosed?.()}>
+                  <Archive className="size-3.5" />
+                  Archive all closed
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
           <button
             type="button"
             onClick={onToggleCollapse}
@@ -1001,36 +1069,71 @@ function KanbanColumn({
         </div>
       </div>
 
-      <SortableContext items={col.tasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
-        <div className="flex flex-1 flex-col gap-2.5">
-          {col.tasks.length === 0 && !composerOpen ? (
-            <div className="flex min-h-28 flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed border-muted-foreground/25 bg-background/40 px-4 py-6 text-center text-xs text-muted-foreground transition-colors">
-              <Layers className="size-4 opacity-50" />
-              <span className="font-medium">Drop a task here</span>
-            </div>
-          ) : (
-            col.tasks.map((task) => (
-              <SortableTaskCard
-                key={task.id}
-                task={task}
-                todayIso={todayIso}
-                canWrite={canWrite}
-                displayOptions={displayOptions}
-                members={members}
-                cardAccent={col.cardAccent}
-                isTimerActive={activeTimerTaskId === task.id}
-                onOpenDetail={() => onOpenTask(task.id)}
-                onToggleComplete={() => onToggleComplete(task)}
-                onStatusChange={(next) => onStatusChange(task.id, next)}
-                onQuickUpdate={(patch) => onQuickUpdate(task.id, patch)}
-                onDuplicate={() => onDuplicate(task)}
-                onDelete={() => onDelete(task)}
-                onToggleTimer={() => onToggleTimer(task)}
-              />
-            ))
-          )}
-        </div>
-      </SortableContext>
+      {(() => {
+        const renderedTasks =
+          visibleLimit !== undefined ? col.tasks.slice(0, visibleLimit) : col.tasks;
+        const remainingCount = Math.max(0, col.tasks.length - renderedTasks.length);
+        return (
+          <>
+            <SortableContext
+              items={renderedTasks.map((t) => t.id)}
+              strategy={verticalListSortingStrategy}
+            >
+              <div className="flex flex-1 flex-col gap-2.5">
+                {col.tasks.length === 0 && !composerOpen ? (
+                  <div className="flex min-h-28 flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed border-muted-foreground/25 bg-background/40 px-4 py-6 text-center text-xs text-muted-foreground transition-colors">
+                    <Layers className="size-4 opacity-50" />
+                    <span className="font-medium">Drop a task here</span>
+                  </div>
+                ) : (
+                  renderedTasks.map((task) => (
+                    <SortableTaskCard
+                      key={task.id}
+                      task={task}
+                      todayIso={todayIso}
+                      canWrite={canWrite}
+                      displayOptions={displayOptions}
+                      members={members}
+                      cardAccent={col.cardAccent}
+                      isTimerActive={activeTimerTaskId === task.id}
+                      onOpenDetail={() => onOpenTask(task.id)}
+                      onToggleComplete={() => onToggleComplete(task)}
+                      onStatusChange={(next) => onStatusChange(task.id, next)}
+                      onQuickUpdate={(patch) => onQuickUpdate(task.id, patch)}
+                      onDuplicate={() => onDuplicate(task)}
+                      onDelete={() => onDelete(task)}
+                      onToggleTimer={() => onToggleTimer(task)}
+                    />
+                  ))
+                )}
+              </div>
+            </SortableContext>
+
+            {remainingCount > 0 && (
+              <div className="mt-2.5 flex flex-col gap-1 border-t border-border/60 pt-2">
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="outline"
+                  onClick={onLoadMore}
+                  className="h-7 w-full justify-center bg-background text-[11px] font-medium"
+                >
+                  Load {Math.min(15, remainingCount)} more ({remainingCount} remaining)
+                </Button>
+                {onViewAllInList && (
+                  <button
+                    type="button"
+                    onClick={onViewAllInList}
+                    className="py-0.5 text-center text-[11px] font-medium text-primary hover:underline"
+                  >
+                    View all in List
+                  </button>
+                )}
+              </div>
+            )}
+          </>
+        );
+      })()}
 
       {/* Inline Quick-Add at the bottom of actionable Kanban columns */}
       {canWrite && projects.length > 0 && allowQuickAdd && (
@@ -1157,6 +1260,23 @@ export function TaskKanbanBoard({
   const [collapsedCols, setCollapsedCols] = React.useState<string[]>([]);
   const [collapseEmptyCols, setCollapseEmptyCols] = React.useState(false);
   const [hiddenStatuses, setHiddenStatuses] = React.useState<ExtendedTaskStatus[]>([]);
+  const [closedWindow, setClosedWindow] = React.useState<ClosedWindow>(() => {
+    const activeClosedCount = initialBoard.tasks.filter(
+      (t) => !t.isArchived && t.status === "DONE" && t.extendedStatus !== "CANCELLED",
+    ).length;
+    return activeClosedCount > 20 ? "30d" : "all";
+  });
+  const [terminalLimits, setTerminalLimits] = React.useState<{ DONE: number; CANCELLED: number }>({
+    DONE: 15,
+    CANCELLED: 15,
+  });
+  const [reopenPrompt, setReopenPrompt] = React.useState<{
+    taskId: string;
+    taskKey: string;
+    title: string;
+    targetStatus: ExtendedTaskStatus;
+  } | null>(null);
+  const [reopenReasonDraft, setReopenReasonDraft] = React.useState("");
   const [displayOptions, setDisplayOptions] =
     React.useState<CardDisplayOptions>(DEFAULT_CARD_OPTIONS);
   const [automationRules, setAutomationRules] = React.useState<TaskAutomationRulesState>(
@@ -1234,6 +1354,14 @@ export function TaskKanbanBoard({
           setHiddenStatuses(parsed.filter((s) => s !== "TODO"));
         }
       }
+      const savedClosedWindow = window.localStorage.getItem(`bs_task_closed_window_${orgSlug}`);
+      if (
+        savedClosedWindow === "14d" ||
+        savedClosedWindow === "30d" ||
+        savedClosedWindow === "all"
+      ) {
+        setClosedWindow(savedClosedWindow);
+      }
     } catch {
       // Ignore
     }
@@ -1298,33 +1426,44 @@ export function TaskKanbanBoard({
     }
   };
 
+  const persistClosedWindow = (next: ClosedWindow) => {
+    setClosedWindow(next);
+    try {
+      window.localStorage.setItem(`bs_task_closed_window_${orgSlug}`, next);
+    } catch {
+      // Ignore
+    }
+  };
+
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
   );
 
   const savedViewCounts = React.useMemo(() => {
     const scoped = projectFilter ? tasks.filter((t) => t.projectId === projectFilter) : tasks;
+    const activeScoped = viewMode === "kanban" ? scoped.filter((t) => !t.isArchived) : scoped;
     const getSt = (t: TaskCardDTO) =>
       getEffectiveStatus(t, refTodayIso, automationRules.autoMoveOverdueToDelayed);
     return {
-      all_open: scoped.filter((t) => {
+      all_open: activeScoped.filter((t) => {
         const st = getSt(t);
         return st !== "DONE" && st !== "CANCELLED";
       }).length,
-      my_open: scoped.filter((t) => {
+      my_open: activeScoped.filter((t) => {
         const st = getSt(t);
         return t.assignee?.id === currentUserId && st !== "DONE" && st !== "CANCELLED";
       }).length,
-      due_today: scoped.filter((t) => {
+      due_today: activeScoped.filter((t) => {
         const st = getSt(t);
         return t.dueDate === refTodayIso && st !== "DONE" && st !== "CANCELLED";
       }).length,
-      overdue: scoped.filter((t) => getSt(t) === "DELAYED").length,
-      unassigned: scoped.filter((t) => !t.assignee).length,
-      completed: scoped.filter((t) => getSt(t) === "DONE").length,
-      all: scoped.length,
+      overdue: activeScoped.filter((t) => getSt(t) === "DELAYED").length,
+      unassigned: activeScoped.filter((t) => !t.assignee).length,
+      completed: activeScoped.filter((t) => getSt(t) === "DONE").length,
+      archived: scoped.filter((t) => Boolean(t.isArchived)).length,
+      all: activeScoped.length,
     };
-  }, [tasks, projectFilter, currentUserId, refTodayIso, automationRules.autoMoveOverdueToDelayed]);
+  }, [tasks, projectFilter, viewMode, currentUserId, refTodayIso, automationRules.autoMoveOverdueToDelayed]);
 
   const countsByStatus = React.useMemo(() => {
     const counts: Record<ExtendedTaskStatus, number> = {
@@ -1374,6 +1513,13 @@ export function TaskKanbanBoard({
       if (hasLoggedTime) {
         const totalHours = (t.timeLogs ?? []).reduce((s, l) => s + l.hours, 0);
         if (totalHours <= 0) return false;
+      }
+
+      if (viewMode === "kanban" && t.isArchived) return false;
+      if (savedView === "archived") {
+        if (!t.isArchived) return false;
+      } else if (savedView !== "completed" && viewMode === "list" && t.isArchived) {
+        return false;
       }
 
       const effStatus = getEffectiveStatus(
@@ -1443,6 +1589,7 @@ export function TaskKanbanBoard({
     dueTo,
     hasLoggedTime,
     savedView,
+    viewMode,
     currentUserId,
     refTodayIso,
     automationRules.autoMoveOverdueToDelayed,
@@ -1597,23 +1744,45 @@ export function TaskKanbanBoard({
   // Dynamic Columns for Kanban & List Grouping
   const dynamicColumns = React.useMemo<DynamicColumnSpec[]>(() => {
     if (groupBy === "status") {
+      const cutoffIso =
+        closedWindow === "14d"
+          ? addDaysIso(refTodayIso, -14)
+          : closedWindow === "30d"
+            ? addDaysIso(refTodayIso, -30)
+            : null;
       return STATUS_COLUMNS.filter(
         (col) =>
           !hiddenStatuses.includes(col.status) &&
           (!isOpenOnlyView || (col.status !== "DONE" && col.status !== "CANCELLED")),
-      ).map((col) => ({
-        id: `status:${col.status}`,
-        label: col.label,
-        dot: col.dot,
-        pillClass: col.pillClass,
-        cardAccent: col.cardAccent,
-        targetStatus: col.status,
-        tasks: visibleTasks.filter(
+      ).map((col) => {
+        let colTasks = visibleTasks.filter(
           (t) =>
             getEffectiveStatus(t, refTodayIso, automationRules.autoMoveOverdueToDelayed) ===
             col.status,
-        ),
-      }));
+        );
+        if (col.status === "DONE" && viewMode === "kanban" && cutoffIso) {
+          colTasks = colTasks.filter((t) => {
+            const ts = (t.completedAt ?? t.updatedAt ?? "").slice(0, 10);
+            return !ts || ts >= cutoffIso;
+          });
+        }
+        if (col.status === "DONE" || col.status === "CANCELLED") {
+          colTasks = [...colTasks].sort((a, b) =>
+            (b.completedAt ?? b.updatedAt ?? "").localeCompare(
+              a.completedAt ?? a.updatedAt ?? "",
+            ),
+          );
+        }
+        return {
+          id: `status:${col.status}`,
+          label: col.label,
+          dot: col.dot,
+          pillClass: col.pillClass,
+          cardAccent: col.cardAccent,
+          targetStatus: col.status,
+          tasks: colTasks,
+        };
+      });
     }
 
     if (groupBy === "priority") {
@@ -1694,6 +1863,8 @@ export function TaskKanbanBoard({
   }, [
     groupBy,
     visibleTasks,
+    viewMode,
+    closedWindow,
     refTodayIso,
     automationRules.autoMoveOverdueToDelayed,
     hiddenStatuses,
@@ -1714,7 +1885,11 @@ export function TaskKanbanBoard({
   const handleStatusChange = (
     taskId: string,
     targetExtStatus: ExtendedTaskStatus,
-    options?: { undoFromStatus?: ExtendedTaskStatus },
+    options?: {
+      undoFromStatus?: ExtendedTaskStatus;
+      isGraceUndo?: boolean;
+      reopenReason?: string | null;
+    },
   ) => {
     const current = tasks.find((t) => t.id === taskId);
     if (!current) return;
@@ -1725,20 +1900,62 @@ export function TaskKanbanBoard({
     );
     if (currentEff === targetExtStatus) return;
 
+    const wasTerminal = currentEff === "DONE" || currentEff === "CANCELLED";
+    const isNowTerminal = targetExtStatus === "DONE" || targetExtStatus === "CANCELLED";
+    const isReopening = wasTerminal && !isNowTerminal;
+
+    if (isReopening && !options?.isGraceUndo) {
+      if (current.reopenLocked) {
+        toast.error(current.reopenLockReason ?? "This task is locked and cannot be reopened.");
+        return;
+      }
+      const closedTs = current.completedAt ?? current.updatedAt;
+      const olderThan24h =
+        closedTs !== undefined &&
+        closedTs !== null &&
+        Date.now() - Date.parse(closedTs) > 24 * 60 * 60 * 1000;
+      if (olderThan24h && options?.reopenReason === undefined) {
+        setReopenReasonDraft("");
+        setReopenPrompt({
+          taskId,
+          taskKey: current.taskKey ?? `TSK-${current.id.slice(-4).toUpperCase()}`,
+          title: current.title,
+          targetStatus: targetExtStatus,
+        });
+        return;
+      }
+    }
+
     const dbStatus = toPrismaTaskStatus(targetExtStatus);
     const isMetaStatus = EXTENDED_META_STATUSES.has(targetExtStatus);
+    const nowIso = new Date().toISOString();
 
     const prevTasks = tasks;
     setTasks((list) =>
-      list.map((t) =>
-        t.id === taskId
-          ? {
-              ...t,
-              status: dbStatus,
-              extendedStatus: isMetaStatus ? targetExtStatus : undefined,
-            }
-          : t,
-      ),
+      list.map((t) => {
+        if (t.id !== taskId) return t;
+        const willBeTerminal = dbStatus === "DONE" || targetExtStatus === "CANCELLED";
+        let nextLocked = false;
+        let nextLockReason: string | null = null;
+        if (willBeTerminal) {
+          if (initialBoard.isClient) {
+            nextLocked = true;
+            nextLockReason = "Locked — Clients cannot reopen closed or cancelled tasks";
+          } else if (!initialBoard.canAlwaysReopen && initialBoard.restrictEmployeeReopen) {
+            nextLocked = true;
+            nextLockReason = "Locked — Only Admins & Managers can reopen closed tasks";
+          }
+        }
+        return {
+          ...t,
+          status: dbStatus,
+          extendedStatus: isMetaStatus ? targetExtStatus : undefined,
+          completedAt: dbStatus === "DONE" ? (t.completedAt ?? nowIso) : null,
+          updatedAt: nowIso,
+          reopenLocked: nextLocked,
+          reopenLockReason: nextLockReason,
+        };
+      }),
     );
 
     startTransition(async () => {
@@ -1747,6 +1964,8 @@ export function TaskKanbanBoard({
         taskId,
         status: dbStatus,
         extendedStatus: targetExtStatus,
+        reopenReason: options?.reopenReason ?? null,
+        isGraceUndo: options?.isGraceUndo,
       });
       if (!res.ok) {
         setTasks(prevTasks);
@@ -1757,43 +1976,68 @@ export function TaskKanbanBoard({
       if (targetExtStatus === "DONE") {
         const closedHidden =
           isOpenOnlyView || hiddenStatuses.includes("DONE") || savedView === "unassigned";
-        toast.success(
-          automationRules.autoCompleteRollupOnClosed
-            ? `Task "${current.title}" closed · Project completion updated`
-            : `Task "${current.title}" closed`,
-          {
-            action: {
-              label: "Undo",
-              onClick: () => handleStatusChange(taskId, currentEff),
-            },
-            ...(closedHidden
-              ? {
-                  cancel: {
-                    label: "View Completed",
-                    onClick: () => {
-                      if (hiddenStatuses.includes("DONE")) {
-                        persistHiddenStatuses(hiddenStatuses.filter((s) => s !== "DONE"));
-                      }
-                      setSavedView("completed");
-                    },
-                  },
-                }
-              : {}),
-          },
-        );
-      } else if (options?.undoFromStatus) {
-        const revertStatus = options.undoFromStatus;
-        toast.success(`Task "${current.title}" reopened`, {
+        const keyLabel = current.taskKey ?? current.title;
+        toast.success(`Task ${keyLabel} marked as Closed`, {
+          duration: 10000,
           action: {
             label: "Undo",
-            onClick: () => handleStatusChange(taskId, revertStatus),
+            onClick: () =>
+              handleStatusChange(taskId, currentEff, { isGraceUndo: true }),
           },
+          ...(closedHidden
+            ? {
+                cancel: {
+                  label: "View Completed",
+                  onClick: () => {
+                    if (hiddenStatuses.includes("DONE")) {
+                      persistHiddenStatuses(hiddenStatuses.filter((s) => s !== "DONE"));
+                    }
+                    setSavedView("completed");
+                  },
+                },
+              }
+            : {}),
+        });
+      } else if (options?.isGraceUndo || options?.undoFromStatus) {
+        const revertStatus = options.undoFromStatus ?? "DONE";
+        toast.success(`Task "${current.title}" reopened`, {
+          action: options.isGraceUndo
+            ? undefined
+            : {
+                label: "Undo",
+                onClick: () => handleStatusChange(taskId, revertStatus),
+              },
         });
       } else if (targetExtStatus === "IN_REVIEW" && automationRules.autoAssignReviewerInReview) {
         toast.success(`Moved to In Review · Reviewer notified automatically`);
       } else {
         toast.success(`Task moved to ${STATUS_LABELS[targetExtStatus]}`);
       }
+    });
+  };
+
+  const handleArchiveClosed = (olderThanDays?: number) => {
+    startTransition(async () => {
+      const res = await archiveClosedTasksAction({ orgSlug, olderThanDays });
+      if (!res.ok) {
+        toast.error(res.error.message);
+        return;
+      }
+      if (res.data.count === 0) {
+        toast.info("No matching closed tasks to archive.");
+        return;
+      }
+      const cutoffMs = olderThanDays ? Date.now() - olderThanDays * 86_400_000 : null;
+      setTasks((prev) =>
+        prev.map((t) => {
+          if (t.status !== "DONE" || t.isArchived) return t;
+          if (!cutoffMs) return { ...t, isArchived: true };
+          const ts = Date.parse(t.completedAt ?? t.updatedAt ?? "");
+          return !Number.isNaN(ts) && ts < cutoffMs ? { ...t, isArchived: true } : t;
+        }),
+      );
+      const word = res.data.count === 1 ? "task" : "tasks";
+      toast.success(`Archived ${res.data.count} closed ${word} (preserved in List & Reports)`);
     });
   };
 
@@ -2200,7 +2444,15 @@ export function TaskKanbanBoard({
             <DropdownMenuContent align="start" className="w-64">
               <DropdownMenuLabel>Smart Task Views</DropdownMenuLabel>
               <DropdownMenuSeparator />
-              <DropdownMenuRadioGroup value={savedView} onValueChange={selectSavedView}>
+              <DropdownMenuRadioGroup
+                value={savedView}
+                onValueChange={(val) => {
+                  selectSavedView(val);
+                  if (val === "archived" && viewMode === "kanban") {
+                    setViewMode("list");
+                  }
+                }}
+              >
                 {(
                   [
                     "all_open",
@@ -2209,6 +2461,7 @@ export function TaskKanbanBoard({
                     "overdue",
                     "unassigned",
                     "completed",
+                    "archived",
                     "all",
                   ] as TaskSavedView[]
                 ).map((viewKey) => (
@@ -2669,6 +2922,36 @@ export function TaskKanbanBoard({
                   />
                 </label>
 
+                {/* Closed Tasks Window Selector */}
+                <div className="mt-2.5 space-y-1.5 border-b pb-2.5">
+                  <p className="text-[11px] font-medium text-muted-foreground">
+                    Closed tasks window
+                  </p>
+                  <div className="grid grid-cols-3 gap-1 rounded-md bg-muted p-0.5">
+                    {(
+                      [
+                        { id: "14d", label: "14 days" },
+                        { id: "30d", label: "30 days" },
+                        { id: "all", label: "All time" },
+                      ] as Array<{ id: ClosedWindow; label: string }>
+                    ).map((win) => (
+                      <button
+                        key={win.id}
+                        type="button"
+                        onClick={() => persistClosedWindow(win.id)}
+                        className={cn(
+                          "rounded px-1.5 py-1 text-[11px] font-medium transition",
+                          closedWindow === win.id
+                            ? "bg-background text-foreground shadow-2xs"
+                            : "text-muted-foreground hover:text-foreground",
+                        )}
+                      >
+                        {win.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
                 {/* Card Density Segmented Switcher */}
                 <div className="mt-2.5 space-y-1.5 border-b pb-2.5">
                   <p className="text-[11px] font-medium text-muted-foreground">Card Density</p>
@@ -3055,6 +3338,14 @@ export function TaskKanbanBoard({
                     const isEmpty = col.tasks.length === 0;
                     const isCollapsed =
                       collapsedCols.includes(col.id) || (collapseEmptyCols && isEmpty);
+                    const isTerminalCol =
+                      col.targetStatus === "DONE" || col.targetStatus === "CANCELLED";
+                    const terminalKey =
+                      col.targetStatus === "DONE"
+                        ? "DONE"
+                        : col.targetStatus === "CANCELLED"
+                          ? "CANCELLED"
+                          : null;
                     return (
                       <KanbanColumn
                         key={col.id}
@@ -3068,6 +3359,32 @@ export function TaskKanbanBoard({
                         projects={initialBoard.projects}
                         defaultProjectId={projectFilter}
                         activeTimerTaskId={activeTimerTaskId}
+                        visibleLimit={
+                          terminalKey ? terminalLimits[terminalKey] : undefined
+                        }
+                        onLoadMore={
+                          terminalKey
+                            ? () =>
+                                setTerminalLimits((prev) => ({
+                                  ...prev,
+                                  [terminalKey]: prev[terminalKey] + 15,
+                                }))
+                            : undefined
+                        }
+                        onViewAllInList={
+                          isTerminalCol
+                            ? () => {
+                                if (col.targetStatus === "DONE") {
+                                  setSavedView("completed");
+                                } else {
+                                  setSavedView("all");
+                                }
+                                setViewMode("list");
+                              }
+                            : undefined
+                        }
+                        canManageArchive={Boolean(initialBoard.canManageArchive)}
+                        onArchiveClosed={handleArchiveClosed}
                         onAddInColumn={() => {
                           setNewStatus(col.targetStatus ?? "TODO");
                           if (col.targetPriority) setNewPriority(col.targetPriority);
@@ -3457,6 +3774,73 @@ export function TaskKanbanBoard({
         }
         countsByStatus={countsByStatus}
       />
+
+      {/* Optional Reopen Reason Modal (> 24h closed/cancelled tasks) */}
+      <Dialog
+        open={reopenPrompt !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setReopenPrompt(null);
+            setReopenReasonDraft("");
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-base">
+              Reopen {reopenPrompt?.taskKey}
+            </DialogTitle>
+            <DialogDescription className="truncate">
+              {reopenPrompt?.title} was closed more than 24 hours ago. Add an optional reason for
+              the activity log.
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!reopenPrompt) return;
+              const pending = reopenPrompt;
+              const reason = reopenReasonDraft.trim();
+              setReopenPrompt(null);
+              setReopenReasonDraft("");
+              handleStatusChange(pending.taskId, pending.targetStatus, {
+                reopenReason: reason || null,
+              });
+            }}
+            className="space-y-4"
+          >
+            <div className="space-y-1.5">
+              <Label htmlFor="reopen-reason-input" className="text-xs">
+                Reason for reopening (optional)
+              </Label>
+              <Input
+                id="reopen-reason-input"
+                autoFocus
+                value={reopenReasonDraft}
+                onChange={(e) => setReopenReasonDraft(e.target.value)}
+                placeholder="e.g., Regression found during QA sign-off"
+                className="h-9 text-xs"
+              />
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setReopenPrompt(null);
+                  setReopenReasonDraft("");
+                }}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" size="sm">
+                {reopenReasonDraft.trim() ? "Reopen with Note" : "Reopen Task"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

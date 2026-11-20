@@ -120,6 +120,7 @@ export default async function SuiteLayout({ children, params }: SuiteLayoutProps
         invoicePrefix: true,
         quotePrefix: true,
         defaultPaymentTermsDays: true,
+        restrictEmployeeReopen: true,
       },
     }),
     listUserOrganizations(tenant.user.id),
@@ -350,6 +351,7 @@ export default async function SuiteLayout({ children, params }: SuiteLayoutProps
     invoicePrefix: orgDetails?.invoicePrefix ?? "INV-",
     quotePrefix: orgDetails?.quotePrefix ?? "QT-",
     defaultPaymentTermsDays: orgDetails?.defaultPaymentTermsDays ?? 30,
+    restrictEmployeeReopen: orgDetails?.restrictEmployeeReopen ?? false,
   };
 
   const userSummary = {

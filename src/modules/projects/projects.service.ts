@@ -1,6 +1,7 @@
 import "server-only";
 
 import {
+  InvoiceStatus,
   IssueSeverity,
   IssueStatus,
   MilestoneStatus,
@@ -9,12 +10,13 @@ import {
   RecordSource,
   TaskPriority,
   TaskStatus,
+  TimesheetStatus,
 } from "@prisma/client";
 
 import { addDays, startOfUtcDay, toIsoDate } from "@/lib/dates";
 import { db } from "@/lib/db";
 import { ForbiddenError, NotFoundError, ValidationError } from "@/lib/errors";
-import { isClientUser } from "@/lib/rbac";
+import { can, isClientUser } from "@/lib/rbac";
 import { extractZohoMeta, type PhaseMeta } from "@/modules/projects/zoho-meta";
 import { recordAudit } from "@/server/audit";
 import { authorize, type TenantContext } from "@/server/tenancy";
@@ -810,60 +812,108 @@ export async function getTasksBoard(
       ? { projectId: { in: Array.from(clientIds) } }
       : {};
 
-  const [tasks, projects, milestones, memberships, taskTimeLogs, taskComments, taskAudits] =
-    await Promise.all([
-      db.task.findMany({
-        where: {
-          organizationId,
-          ...projectScope,
+  const [
+    orgConfig,
+    tasks,
+    projects,
+    milestones,
+    memberships,
+    taskTimeLogs,
+    taskComments,
+    taskAudits,
+    approvedTimeLogs,
+    billedInvoices,
+  ] = await Promise.all([
+    db.organization.findUnique({
+      where: { id: organizationId },
+      select: { restrictEmployeeReopen: true },
+    }),
+    db.task.findMany({
+      where: {
+        organizationId,
+        ...projectScope,
+      },
+      orderBy: [{ position: "asc" }, { createdAt: "asc" }],
+      include: {
+        project: { select: { name: true, dealId: true } },
+        milestone: { select: { name: true } },
+        assignee: { select: { id: true, name: true, avatarUrl: true } },
+      },
+    }),
+    db.project.findMany({
+      where: {
+        organizationId,
+        isArchived: false,
+        ...(clientIds ? { id: { in: Array.from(clientIds) } } : {}),
+      },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    }),
+    db.milestone.findMany({
+      where: {
+        organizationId,
+        ...(clientIds ? { projectId: { in: Array.from(clientIds) } } : {}),
+      },
+      orderBy: [{ position: "asc" }, { name: "asc" }],
+      select: { id: true, projectId: true, name: true },
+    }),
+    db.membership.findMany({
+      where: { organizationId },
+      orderBy: { user: { name: "asc" } },
+      include: { user: { select: { id: true, name: true } } },
+    }),
+    clientIds
+      ? Promise.resolve([])
+      : db.timeLog.findMany({
+          where: { organizationId, taskId: { not: null } },
+          orderBy: [{ loggedDate: "desc" }, { createdAt: "desc" }],
+          include: { user: { select: { name: true } } },
+        }),
+    db.comment.findMany({
+      where: { organizationId, entityType: "Task" },
+      orderBy: { createdAt: "asc" },
+      include: { author: { select: { name: true } } },
+    }),
+    db.auditLog.findMany({
+      where: { organizationId, entityType: "Task" },
+      orderBy: { createdAt: "desc" },
+      take: 200,
+    }),
+    db.timeLog.findMany({
+      where: {
+        organizationId,
+        taskId: { not: null },
+        timesheet: { status: TimesheetStatus.APPROVED },
+      },
+      select: { taskId: true },
+    }),
+    db.invoice.findMany({
+      where: {
+        organizationId,
+        dealId: { not: null },
+        status: {
+          in: [
+            InvoiceStatus.SENT,
+            InvoiceStatus.PARTIALLY_PAID,
+            InvoiceStatus.PAID,
+            InvoiceStatus.OVERDUE,
+          ],
         },
-        orderBy: [{ position: "asc" }, { createdAt: "asc" }],
-        include: {
-          project: { select: { name: true } },
-          milestone: { select: { name: true } },
-          assignee: { select: { id: true, name: true, avatarUrl: true } },
-        },
-      }),
-      db.project.findMany({
-        where: {
-          organizationId,
-          isArchived: false,
-          ...(clientIds ? { id: { in: Array.from(clientIds) } } : {}),
-        },
-        orderBy: { name: "asc" },
-        select: { id: true, name: true },
-      }),
-      db.milestone.findMany({
-        where: {
-          organizationId,
-          ...(clientIds ? { projectId: { in: Array.from(clientIds) } } : {}),
-        },
-        orderBy: [{ position: "asc" }, { name: "asc" }],
-        select: { id: true, projectId: true, name: true },
-      }),
-      db.membership.findMany({
-        where: { organizationId },
-        orderBy: { user: { name: "asc" } },
-        include: { user: { select: { id: true, name: true } } },
-      }),
-      clientIds
-        ? Promise.resolve([])
-        : db.timeLog.findMany({
-            where: { organizationId, taskId: { not: null } },
-            orderBy: [{ loggedDate: "desc" }, { createdAt: "desc" }],
-            include: { user: { select: { name: true } } },
-          }),
-      db.comment.findMany({
-        where: { organizationId, entityType: "Task" },
-        orderBy: { createdAt: "asc" },
-        include: { author: { select: { name: true } } },
-      }),
-      db.auditLog.findMany({
-        where: { organizationId, entityType: "Task" },
-        orderBy: { createdAt: "desc" },
-        take: 200,
-      }),
-    ]);
+      },
+      select: { dealId: true },
+    }),
+  ]);
+
+  const approvedTaskIds = new Set(
+    approvedTimeLogs.map((l) => l.taskId).filter((id): id is string => Boolean(id)),
+  );
+  const billedDealIds = new Set(
+    billedInvoices.map((inv) => inv.dealId).filter((id): id is string => Boolean(id)),
+  );
+  const restrictEmployeeReopen = orgConfig?.restrictEmployeeReopen ?? false;
+  const isClient = isClientUser(ctx);
+  const canAlwaysReopen = !isClient && (ctx.role === "OWNER" || ctx.role === "ADMIN");
+  const canManageArchive = can(ctx, "projects.project.manage");
 
   const memberNameMap = new Map(memberships.map((m) => [m.user.id, m.user.name]));
   const logsByTask = new Map<string, NonNullable<TaskCardDTO["timeLogs"]>>();
@@ -976,6 +1026,28 @@ export async function getTasksBoard(
     const nextSeq = (seqByProject.get(t.projectId) ?? 0) + 1;
     seqByProject.set(t.projectId, nextSeq);
     const prefix = buildProjectTaskPrefix(t.project.name);
+    const extSt = statusMetaByTask.get(t.id);
+    const isTerminal = t.status === TaskStatus.DONE || extSt === "CANCELLED";
+
+    let reopenLocked = false;
+    let reopenLockReason: string | null = null;
+    if (isTerminal) {
+      if (isClient) {
+        reopenLocked = true;
+        reopenLockReason = "Locked — Clients cannot reopen closed or cancelled tasks";
+      } else if (!canAlwaysReopen) {
+        const financeLocked =
+          approvedTaskIds.has(t.id) ||
+          (t.project.dealId ? billedDealIds.has(t.project.dealId) : false);
+        if (financeLocked) {
+          reopenLocked = true;
+          reopenLockReason = "Locked — Linked to approved timesheet / billed invoice";
+        } else if (restrictEmployeeReopen) {
+          reopenLocked = true;
+          reopenLockReason = "Locked — Only Admins & Managers can reopen closed tasks";
+        }
+      }
+    }
 
     return {
       id: t.id,
@@ -988,11 +1060,16 @@ export async function getTasksBoard(
       title: t.title,
       description: t.description,
       status: t.status,
-      extendedStatus: statusMetaByTask.get(t.id),
+      extendedStatus: extSt,
       priority: t.priority,
       position: t.position,
       startDate: toIsoDate(t.createdAt),
       dueDate: t.dueDate ? toIsoDate(t.dueDate) : null,
+      completedAt: t.completedAt ? t.completedAt.toISOString() : null,
+      updatedAt: t.updatedAt.toISOString(),
+      isArchived: t.isArchived,
+      reopenLocked,
+      reopenLockReason,
       assignee: t.assignee,
       tags: tagsByTask.get(t.id) ?? [],
       subtasks: subtasksByTask.get(t.id) ?? [],
@@ -1009,6 +1086,10 @@ export async function getTasksBoard(
     projects,
     milestones,
     members: memberships.map((m) => m.user),
+    restrictEmployeeReopen,
+    canManageArchive,
+    canAlwaysReopen,
+    isClient,
   };
 }
 
@@ -1139,6 +1220,91 @@ export async function createTask(
   };
 }
 
+async function assertCanReopenTask(
+  ctx: TenantContext,
+  existing: {
+    id: string;
+    status: TaskStatus;
+    completedAt: Date | null;
+    project: { dealId: string | null };
+  },
+  isCurrentlyCancelled: boolean,
+  targetStatus: TaskStatus,
+  targetExtendedStatus?: ExtendedTaskStatus,
+  isGraceUndo?: boolean,
+): Promise<{ wasTerminal: boolean; isReopening: boolean }> {
+  const wasTerminal = existing.status === TaskStatus.DONE || isCurrentlyCancelled;
+  const isNowTerminal =
+    targetStatus === TaskStatus.DONE || targetExtendedStatus === "CANCELLED";
+  const isReopening = wasTerminal && !isNowTerminal;
+  if (!isReopening) {
+    return { wasTerminal, isReopening: false };
+  }
+
+  if (isClientUser(ctx)) {
+    throw new ForbiddenError("Clients cannot reopen closed or cancelled tasks.");
+  }
+  if (ctx.role === "OWNER" || ctx.role === "ADMIN") {
+    return { wasTerminal, isReopening: true };
+  }
+
+  // 10-second accidental-click grace window (15s server tolerance for latency)
+  if (
+    isGraceUndo &&
+    existing.completedAt &&
+    Date.now() - existing.completedAt.getTime() <= 15_000
+  ) {
+    return { wasTerminal, isReopening: true };
+  }
+
+  const organizationId = ctx.organization.id;
+  const [approvedLog, billedInvoice, org] = await Promise.all([
+    db.timeLog.findFirst({
+      where: {
+        organizationId,
+        taskId: existing.id,
+        timesheet: { status: TimesheetStatus.APPROVED },
+      },
+      select: { id: true },
+    }),
+    existing.project.dealId
+      ? db.invoice.findFirst({
+          where: {
+            organizationId,
+            dealId: existing.project.dealId,
+            status: {
+              in: [
+                InvoiceStatus.SENT,
+                InvoiceStatus.PARTIALLY_PAID,
+                InvoiceStatus.PAID,
+                InvoiceStatus.OVERDUE,
+              ],
+            },
+          },
+          select: { id: true },
+        })
+      : Promise.resolve(null),
+    db.organization.findUnique({
+      where: { id: organizationId },
+      select: { restrictEmployeeReopen: true },
+    }),
+  ]);
+
+  if (approvedLog || billedInvoice) {
+    throw new ForbiddenError(
+      "Locked — This task is linked to an approved timesheet or billed Finance invoice.",
+    );
+  }
+
+  if (org?.restrictEmployeeReopen) {
+    throw new ForbiddenError(
+      "Locked — Only Admins & Managers can reopen closed tasks in this workspace.",
+    );
+  }
+
+  return { wasTerminal, isReopening: true };
+}
+
 export async function moveTaskStatus(
   ctx: TenantContext,
   input: {
@@ -1146,6 +1312,8 @@ export async function moveTaskStatus(
     status: TaskStatus;
     extendedStatus?: ExtendedTaskStatus;
     position?: number;
+    reopenReason?: string | null;
+    isGraceUndo?: boolean;
   },
 ): Promise<void> {
   authorize(ctx, "projects.project.write");
@@ -1153,11 +1321,53 @@ export async function moveTaskStatus(
 
   const existing = await db.task.findUnique({
     where: { id_organizationId: { id: input.taskId, organizationId } },
-    select: { id: true, title: true, completedAt: true },
+    select: {
+      id: true,
+      title: true,
+      status: true,
+      completedAt: true,
+      projectId: true,
+      project: { select: { name: true, dealId: true } },
+    },
   });
   if (!existing) {
     throw new NotFoundError("Task not found.");
   }
+
+  const statusMeta = await db.comment.findFirst({
+    where: {
+      organizationId,
+      entityType: "Task",
+      entityId: existing.id,
+      body: { startsWith: "[STATUS_META]|" },
+    },
+    orderBy: { createdAt: "desc" },
+    select: { body: true },
+  });
+  const isCurrentlyCancelled =
+    statusMeta?.body.slice("[STATUS_META]|".length).trim() === "CANCELLED";
+
+  const { isReopening } = await assertCanReopenTask(
+    ctx,
+    existing,
+    isCurrentlyCancelled,
+    input.status,
+    input.extendedStatus,
+    input.isGraceUndo,
+  );
+
+  const projectTasks = isReopening
+    ? await db.task.findMany({
+        where: { organizationId, projectId: existing.projectId },
+        orderBy: [{ position: "asc" }, { createdAt: "asc" }],
+        select: { id: true },
+      })
+    : [];
+  const taskSeq = projectTasks.findIndex((t) => t.id === existing.id) + 1;
+  const taskKey =
+    isReopening && taskSeq > 0
+      ? `${buildProjectTaskPrefix(existing.project.name)}-T${taskSeq}`
+      : undefined;
 
   await db.$transaction(async (tx) => {
     await tx.task.update({
@@ -1196,15 +1406,29 @@ export async function moveTaskStatus(
       });
     }
 
+    if (isReopening && input.reopenReason?.trim()) {
+      await tx.comment.create({
+        data: {
+          organizationId,
+          authorId: ctx.user.id,
+          entityType: "Task",
+          entityId: existing.id,
+          body: `Reopened reason: ${input.reopenReason.trim()}`,
+        },
+      });
+    }
+
     await recordAudit(tx, {
       organizationId,
       actorId: ctx.user.id,
       entityType: "Task",
       entityId: existing.id,
-      action: "task.status_changed",
+      action: isReopening && !input.isGraceUndo ? "task.reopened" : "task.status_changed",
       metadata: {
         title: existing.title,
+        ...(taskKey ? { taskKey } : {}),
         status: input.extendedStatus ?? input.status,
+        ...(input.reopenReason?.trim() ? { reason: input.reopenReason.trim() } : {}),
       },
     });
   });
@@ -1221,6 +1445,8 @@ export async function updateTaskDetails(
     priority: TaskPriority;
     assigneeId?: string | null;
     dueDate?: string | null;
+    reopenReason?: string | null;
+    isGraceUndo?: boolean;
   },
 ): Promise<void> {
   authorize(ctx, "projects.project.write");
@@ -1228,9 +1454,50 @@ export async function updateTaskDetails(
 
   const existing = await db.task.findUnique({
     where: { id_organizationId: { id: input.taskId, organizationId } },
-    select: { id: true, completedAt: true },
+    select: {
+      id: true,
+      status: true,
+      completedAt: true,
+      projectId: true,
+      project: { select: { name: true, dealId: true } },
+    },
   });
   if (!existing) throw new NotFoundError("Task not found.");
+
+  const statusMeta = await db.comment.findFirst({
+    where: {
+      organizationId,
+      entityType: "Task",
+      entityId: existing.id,
+      body: { startsWith: "[STATUS_META]|" },
+    },
+    orderBy: { createdAt: "desc" },
+    select: { body: true },
+  });
+  const isCurrentlyCancelled =
+    statusMeta?.body.slice("[STATUS_META]|".length).trim() === "CANCELLED";
+
+  const { isReopening } = await assertCanReopenTask(
+    ctx,
+    existing,
+    isCurrentlyCancelled,
+    input.status,
+    input.extendedStatus,
+    input.isGraceUndo,
+  );
+
+  const projectTasks = isReopening
+    ? await db.task.findMany({
+        where: { organizationId, projectId: existing.projectId },
+        orderBy: [{ position: "asc" }, { createdAt: "asc" }],
+        select: { id: true },
+      })
+    : [];
+  const taskSeq = projectTasks.findIndex((t) => t.id === existing.id) + 1;
+  const taskKey =
+    isReopening && taskSeq > 0
+      ? `${buildProjectTaskPrefix(existing.project.name)}-T${taskSeq}`
+      : undefined;
 
   await db.$transaction(async (tx) => {
     await tx.task.update({
@@ -1273,18 +1540,85 @@ export async function updateTaskDetails(
       });
     }
 
+    if (isReopening && input.reopenReason?.trim()) {
+      await tx.comment.create({
+        data: {
+          organizationId,
+          authorId: ctx.user.id,
+          entityType: "Task",
+          entityId: existing.id,
+          body: `Reopened reason: ${input.reopenReason.trim()}`,
+        },
+      });
+    }
+
     await recordAudit(tx, {
       organizationId,
       actorId: ctx.user.id,
       entityType: "Task",
       entityId: existing.id,
-      action: "task.updated",
+      action: isReopening && !input.isGraceUndo ? "task.reopened" : "task.updated",
       metadata: {
         title: input.title.trim(),
+        ...(taskKey ? { taskKey } : {}),
         status: input.extendedStatus ?? input.status,
         priority: input.priority,
+        ...(input.reopenReason?.trim() ? { reason: input.reopenReason.trim() } : {}),
       },
     });
+  });
+}
+
+export async function archiveClosedTasks(
+  ctx: TenantContext,
+  olderThanDays?: number,
+): Promise<{ count: number }> {
+  authorize(ctx, "projects.project.manage");
+  const organizationId = ctx.organization.id;
+  const now = new Date();
+  const cutoff =
+    olderThanDays && olderThanDays > 0
+      ? new Date(now.getTime() - olderThanDays * 86_400_000)
+      : null;
+
+  return db.$transaction(async (tx) => {
+    const res = await tx.task.updateMany({
+      where: {
+        organizationId,
+        status: TaskStatus.DONE,
+        isArchived: false,
+        ...(cutoff
+          ? {
+              OR: [
+                { completedAt: { lt: cutoff } },
+                { completedAt: null, updatedAt: { lt: cutoff } },
+              ],
+            }
+          : {}),
+      },
+      data: {
+        isArchived: true,
+        archivedAt: now,
+      },
+    });
+
+    if (res.count > 0) {
+      await recordAudit(tx, {
+        organizationId,
+        actorId: ctx.user.id,
+        entityType: "Task",
+        entityId: organizationId,
+        action: "task.archived",
+        metadata: {
+          count: res.count,
+          title: olderThanDays
+            ? `${res.count} closed tasks (> ${olderThanDays}d)`
+            : `${res.count} closed tasks`,
+        },
+      });
+    }
+
+    return { count: res.count };
   });
 }
 

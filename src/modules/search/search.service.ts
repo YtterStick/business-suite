@@ -11,7 +11,7 @@ export type SearchModuleKind = "crm" | "finance" | "projects";
 export interface GlobalSearchItemDTO {
   id: string;
   module: SearchModuleKind;
-  entityType: "deal" | "contact" | "company" | "invoice" | "quote" | "project";
+  entityType: "deal" | "contact" | "company" | "invoice" | "quote" | "project" | "task";
   title: string;
   subtitle: string;
   badge?: string;
@@ -35,7 +35,7 @@ export async function globalSearch(
   const orgSlug = ctx.organization.slug;
   const clientIds = await getClientAccessibleProjectIds(ctx);
 
-  const [deals, contacts, companies, invoices, quotes, projects] = await Promise.all([
+  const [deals, contacts, companies, invoices, quotes, projects, tasks] = await Promise.all([
     can(ctx, "crm.deal.read")
       ? db.deal.findMany({
           where: {
@@ -161,6 +161,25 @@ export async function globalSearch(
           },
         })
       : Promise.resolve([]),
+
+    can(ctx, "projects.project.read")
+      ? db.task.findMany({
+          where: {
+            organizationId: orgId,
+            ...(clientIds ? { projectId: { in: Array.from(clientIds) } } : {}),
+            title: { contains: query, mode: "insensitive" },
+          },
+          orderBy: { updatedAt: "desc" },
+          take: 6,
+          select: {
+            id: true,
+            title: true,
+            status: true,
+            isArchived: true,
+            project: { select: { name: true } },
+          },
+        })
+      : Promise.resolve([]),
   ]);
 
   const crmItems: GlobalSearchItemDTO[] = [
@@ -217,15 +236,26 @@ export async function globalSearch(
     })),
   ];
 
-  const projectItems: GlobalSearchItemDTO[] = projects.map((proj) => ({
-    id: proj.id,
-    module: "projects" as const,
-    entityType: "project" as const,
-    title: proj.name,
-    subtitle: proj.company?.name ?? "Client Project",
-    badge: proj.status,
-    href: `/${orgSlug}/projects?highlight=${proj.id}`,
-  }));
+  const projectItems: GlobalSearchItemDTO[] = [
+    ...projects.map((proj) => ({
+      id: proj.id,
+      module: "projects" as const,
+      entityType: "project" as const,
+      title: proj.name,
+      subtitle: proj.company?.name ?? "Client Project",
+      badge: proj.status,
+      href: `/${orgSlug}/projects?highlight=${proj.id}`,
+    })),
+    ...tasks.map((t) => ({
+      id: t.id,
+      module: "projects" as const,
+      entityType: "task" as const,
+      title: t.title,
+      subtitle: t.isArchived ? `${t.project.name} · Archived` : t.project.name,
+      badge: t.isArchived ? "ARCHIVED" : t.status,
+      href: `/${orgSlug}/projects/tasks?taskId=${t.id}`,
+    })),
+  ];
 
   const groups: GlobalSearchGroupDTO[] = [];
   if (crmItems.length > 0) {

@@ -163,6 +163,8 @@ const AUDIT_ACTION_MAP: Record<
     label: "Projects updated in bulk",
   },
   "task.status_changed": { app: "Projects", label: "Task status updated" },
+  "task.reopened": { app: "Projects", label: "Task reopened" },
+  "task.archived": { app: "Projects", label: "Closed tasks archived" },
   "task.updated": { app: "Projects", label: "Task updated" },
   "task.quick_updated": { app: "Projects", label: "Task details updated" },
   "task.imported": { app: "Projects", label: "Tasks imported from CSV" },
@@ -791,7 +793,9 @@ export async function getWorkspaceHome(ctx: TenantContext): Promise<WorkspaceHom
           ? `/${orgSlug}/projects/${log.entityId}`
           : `/${orgSlug}/projects`;
       } else if (et === "task" || log.action.startsWith("task.")) {
-        entityName = taskMap.get(log.entityId) ?? metaStr(["title", "name"]);
+        const rawTitle = taskMap.get(log.entityId) ?? metaStr(["title", "name"]);
+        const taskKey = metaStr(["taskKey"]);
+        entityName = rawTitle && taskKey ? `${taskKey} ${rawTitle}` : rawTitle;
         href = taskMap.has(log.entityId)
           ? `/${orgSlug}/projects/tasks?taskId=${log.entityId}`
           : `/${orgSlug}/projects/tasks`;

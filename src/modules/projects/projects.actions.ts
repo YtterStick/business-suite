@@ -15,6 +15,7 @@ import type { ActionResult } from "@/lib/action-result";
 import { ValidationError } from "@/lib/errors";
 import { sanitizeRichHtml } from "@/lib/sanitize-html";
 import {
+  archiveClosedTasks,
   bulkArchiveProjects,
   bulkUpdateProjectsStatus,
   cloneProject,
@@ -318,6 +319,8 @@ export async function moveTaskStatusAction(input: {
   status: TaskStatus;
   extendedStatus?: ExtendedTaskStatus;
   position?: number;
+  reopenReason?: string | null;
+  isGraceUndo?: boolean;
 }): Promise<ActionResult<null>> {
   return runAction(async () => {
     const ctx = await assertTenant(input.orgSlug);
@@ -326,9 +329,25 @@ export async function moveTaskStatusAction(input: {
       status: input.status,
       extendedStatus: input.extendedStatus,
       position: input.position,
+      reopenReason: input.reopenReason,
+      isGraceUndo: input.isGraceUndo,
     });
     revalidatePath(`/${input.orgSlug}/projects`, "layout");
+    revalidatePath(`/${input.orgSlug}/home`);
     return null;
+  });
+}
+
+export async function archiveClosedTasksAction(input: {
+  orgSlug: string;
+  olderThanDays?: number;
+}): Promise<ActionResult<{ count: number }>> {
+  return runAction(async () => {
+    const ctx = await assertTenant(input.orgSlug);
+    const res = await archiveClosedTasks(ctx, input.olderThanDays);
+    revalidatePath(`/${input.orgSlug}/projects`, "layout");
+    revalidatePath(`/${input.orgSlug}/home`);
+    return res;
   });
 }
 
@@ -354,6 +373,8 @@ const updateTaskDetailsSchema = z.object({
   priority: z.nativeEnum(TaskPriority),
   assigneeId: z.string().nullable().optional(),
   dueDate: z.string().nullable().optional(),
+  reopenReason: z.string().max(500).nullable().optional(),
+  isGraceUndo: z.boolean().optional(),
 });
 
 export async function updateTaskDetailsAction(
@@ -368,6 +389,7 @@ export async function updateTaskDetailsAction(
     const ctx = await assertTenant(orgSlug);
     await updateTaskDetails(ctx, input);
     revalidatePath(`/${orgSlug}/projects`, "layout");
+    revalidatePath(`/${orgSlug}/home`);
     return null;
   });
 }

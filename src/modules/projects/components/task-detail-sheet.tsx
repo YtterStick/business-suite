@@ -15,6 +15,7 @@ import {
   History,
   ListChecks,
   Loader2,
+  Lock,
   MessageSquare,
   Paperclip,
   Plus,
@@ -403,48 +404,65 @@ export function TaskDetailSheet({
 
           {/* Status Summary Card */}
           <div className="mt-3 rounded-lg border bg-muted/25 px-3.5 py-2.5">
-            <div className="flex items-center gap-2">
-              <span
-                className={cn(
-                  "size-2.5 rounded-full",
-                  status === "DELAYED"
-                    ? "bg-rose-500"
-                    : status === "DONE"
-                      ? "bg-teal-500"
-                      : status === "IN_PROGRESS"
-                        ? "bg-blue-500"
-                        : status === "IN_REVIEW"
-                          ? "bg-amber-500"
-                          : status === "TO_BE_TESTED"
-                            ? "bg-orange-500"
-                            : status === "ON_HOLD"
-                              ? "bg-yellow-500"
-                              : status === "CANCELLED"
-                                ? "bg-zinc-400"
-                                : "bg-emerald-500",
-                )}
-              />
-              <select
-                aria-label="Task Status"
-                value={status}
-                disabled={!canWrite || isPending}
-                onChange={(e) => {
-                  const next = e.target.value as ExtendedTaskStatus;
-                  setStatus(next);
-                  handleSaveDetails({ status: next });
-                }}
-                className="bg-transparent text-sm font-semibold text-foreground focus:outline-none"
-              >
-                <option value="DELAYED">Delayed</option>
-                <option value="TODO">Open</option>
-                <option value="IN_PROGRESS">In Progress</option>
-                <option value="IN_REVIEW">In Review</option>
-                <option value="TO_BE_TESTED">To be Tested</option>
-                <option value="ON_HOLD">On Hold</option>
-                <option value="DONE">Closed</option>
-                <option value="CANCELLED">Cancelled</option>
-              </select>
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span
+                  className={cn(
+                    "size-2.5 rounded-full",
+                    status === "DELAYED"
+                      ? "bg-rose-500"
+                      : status === "DONE"
+                        ? "bg-teal-500"
+                        : status === "IN_PROGRESS"
+                          ? "bg-blue-500"
+                          : status === "IN_REVIEW"
+                            ? "bg-amber-500"
+                            : status === "TO_BE_TESTED"
+                              ? "bg-orange-500"
+                              : status === "ON_HOLD"
+                                ? "bg-yellow-500"
+                                : status === "CANCELLED"
+                                  ? "bg-zinc-400"
+                                  : "bg-emerald-500",
+                  )}
+                />
+                <select
+                  aria-label="Task Status"
+                  value={status}
+                  disabled={!canWrite || isPending || Boolean(task.reopenLocked)}
+                  title={task.reopenLocked ? (task.reopenLockReason ?? "Task status is locked") : undefined}
+                  onChange={(e) => {
+                    const next = e.target.value as ExtendedTaskStatus;
+                    setStatus(next);
+                    handleSaveDetails({ status: next });
+                  }}
+                  className="bg-transparent text-sm font-semibold text-foreground focus:outline-none disabled:cursor-not-allowed disabled:opacity-70"
+                >
+                  <option value="DELAYED">Delayed</option>
+                  <option value="TODO">Open</option>
+                  <option value="IN_PROGRESS">In Progress</option>
+                  <option value="IN_REVIEW">In Review</option>
+                  <option value="TO_BE_TESTED">To be Tested</option>
+                  <option value="ON_HOLD">On Hold</option>
+                  <option value="DONE">Closed</option>
+                  <option value="CANCELLED">Cancelled</option>
+                </select>
+              </div>
+              {task.reopenLocked && (
+                <span
+                  title={task.reopenLockReason ?? "Locked"}
+                  className="inline-flex items-center gap-1 rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-300"
+                >
+                  <Lock className="size-3" />
+                  Locked
+                </span>
+              )}
             </div>
+            {task.reopenLocked && task.reopenLockReason && (
+              <p className="mt-1 pl-4 text-[11px] text-amber-700 dark:text-amber-300">
+                {task.reopenLockReason}
+              </p>
+            )}
             <p className="mt-0.5 pl-4 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
               Status
             </p>

@@ -107,6 +107,7 @@ model Organization {
   invoicePrefix           String   @default("INV-")
   quotePrefix             String   @default("QT-")
   defaultPaymentTermsDays Int      @default(30)
+  restrictEmployeeReopen  Boolean  @default(false)
   createdAt               DateTime @default(now())
   updatedAt               DateTime @updatedAt
 
@@ -944,6 +945,8 @@ model Task {
   position       Float        @default(0)
   dueDate        DateTime?    @db.Date
   completedAt    DateTime?
+  isArchived     Boolean      @default(false)
+  archivedAt     DateTime?
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
@@ -957,6 +960,7 @@ model Task {
   @@unique([id, organizationId])
   @@index([organizationId, projectId, status, position])
   @@index([organizationId, assigneeId, status])
+  @@index([organizationId, isArchived])
   @@map("tasks")
 }
 
