@@ -9,12 +9,9 @@ import {
   ClipboardCheck,
   FolderKanban,
   HelpCircle,
-  Loader2,
   Plus,
   Receipt,
   Search,
-  Sparkles,
-  Trash2,
   TrendingUp,
   UserPlus,
 } from "lucide-react";
@@ -31,11 +28,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { formatCurrency, formatCurrencyTotals, formatDate, formatDateTimeUtc } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { WorkspaceHomeDTO } from "@/modules/org/workspace-home.service";
-import {
-  clearSampleWorkspaceAction,
-  moveTaskStatusAction,
-  seedSampleWorkspaceAction,
-} from "@/modules/projects/projects.actions";
+import { moveTaskStatusAction } from "@/modules/projects/projects.actions";
 
 function getGreeting(): string {
   const hour = new Date().getHours();
@@ -76,8 +69,6 @@ export function WorkspaceHomeDashboard({
 }) {
   const router = useRouter();
   const [greeting, setGreeting] = React.useState("Welcome back");
-  const [isSampleBusy, setIsSampleBusy] = React.useState(false);
-  const [isBannerVisible, setIsBannerVisible] = React.useState(true);
   const [tasks, setTasks] = React.useState(home.myTasks);
   const overdueTotal = React.useMemo(
     () => Object.values(home.overdueReceivablesTotals).reduce((sum, v) => sum + v, 0),
@@ -97,40 +88,6 @@ export function WorkspaceHomeDashboard({
   React.useEffect(() => {
     setTasks(home.myTasks);
   }, [home.myTasks]);
-
-  const handleSeedSample = async () => {
-    setIsSampleBusy(true);
-    try {
-      const res = await seedSampleWorkspaceAction({ orgSlug });
-      if (!res.ok) {
-        toast.error(res.error.message);
-        return;
-      }
-      toast.success("Sample workspace loaded", {
-        description: `Created CRM deals, project "${res.data.projectName}" & invoice ${res.data.invoiceNumber}.`,
-      });
-      router.refresh();
-    } finally {
-      setIsSampleBusy(false);
-    }
-  };
-
-  const handleClearSample = async () => {
-    setIsSampleBusy(true);
-    try {
-      const res = await clearSampleWorkspaceAction({ orgSlug });
-      if (!res.ok) {
-        toast.error(res.error.message);
-        return;
-      }
-      toast.success("Sample records cleared", {
-        description: `Removed ${pluralize(res.data.deletedDeals, "deal")}, ${pluralize(res.data.deletedProjects, "project")}, and ${pluralize(res.data.deletedInvoices, "invoice")}.`,
-      });
-      router.refresh();
-    } finally {
-      setIsSampleBusy(false);
-    }
-  };
 
   const handleToggleTaskDone = async (task: WorkspaceHomeDTO["myTasks"][number]) => {
     const prevStatus = task.status;
@@ -199,37 +156,11 @@ export function WorkspaceHomeDashboard({
               New Invoice
             </Link>
           </Button>
-          {canManage && home.onboarding.hasSampleData && !isBannerVisible && (
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              disabled={isSampleBusy}
-              onClick={handleClearSample}
-              className="gap-1.5 text-xs text-rose-600 hover:bg-rose-500/10 hover:text-rose-600"
-            >
-              {isSampleBusy ? (
-                <Loader2 className="size-3.5 animate-spin" />
-              ) : (
-                <Trash2 className="size-3.5" />
-              )}
-              Clear Sample Data
-            </Button>
-          )}
         </div>
       </div>
 
       {/* Dismissible 3-Step Getting Started Banner */}
-      <GettingStartedBanner
-        orgSlug={orgSlug}
-        progress={home.onboarding}
-        hasSampleData={home.onboarding.hasSampleData}
-        canManage={canManage}
-        isBusy={isSampleBusy}
-        onSeedSample={handleSeedSample}
-        onClearSample={handleClearSample}
-        onVisibilityChange={setIsBannerVisible}
-      />
+      <GettingStartedBanner orgSlug={orgSlug} progress={home.onboarding} />
 
       {/* Cross-App 4-Card KPI Strip */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -477,15 +408,14 @@ export function WorkspaceHomeDashboard({
                 <EmptyState
                   icon={Briefcase}
                   title="No connected flows yet"
-                  description="Close a deal in CRM or load sample data to watch Tactiq link the deal, project, and invoice automatically."
+                  description="Close a deal in CRM to watch Tactiq link the deal, project, and invoice automatically."
                   compact
                   action={
-                    !isBannerVisible && canManage
+                    canManage
                       ? {
-                          label: "Load Sample Workspace",
-                          icon: <Sparkles className="size-3.5" />,
-                          disabled: isSampleBusy,
-                          onClick: handleSeedSample,
+                          label: "Create First Deal",
+                          icon: <Plus className="size-3.5" />,
+                          href: `/${orgSlug}/crm/deals?new=1`,
                         }
                       : undefined
                   }

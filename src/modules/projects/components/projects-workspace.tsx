@@ -36,7 +36,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
-import { TableSkeleton } from "@/components/shell/route-skeletons";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -93,10 +92,8 @@ import {
 import {
   bulkArchiveProjectsAction,
   bulkUpdateProjectsStatusAction,
-  clearSampleWorkspaceAction,
   cloneProjectAction,
   deleteProjectsAction,
-  seedSampleWorkspaceAction,
   toggleProjectArchiveAction,
   updateProjectStatusAction,
 } from "@/modules/projects/projects.actions";
@@ -259,7 +256,6 @@ export function ProjectsWorkspace({
   const [viewMode, setViewMode] = React.useState<ProjectViewMode>("list");
   const [savedView, setSavedView] = React.useState<SavedProjectView>("all");
   const [density, setDensity] = React.useState<TableDensity>("comfortable");
-  const [isSeeding, setIsSeeding] = React.useState(false);
 
   // Multi-criteria advanced filters
   const [filterOwnerId, setFilterOwnerId] = React.useState<string>("");
@@ -601,47 +597,6 @@ export function ProjectsWorkspace({
     setSelectedIds((prev) =>
       prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id],
     );
-  };
-
-  const hasSampleProjects = React.useMemo(
-    () => workspace.projects.some((p) => p.tags.includes("sample-data")),
-    [workspace.projects],
-  );
-
-  const handleLoadSampleData = () => {
-    setIsSeeding(true);
-    startTransition(async () => {
-      try {
-        const res = await seedSampleWorkspaceAction({ orgSlug });
-        if (!res.ok) {
-          toast.error(res.error.message);
-          return;
-        }
-        toast.success(`Sample workspace loaded`, {
-          description: `Created "${res.data.projectName}" and invoice ${res.data.invoiceNumber}.`,
-        });
-        router.refresh();
-      } finally {
-        setIsSeeding(false);
-      }
-    });
-  };
-
-  const handleClearSampleData = () => {
-    setIsSeeding(true);
-    startTransition(async () => {
-      try {
-        const res = await clearSampleWorkspaceAction({ orgSlug });
-        if (!res.ok) {
-          toast.error(res.error.message);
-          return;
-        }
-        toast.success(`Cleared sample workspace data`);
-        router.refresh();
-      } finally {
-        setIsSeeding(false);
-      }
-    });
   };
 
   const handleRowStatusChange = (
@@ -1590,7 +1545,7 @@ export function ProjectsWorkspace({
 
       {/* Tab Body */}
       <div className="space-y-4 p-4 lg:p-6">
-        {(workspace.projects.length === 0 || hasSampleProjects) && canWrite && (
+        {workspace.projects.length === 0 && canWrite && (
           <GettingStartedBanner
             orgSlug={orgSlug}
             progress={{
@@ -1601,17 +1556,10 @@ export function ProjectsWorkspace({
               ),
               hasTaskOrInvoice: workspace.projects.some((p) => p.taskCount > 0),
             }}
-            hasSampleData={hasSampleProjects}
-            canManage={canWrite}
-            isBusy={isSeeding}
-            onSeedSample={handleLoadSampleData}
-            onClearSample={handleClearSampleData}
           />
         )}
 
-        {isSeeding ? (
-          <TableSkeleton columns={visibleColCount} rows={5} compact={density === "compact"} />
-        ) : activeTab === "templates" ? (
+        {activeTab === "templates" ? (
           <div className="space-y-6">
             <div className="grid gap-4 md:grid-cols-3">
               {BUILTIN_TEMPLATES.map((tpl) => (
@@ -1867,7 +1815,7 @@ export function ProjectsWorkspace({
                               ? "No projects in this workspace yet"
                               : "No projects match your current view"
                           }
-                          description="Create your first delivery project, import an existing CSV sheet, or load sample connected data."
+                          description="Create your first delivery project or import an existing CSV sheet."
                           compact
                           action={
                             canWrite
@@ -1889,17 +1837,11 @@ export function ProjectsWorkspace({
                           }
                           secondaryAction={
                             canWrite
-                              ? workspace.projects.length === 0
-                                ? {
-                                    label: "Load Sample Data",
-                                    icon: <Sparkles className="size-3.5" />,
-                                    onClick: handleLoadSampleData,
-                                  }
-                                : {
-                                    label: "Import CSV",
-                                    icon: <Upload className="size-3.5" />,
-                                    onClick: () => setImportOpen(true),
-                                  }
+                              ? {
+                                  label: "Import CSV",
+                                  icon: <Upload className="size-3.5" />,
+                                  onClick: () => setImportOpen(true),
+                                }
                               : undefined
                           }
                         />

@@ -71,7 +71,6 @@ export interface WorkspaceHomeDTO {
     hasClientOrDeal: boolean;
     hasWonDeal: boolean;
     hasTaskOrInvoice: boolean;
-    hasSampleData: boolean;
   };
 }
 
@@ -131,10 +130,6 @@ const AUDIT_ACTION_MAP: Record<
   "org.invitation_accepted": {
     app: "Workspace",
     label: "Workspace invitation accepted",
-  },
-  "workspace.sample_cleared": {
-    app: "Workspace",
-    label: "Sample workspace data cleared",
   },
 };
 
@@ -221,8 +216,6 @@ export async function getWorkspaceHome(ctx: TenantContext): Promise<WorkspaceHom
     companyCount,
     totalTaskCount,
     totalInvoiceCount,
-    sampleProjectCount,
-    sampleDealCount,
   ] = await Promise.all([
     db.deal.findMany({
       where: { organizationId, status: DealStatus.OPEN },
@@ -326,8 +319,6 @@ export async function getWorkspaceHome(ctx: TenantContext): Promise<WorkspaceHom
     db.company.count({ where: { organizationId } }),
     db.task.count({ where: { organizationId } }),
     db.invoice.count({ where: { organizationId } }),
-    db.project.count({ where: { organizationId, tags: { has: "sample-data" } } }),
-    db.deal.count({ where: { organizationId, title: { endsWith: "[Sample]" } } }),
   ]);
 
   const openPipelineTotals: Record<string, number> = {};
@@ -411,7 +402,6 @@ export async function getWorkspaceHome(ctx: TenantContext): Promise<WorkspaceHom
       hasClientOrDeal: companyCount > 0 || recentFlowsRaw.length > 0,
       hasWonDeal: wonDealCount > 0,
       hasTaskOrInvoice: totalTaskCount > 0 || totalInvoiceCount > 0,
-      hasSampleData: sampleProjectCount > 0 || sampleDealCount > 0,
     },
   };
 }

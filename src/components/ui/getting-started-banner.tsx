@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { CheckCircle2, Circle, Loader2, Sparkles, Trash2, X } from "lucide-react";
+import { CheckCircle2, Circle, Sparkles, X } from "lucide-react";
 import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
@@ -14,27 +14,15 @@ export interface GettingStartedProgress {
 }
 
 /**
- * Dismissible 3-step Getting Started checklist + 1-click Sample Data toggle.
+ * Dismissible 3-step Getting Started checklist across CRM, Projects & Finance.
  */
 export function GettingStartedBanner({
   orgSlug,
   progress,
-  hasSampleData,
-  canManage = true,
-  isBusy = false,
-  onSeedSample,
-  onClearSample,
-  onVisibilityChange,
   forceShow = false,
 }: {
   orgSlug: string;
   progress: GettingStartedProgress;
-  hasSampleData: boolean;
-  canManage?: boolean;
-  isBusy?: boolean;
-  onSeedSample?: () => void;
-  onClearSample?: () => void;
-  onVisibilityChange?: (visible: boolean) => void;
   forceShow?: boolean;
 }) {
   const [dismissed, setDismissed] = React.useState(false);
@@ -51,7 +39,6 @@ export function GettingStartedBanner({
 
   const dismiss = () => {
     setDismissed(true);
-    onVisibilityChange?.(false);
     try {
       window.localStorage.setItem(`bs_getting_started_dismissed_${orgSlug}`, "1");
     } catch {
@@ -81,11 +68,7 @@ export function GettingStartedBanner({
   ];
 
   const completedCount = steps.filter((s) => s.done).length;
-  const isVisible = forceShow || (!dismissed && !(completedCount === 3 && !hasSampleData));
-
-  React.useEffect(() => {
-    onVisibilityChange?.(isVisible);
-  }, [isVisible, onVisibilityChange]);
+  const isVisible = forceShow || (!dismissed && completedCount < 3);
 
   if (!isVisible) {
     return null;
@@ -102,59 +85,19 @@ export function GettingStartedBanner({
             </h2>
           </div>
           <p className="text-xs text-muted-foreground">
-            Follow these three connected steps or load sample records to explore CRM, Projects &amp; Finance together.
+            Follow these three connected steps to explore CRM, Projects &amp; Finance together.
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          {canManage &&
-            (hasSampleData ? (
-              onClearSample && (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  disabled={isBusy}
-                  onClick={onClearSample}
-                  className="gap-1.5 text-xs"
-                >
-                  {isBusy ? (
-                    <Loader2 className="size-3.5 animate-spin" />
-                  ) : (
-                    <Trash2 className="size-3.5 text-rose-500" />
-                  )}
-                  Clear Sample Data
-                </Button>
-              )
-            ) : (
-              onSeedSample && (
-                <Button
-                  type="button"
-                  size="sm"
-                  disabled={isBusy}
-                  onClick={onSeedSample}
-                  className="gap-1.5 text-xs"
-                >
-                  {isBusy ? (
-                    <Loader2 className="size-3.5 animate-spin" />
-                  ) : (
-                    <Sparkles className="size-3.5" />
-                  )}
-                  Load Sample Workspace
-                </Button>
-              )
-            ))}
-
-          <Button
-            type="button"
-            size="icon-sm"
-            variant="ghost"
-            aria-label="Dismiss getting started checklist"
-            onClick={dismiss}
-          >
-            <X className="size-4" />
-          </Button>
-        </div>
+        <Button
+          type="button"
+          size="icon-sm"
+          variant="ghost"
+          aria-label="Dismiss getting started checklist"
+          onClick={dismiss}
+        >
+          <X className="size-4" />
+        </Button>
       </div>
 
       <div className="mt-3 grid gap-2.5 md:grid-cols-3">

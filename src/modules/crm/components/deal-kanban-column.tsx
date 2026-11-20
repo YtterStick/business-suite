@@ -26,10 +26,8 @@ interface DealKanbanColumnProps {
   canWrite: boolean;
   isFirstStage?: boolean;
   isBoardEmpty?: boolean;
-  seedingSample?: boolean;
   onQuickMove: (dealId: string, targetStageId: string) => void;
   onAddDealInStage: (stageId: string) => void;
-  onLoadSampleData?: () => void;
 }
 
 export function DealKanbanColumn({
@@ -40,10 +38,8 @@ export function DealKanbanColumn({
   canWrite,
   isFirstStage = false,
   isBoardEmpty = false,
-  seedingSample = false,
   onQuickMove,
   onAddDealInStage,
-  onLoadSampleData,
 }: DealKanbanColumnProps) {
   const { setNodeRef, isOver } = useDroppable({
     id: stageDroppableId(stage.id),
@@ -145,19 +141,6 @@ export function DealKanbanColumn({
                       <Plus className="size-3.5" />
                       Create First Deal
                     </Button>
-                    {onLoadSampleData && (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        disabled={seedingSample}
-                        onClick={onLoadSampleData}
-                        className="w-full gap-1.5 text-xs"
-                      >
-                        <Sparkles className="size-3.5 text-violet-600" />
-                        {seedingSample ? "Loading Sample..." : "Load Sample Data"}
-                      </Button>
-                    )}
                   </div>
                 )}
               </div>

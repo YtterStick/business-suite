@@ -20,7 +20,6 @@ import {
   Plus,
   Search,
   Sparkles,
-  Trash2,
   TrendingUp,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -39,10 +38,6 @@ import {
   STAGE_DROPPABLE_PREFIX,
 } from "@/modules/crm/components/deal-kanban-column";
 import { moveDealStageAction } from "@/modules/crm/deals.actions";
-import {
-  clearSampleWorkspaceAction,
-  seedSampleWorkspaceAction,
-} from "@/modules/projects/projects.actions";
 import type {
   CreateDealResultDTO,
   KanbanBoardDTO,
@@ -136,7 +131,6 @@ export function DealKanbanBoard({
   const [showLostColumn, setShowLostColumn] = React.useState(true);
   const [createOpen, setCreateOpen] = React.useState(openCreateInitially);
   const [createStageId, setCreateStageId] = React.useState(initialBoard.stages[0]?.id ?? "");
-  const [seedingSample, setSeedingSample] = React.useState(false);
 
   React.useEffect(() => {
     setBoardStages(initialBoard.stages);
@@ -390,43 +384,6 @@ export function DealKanbanBoard({
     [optimisticStages],
   );
   const isBoardEmpty = totalBoardDeals === 0;
-  const hasSampleDeals = React.useMemo(
-    () =>
-      optimisticStages.some((st) =>
-        st.deals.some((d) => d.title.endsWith("[Sample]")),
-      ),
-    [optimisticStages],
-  );
-
-  const handleLoadSampleData = async () => {
-    setSeedingSample(true);
-    try {
-      const res = await seedSampleWorkspaceAction({ orgSlug });
-      if (!res.ok) {
-        toast.error(res.error.message);
-        return;
-      }
-      toast.success("Sample CRM + Project + Invoice data loaded");
-      router.refresh();
-    } finally {
-      setSeedingSample(false);
-    }
-  };
-
-  const handleClearSampleData = async () => {
-    setSeedingSample(true);
-    try {
-      const res = await clearSampleWorkspaceAction({ orgSlug });
-      if (!res.ok) {
-        toast.error(res.error.message);
-        return;
-      }
-      toast.success("Sample records cleared");
-      router.refresh();
-    } finally {
-      setSeedingSample(false);
-    }
-  };
 
   return (
     <div className="flex h-full flex-col">
@@ -457,19 +414,6 @@ export function DealKanbanBoard({
           </div>
 
           <div className="flex items-center gap-2">
-            {canWrite && hasSampleDeals && (
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                disabled={seedingSample}
-                onClick={handleClearSampleData}
-                className="gap-1.5 text-xs text-rose-600 hover:bg-rose-500/10 hover:text-rose-600"
-              >
-                <Trash2 className="size-3.5" />
-                Clear Sample Data
-              </Button>
-            )}
             {canWrite && (
               <Button
                 type="button"
@@ -584,10 +528,8 @@ export function DealKanbanBoard({
                 canWrite={canWrite}
                 isFirstStage={idx === 0}
                 isBoardEmpty={isBoardEmpty && !searchQuery.trim()}
-                seedingSample={seedingSample}
                 onQuickMove={handleQuickMove}
                 onAddDealInStage={openCreateInStage}
-                onLoadSampleData={handleLoadSampleData}
               />
             ))}
           </div>
