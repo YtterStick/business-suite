@@ -257,33 +257,56 @@
   animation: tq-check-pop 6.5s ease-in-out infinite;
 }
 
+@keyframes tq-logo-motion {
+  0%,
+  100% {
+    transform: translateY(4px) scale(0.9) rotate(-6deg);
+    filter: drop-shadow(0 4px 12px rgba(99, 102, 241, 0.25));
+  }
+  35% {
+    transform: translateY(-5px) scale(1.06) rotate(3deg);
+    filter: drop-shadow(0 10px 24px rgba(34, 211, 238, 0.45));
+  }
+  65% {
+    transform: translateY(-2px) scale(1.02) rotate(0deg);
+    filter: drop-shadow(0 8px 20px rgba(139, 92, 246, 0.4));
+  }
+}
+
 @keyframes tq-bar-loop {
   0%,
   100% {
-    opacity: 0.72;
-    transform: scaleX(0.82);
+    transform: translateY(-3px) scaleX(0.45);
+    opacity: 0.7;
   }
   30%,
-  72% {
+  70% {
+    transform: translateY(0) scaleX(1.05);
     opacity: 1;
-    transform: scaleX(1);
+  }
+  85% {
+    transform: translateY(0) scaleX(1);
+    opacity: 0.95;
   }
 }
 
 @keyframes tq-stem-loop {
   0% {
     stroke-dashoffset: 100;
-    opacity: 0.25;
+    transform: translateY(-2px);
+    opacity: 0.3;
   }
-  42%,
-  74% {
+  38%,
+  72% {
     stroke-dashoffset: 0;
+    transform: translateY(0);
     opacity: 1;
   }
-  92%,
+  95%,
   100% {
     stroke-dashoffset: -100;
-    opacity: 0.25;
+    transform: translateY(2px);
+    opacity: 0.3;
   }
 }
 
@@ -314,16 +337,24 @@
   }
 }
 
+.tq-loop {
+  transform-box: view-box;
+  transform-origin: center;
+  animation: tq-logo-motion 1.6s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+
 .tq-loop .tq-mark-bar {
   transform-box: fill-box;
   transform-origin: center;
-  animation: tq-bar-loop 1.8s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+  animation: tq-bar-loop 1.6s cubic-bezier(0.22, 1, 0.36, 1) infinite;
 }
 
 .tq-loop .tq-mark-stem {
+  transform-box: fill-box;
+  transform-origin: center;
   stroke-dasharray: 100;
   stroke-dashoffset: 100;
-  animation: tq-stem-loop 1.8s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+  animation: tq-stem-loop 1.6s cubic-bezier(0.22, 1, 0.36, 1) infinite;
 }
 
 .tq-hover-animate:hover .tq-mark-bar {
@@ -353,6 +384,7 @@
 @media (prefers-reduced-motion: reduce) {
   .tq-animated .tq-mark-bar,
   .tq-animated .tq-mark-stem,
+  .tq-loop,
   .tq-loop .tq-mark-bar,
   .tq-loop .tq-mark-stem,
   .tq-hover-animate:hover .tq-mark-bar,
