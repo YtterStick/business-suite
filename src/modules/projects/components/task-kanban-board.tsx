@@ -6,10 +6,13 @@ import {
   DndContext,
   DragOverlay,
   PointerSensor,
+  pointerWithin,
+  rectIntersection,
   useDroppable,
   useSensor,
   useSensors,
   type Announcements,
+  type CollisionDetection,
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
@@ -1081,7 +1084,14 @@ function KanbanColumn({
             >
               <div className="flex flex-1 flex-col gap-2.5">
                 {col.tasks.length === 0 && !composerOpen ? (
-                  <div className="flex min-h-28 flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed border-muted-foreground/25 bg-background/40 px-4 py-6 text-center text-xs text-muted-foreground transition-colors">
+                  <div
+                    className={cn(
+                      "flex min-h-36 flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed px-4 py-6 text-center text-xs transition-colors",
+                      isOver
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "border-muted-foreground/25 bg-background/40 text-muted-foreground",
+                    )}
+                  >
                     <Layers className="size-4 opacity-50" />
                     <span className="font-medium">Drop a task here</span>
                   </div>
@@ -2175,6 +2185,21 @@ export function TaskKanbanBoard({
       }),
     );
   };
+
+  const kanbanCollisionDetection = React.useCallback<CollisionDetection>((args) => {
+    const pointerCollisions = pointerWithin(args);
+    if (pointerCollisions.length > 0) {
+      const cardHit = pointerCollisions.find((c) => !String(c.id).startsWith("col:"));
+      if (cardHit) return [cardHit];
+      const colHit = pointerCollisions.find((c) => String(c.id).startsWith("col:"));
+      if (colHit) return [colHit];
+      return pointerCollisions;
+    }
+
+    const rectCollisions = rectIntersection(args);
+    if (rectCollisions.length > 0) return rectCollisions;
+    return closestCorners(args);
+  }, []);
 
   const handleDragStart = (event: DragStartEvent) => {
     setActiveTaskId(String(event.active.id));
@@ -3328,7 +3353,7 @@ export function TaskKanbanBoard({
               <DndContext
                 id={dndContextId}
                 sensors={sensors}
-                collisionDetection={closestCorners}
+                collisionDetection={kanbanCollisionDetection}
                 accessibility={{ announcements: dndAnnouncements }}
                 onDragStart={handleDragStart}
                 onDragEnd={handleDragEnd}
