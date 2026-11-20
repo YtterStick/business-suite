@@ -11,8 +11,7 @@ binding = "FILES_BUCKET"
 bucket_name = "taqtiq"
 
 [vars]
-# Replace with your Render web service origin (e.g. https://tactiq-web.onrender.com)
-RENDER_ORIGIN = "https://your-tactiq-service.onrender.com"
+RENDER_ORIGIN = "https://tactiq-web.onrender.com"
 
 # Store CRON_SECRET as an encrypted Worker secret instead of plain text:
 # npx wrangler secret put CRON_SECRET
