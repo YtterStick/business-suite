@@ -36,6 +36,10 @@ export const RESERVED_ORG_SLUGS = new Set([
   "logout",
   "signup",
   "invite",
+  "onboarding",
+  "docs",
+  "pricing",
+  "features",
   "_next",
   "static",
 ]);
