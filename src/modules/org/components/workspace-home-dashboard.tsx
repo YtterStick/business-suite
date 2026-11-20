@@ -3,15 +3,17 @@
 import * as React from "react";
 import {
   ArrowRight,
+  BarChart3,
   BookOpen,
   Briefcase,
   CheckCircle2,
   ClipboardCheck,
+  Clock,
   FolderKanban,
   HelpCircle,
   Plus,
   Receipt,
-  Search,
+  ShieldCheck,
   TrendingUp,
   UserPlus,
 } from "lucide-react";
@@ -484,6 +486,62 @@ export function WorkspaceHomeDashboard({
               )}
             </CardContent>
           </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between gap-2 pb-3">
+              <div>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Clock className="size-4 text-emerald-600" />
+                  This Week&apos;s Time
+                </CardTitle>
+                <CardDescription>
+                  {formatDate(home.thisWeekTime.weekStartIso)} –{" "}
+                  {formatDate(home.thisWeekTime.weekEndIso, { withYear: true })}
+                </CardDescription>
+              </div>
+              <div className="flex shrink-0 items-center gap-2.5">
+                <Badge
+                  variant={
+                    home.thisWeekTime.status === "APPROVED"
+                      ? "default"
+                      : home.thisWeekTime.status === "SUBMITTED"
+                        ? "secondary"
+                        : "outline"
+                  }
+                  className="text-[10px]"
+                >
+                  {home.thisWeekTime.status}
+                </Badge>
+                <Link
+                  href={`/${orgSlug}/projects/timesheets`}
+                  className="shrink-0 text-xs font-medium whitespace-nowrap text-primary hover:underline"
+                >
+                  Open Timesheet →
+                </Link>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-2.5">
+              <div className="flex flex-wrap items-baseline justify-between gap-2 text-xs">
+                <div className="flex items-baseline gap-2">
+                  <span className="text-2xl font-bold tabular-nums text-foreground">
+                    {home.thisWeekTime.totalHours.toFixed(1)}h
+                  </span>
+                  <span className="text-muted-foreground">logged this week</span>
+                </div>
+                <span className="font-medium text-emerald-600 tabular-nums dark:text-emerald-400">
+                  {home.thisWeekTime.billableHours.toFixed(1)}h billable
+                </span>
+              </div>
+              <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                <div
+                  className="h-full rounded-full bg-emerald-500 transition-all"
+                  style={{
+                    width: `${Math.min(100, Math.round((home.thisWeekTime.totalHours / 40) * 100))}%`,
+                  }}
+                />
+              </div>
+            </CardContent>
+          </Card>
         </div>
 
         {/* Right Column: Recent Activity Feed + Quick Links */}
@@ -501,26 +559,44 @@ export function WorkspaceHomeDashboard({
               ) : (
                 <div className="relative">
                   <div className="max-h-[420px] space-y-2.5 overflow-y-auto pr-1 [scrollbar-width:thin]">
-                    {home.recentActivity.map((log) => (
-                      <div
-                        key={log.id}
-                        className="flex items-start justify-between gap-2 rounded-lg border px-3 py-2 text-xs"
-                      >
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-1.5">
-                            <Badge variant="outline" className="shrink-0 px-1.5 py-0 text-[10px]">
-                              {log.app}
-                            </Badge>
-                            <span className="truncate font-medium">
-                              {humanizeAuditTitle(log.action)}
-                            </span>
+                    {home.recentActivity.map((log) => {
+                      const titleText = `${humanizeAuditTitle(log.action)}${log.entityName ? ` · ${log.entityName}` : ""}`;
+                      const inner = (
+                        <>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5">
+                              <Badge variant="outline" className="shrink-0 px-1.5 py-0 text-[10px]">
+                                {log.app}
+                              </Badge>
+                              <span className="truncate font-medium">{titleText}</span>
+                            </div>
+                            <p className="mt-1 text-muted-foreground">
+                              {log.actorName} · {formatDateTimeUtc(log.createdAt)}
+                            </p>
                           </div>
-                          <p className="mt-1 text-muted-foreground">
-                            {log.actorName} · {formatDateTimeUtc(log.createdAt)}
-                          </p>
+                          {log.href && (
+                            <ArrowRight className="size-3.5 shrink-0 text-muted-foreground/70 transition-transform group-hover:translate-x-0.5 group-hover:text-foreground" />
+                          )}
+                        </>
+                      );
+
+                      return log.href ? (
+                        <Link
+                          key={log.id}
+                          href={log.href}
+                          className="group flex items-center justify-between gap-2 rounded-lg border px-3 py-2 text-xs transition-colors hover:border-primary/40 hover:bg-muted/40"
+                        >
+                          {inner}
+                        </Link>
+                      ) : (
+                        <div
+                          key={log.id}
+                          className="flex items-center justify-between gap-2 rounded-lg border px-3 py-2 text-xs"
+                        >
+                          {inner}
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                   {home.recentActivity.length > 5 && (
                     <div
@@ -536,12 +612,12 @@ export function WorkspaceHomeDashboard({
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-base">Quick Links</CardTitle>
-              <CardDescription>Jump to documentation, team setup, or search</CardDescription>
+              <CardDescription>Documentation, team roles, and cross-app reporting</CardDescription>
             </CardHeader>
             <CardContent className="space-y-2">
               <Link
                 href="/docs"
-                className="flex items-center justify-between rounded-lg border p-3 text-sm transition-colors hover:bg-muted/40"
+                className="flex items-center justify-between rounded-lg border p-3 text-sm transition-colors hover:border-primary/40 hover:bg-muted/40"
               >
                 <span className="flex items-center gap-2.5">
                   <BookOpen className="size-4 text-indigo-500" />
@@ -557,7 +633,7 @@ export function WorkspaceHomeDashboard({
 
               <Link
                 href={`/${orgSlug}/projects/users?invite=1`}
-                className="flex items-center justify-between rounded-lg border p-3 text-sm transition-colors hover:bg-muted/40"
+                className="flex items-center justify-between rounded-lg border p-3 text-sm transition-colors hover:border-primary/40 hover:bg-muted/40"
               >
                 <span className="flex items-center gap-2.5">
                   <UserPlus className="size-4 text-emerald-500" />
@@ -571,15 +647,37 @@ export function WorkspaceHomeDashboard({
                 <ArrowRight className="size-4 text-muted-foreground" />
               </Link>
 
-              <div className="flex items-center justify-between rounded-lg border bg-muted/20 p-3 text-xs text-muted-foreground">
-                <span className="flex items-center gap-2">
-                  <Search className="size-4 text-foreground" />
-                  <span>Jump to any deal, project, task, or invoice</span>
+              <Link
+                href={`/${orgSlug}/projects/users`}
+                className="flex items-center justify-between rounded-lg border p-3 text-sm transition-colors hover:border-primary/40 hover:bg-muted/40"
+              >
+                <span className="flex items-center gap-2.5">
+                  <ShieldCheck className="size-4 text-violet-500" />
+                  <span>
+                    <span className="block font-medium">Workspace Settings &amp; Roles</span>
+                    <span className="block text-xs text-muted-foreground">
+                      Manage team roles, permissions, and workspace access
+                    </span>
+                  </span>
                 </span>
-                <kbd className="rounded border bg-background px-1.5 py-0.5 font-mono text-[11px] font-medium text-foreground">
-                  ⌘K
-                </kbd>
-              </div>
+                <ArrowRight className="size-4 text-muted-foreground" />
+              </Link>
+
+              <Link
+                href={`/${orgSlug}/projects/reports`}
+                className="flex items-center justify-between rounded-lg border p-3 text-sm transition-colors hover:border-primary/40 hover:bg-muted/40"
+              >
+                <span className="flex items-center gap-2.5">
+                  <BarChart3 className="size-4 text-sky-500" />
+                  <span>
+                    <span className="block font-medium">Cross-App Reports &amp; Analytics</span>
+                    <span className="block text-xs text-muted-foreground">
+                      Review delivery progress, logged hours, and utilization
+                    </span>
+                  </span>
+                </span>
+                <ArrowRight className="size-4 text-muted-foreground" />
+              </Link>
             </CardContent>
           </Card>
         </div>

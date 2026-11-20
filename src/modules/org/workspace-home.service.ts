@@ -64,9 +64,18 @@ export interface WorkspaceHomeDTO {
     id: string;
     app: "CRM" | "Projects" | "Finance" | "Workspace";
     action: string;
+    entityName: string | null;
+    href: string | null;
     actorName: string;
     createdAt: string;
   }>;
+  thisWeekTime: {
+    weekStartIso: string;
+    weekEndIso: string;
+    totalHours: number;
+    billableHours: number;
+    status: TimesheetStatus;
+  };
   onboarding: {
     hasClientOrDeal: boolean;
     hasWonDeal: boolean;
@@ -196,9 +205,13 @@ export async function getWorkspaceHome(ctx: TenantContext): Promise<WorkspaceHom
   authorize(ctx, "projects.project.read");
 
   const organizationId = ctx.organization.id;
+  const orgSlug = ctx.organization.slug;
   const now = new Date();
   const today = startOfUtcDay(now);
   const milestoneCutoff = startOfUtcDay(addDays(now, 14));
+  const dow = today.getUTCDay();
+  const weekStart = addDays(today, dow === 0 ? -6 : 1 - dow);
+  const weekEnd = addDays(weekStart, 6);
 
   const [
     openDeals,
@@ -216,6 +229,8 @@ export async function getWorkspaceHome(ctx: TenantContext): Promise<WorkspaceHom
     companyCount,
     totalTaskCount,
     totalInvoiceCount,
+    weeklyTimeLogs,
+    weeklyTimesheet,
   ] = await Promise.all([
     db.deal.findMany({
       where: { organizationId, status: DealStatus.OPEN },
@@ -310,7 +325,15 @@ export async function getWorkspaceHome(ctx: TenantContext): Promise<WorkspaceHom
       where: { organizationId },
       orderBy: { createdAt: "desc" },
       take: 20,
-      select: { id: true, actorId: true, entityType: true, action: true, createdAt: true },
+      select: {
+        id: true,
+        actorId: true,
+        entityType: true,
+        entityId: true,
+        action: true,
+        metadata: true,
+        createdAt: true,
+      },
     }),
     db.membership.findMany({
       where: { organizationId },
@@ -319,6 +342,24 @@ export async function getWorkspaceHome(ctx: TenantContext): Promise<WorkspaceHom
     db.company.count({ where: { organizationId } }),
     db.task.count({ where: { organizationId } }),
     db.invoice.count({ where: { organizationId } }),
+    db.timeLog.findMany({
+      where: {
+        organizationId,
+        userId: ctx.user.id,
+        loggedDate: { gte: weekStart, lte: weekEnd },
+      },
+      select: { hours: true, billable: true },
+    }),
+    db.timesheet.findUnique({
+      where: {
+        organizationId_userId_weekStartDate: {
+          organizationId,
+          userId: ctx.user.id,
+          weekStartDate: weekStart,
+        },
+      },
+      select: { status: true },
+    }),
   ]);
 
   const openPipelineTotals: Record<string, number> = {};
@@ -343,6 +384,83 @@ export async function getWorkspaceHome(ctx: TenantContext): Promise<WorkspaceHom
   }
 
   const actorMap = new Map(members.map((m) => [m.user.id, m.user.name]));
+
+  const projectIds = new Set<string>();
+  const taskIds = new Set<string>();
+  const dealIds = new Set<string>();
+  const invoiceIds = new Set<string>();
+  const companyIds = new Set<string>();
+  const contactIds = new Set<string>();
+
+  for (const log of auditLogs) {
+    if (!log.entityId) continue;
+    const et = log.entityType.toLowerCase();
+    if (et === "project" || log.action.startsWith("project.")) projectIds.add(log.entityId);
+    else if (et === "task" || log.action.startsWith("task.")) taskIds.add(log.entityId);
+    else if (et === "deal" || log.action.startsWith("deal.")) dealIds.add(log.entityId);
+    else if (et === "invoice" || log.action.startsWith("invoice.")) invoiceIds.add(log.entityId);
+    else if (et === "company" || log.action.startsWith("company.")) companyIds.add(log.entityId);
+    else if (et === "contact" || log.action.startsWith("contact.")) contactIds.add(log.entityId);
+  }
+
+  const [projectsRef, tasksRef, dealsRef, invoicesRef, companiesRef, contactsRef] =
+    await Promise.all([
+      projectIds.size > 0
+        ? db.project.findMany({
+            where: { organizationId, id: { in: [...projectIds] } },
+            select: { id: true, name: true },
+          })
+        : Promise.resolve([]),
+      taskIds.size > 0
+        ? db.task.findMany({
+            where: { organizationId, id: { in: [...taskIds] } },
+            select: { id: true, title: true },
+          })
+        : Promise.resolve([]),
+      dealIds.size > 0
+        ? db.deal.findMany({
+            where: { organizationId, id: { in: [...dealIds] } },
+            select: { id: true, title: true },
+          })
+        : Promise.resolve([]),
+      invoiceIds.size > 0
+        ? db.invoice.findMany({
+            where: { organizationId, id: { in: [...invoiceIds] } },
+            select: { id: true, number: true },
+          })
+        : Promise.resolve([]),
+      companyIds.size > 0
+        ? db.company.findMany({
+            where: { organizationId, id: { in: [...companyIds] } },
+            select: { id: true, name: true },
+          })
+        : Promise.resolve([]),
+      contactIds.size > 0
+        ? db.contact.findMany({
+            where: { organizationId, id: { in: [...contactIds] } },
+            select: { id: true, firstName: true, lastName: true },
+          })
+        : Promise.resolve([]),
+    ]);
+
+  const projectMap = new Map(projectsRef.map((p) => [p.id, p.name]));
+  const taskMap = new Map(tasksRef.map((t) => [t.id, t.title]));
+  const dealMap = new Map(dealsRef.map((d) => [d.id, d.title]));
+  const invoiceMap = new Map(invoicesRef.map((i) => [i.id, i.number]));
+  const companyMap = new Map(companiesRef.map((c) => [c.id, c.name]));
+  const contactMap = new Map(
+    contactsRef.map((c) => [c.id, `${c.firstName} ${c.lastName}`.trim()]),
+  );
+
+  let weeklyTotalHours = 0;
+  let weeklyBillableHours = 0;
+  for (const log of weeklyTimeLogs) {
+    const h = Number(log.hours);
+    weeklyTotalHours += h;
+    if (log.billable) weeklyBillableHours += h;
+  }
+  weeklyTotalHours = Math.round(weeklyTotalHours * 100) / 100;
+  weeklyBillableHours = Math.round(weeklyBillableHours * 100) / 100;
 
   return {
     todayIso,
@@ -390,14 +508,77 @@ export async function getWorkspaceHome(ctx: TenantContext): Promise<WorkspaceHom
     })),
     recentActivity: auditLogs.map((log) => {
       const info = formatAuditActionLabel(log.action, log.entityType);
+      const meta =
+        log.metadata && typeof log.metadata === "object"
+          ? (log.metadata as Record<string, unknown>)
+          : null;
+      const metaStr = (keys: string[]): string | null => {
+        if (!meta) return null;
+        for (const k of keys) {
+          const val = meta[k];
+          if (typeof val === "string" && val.trim()) return val.trim();
+        }
+        return null;
+      };
+
+      const et = log.entityType.toLowerCase();
+      let entityName: string | null = null;
+      let href: string | null = null;
+
+      if (et === "project" || log.action.startsWith("project.")) {
+        entityName =
+          projectMap.get(log.entityId) ?? metaStr(["projectName", "name", "title"]);
+        href = projectMap.has(log.entityId)
+          ? `/${orgSlug}/projects/${log.entityId}`
+          : `/${orgSlug}/projects`;
+      } else if (et === "task" || log.action.startsWith("task.")) {
+        entityName = taskMap.get(log.entityId) ?? metaStr(["title", "name"]);
+        href = taskMap.has(log.entityId)
+          ? `/${orgSlug}/projects/tasks?taskId=${log.entityId}`
+          : `/${orgSlug}/projects/tasks`;
+      } else if (et === "deal" || log.action.startsWith("deal.")) {
+        entityName = dealMap.get(log.entityId) ?? metaStr(["dealTitle", "title", "name"]);
+        href = `/${orgSlug}/crm/deals`;
+      } else if (et === "invoice" || log.action.startsWith("invoice.")) {
+        entityName =
+          invoiceMap.get(log.entityId) ?? metaStr(["invoiceNumber", "number", "title"]);
+        href = invoiceMap.has(log.entityId)
+          ? `/${orgSlug}/finance/invoices?highlight=${log.entityId}`
+          : `/${orgSlug}/finance/invoices`;
+      } else if (et === "company" || log.action.startsWith("company.")) {
+        entityName = companyMap.get(log.entityId) ?? metaStr(["name", "companyName"]);
+        href = `/${orgSlug}/crm/companies`;
+      } else if (et === "contact" || log.action.startsWith("contact.")) {
+        entityName = contactMap.get(log.entityId) ?? metaStr(["name", "email"]);
+        href = `/${orgSlug}/crm/contacts`;
+      } else if (
+        et === "organization" ||
+        et === "membership" ||
+        et === "invitation" ||
+        et === "workspace" ||
+        log.action.startsWith("org.")
+      ) {
+        entityName = metaStr(["email", "name"]) ?? ctx.organization.name;
+        href = `/${orgSlug}/projects/users`;
+      }
+
       return {
         id: log.id,
         app: info.app,
         action: info.label,
+        entityName,
+        href,
         actorName: log.actorId ? (actorMap.get(log.actorId) ?? "Team Member") : "System",
         createdAt: log.createdAt.toISOString(),
       };
     }),
+    thisWeekTime: {
+      weekStartIso: toIsoDate(weekStart),
+      weekEndIso: toIsoDate(weekEnd),
+      totalHours: weeklyTotalHours,
+      billableHours: weeklyBillableHours,
+      status: weeklyTimesheet?.status ?? TimesheetStatus.DRAFT,
+    },
     onboarding: {
       hasClientOrDeal: companyCount > 0 || recentFlowsRaw.length > 0,
       hasWonDeal: wonDealCount > 0,

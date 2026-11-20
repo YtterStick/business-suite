@@ -696,7 +696,7 @@ export function SuiteBottomBar({
                 aria-label="Client Live Chat"
                 onClick={() => setActivePanel(activePanel === "live-chat" ? null : "live-chat")}
                 className={cn(
-                  "inline-flex shrink-0 items-center gap-1 rounded px-2 py-1 font-medium whitespace-nowrap transition hover:bg-accent hover:text-foreground",
+                  "inline-flex shrink-0 items-center gap-1.5 rounded px-2 py-1 font-medium whitespace-nowrap transition hover:bg-accent hover:text-foreground",
                   activePanel === "live-chat" && "bg-accent text-foreground",
                 )}
               >

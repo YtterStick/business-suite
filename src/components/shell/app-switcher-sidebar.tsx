@@ -603,38 +603,62 @@ export function AppSwitcherSidebar({
                     )}
 
                     {showQuickAdd &&
-                      (item.id === "users" ? (
-                        <button
-                          type="button"
-                          title="Invite Users"
-                          aria-label="Quick invite users"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            if (!canInvite) {
-                              toast.error("Admin or Owner role required to invite users.");
-                              return;
-                            }
-                            setInviteOpen(true);
-                          }}
-                          className="flex size-5 items-center justify-center rounded-md text-muted-foreground opacity-0 transition hover:bg-background hover:text-foreground group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100"
-                        >
-                          <Plus className="size-3.5" />
-                        </button>
-                      ) : (
-                        <Link
-                          href={getModuleHref(orgSlug, item.quickAddPath!)}
-                          title={`New ${item.label.replace(/s$/, "")}`}
-                          aria-label={`Quick add ${item.label}`}
-                          onClick={() => {
-                            window.dispatchEvent(new CustomEvent("bs-quick-add", { detail: item.id }));
-                            onNavigate?.();
-                          }}
-                          className="flex size-5 items-center justify-center rounded-md text-muted-foreground opacity-0 transition hover:bg-background hover:text-foreground group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100"
-                        >
-                          <Plus className="size-3.5" />
-                        </Link>
-                      ))}
+                      (() => {
+                        const QUICK_ADD_LABELS: Record<string, string> = {
+                          "crm-pipeline": "New Deal",
+                          "active-projects": "New Project",
+                          projects: "New Project",
+                          tasks: "New Task",
+                          issues: "New Issue",
+                          milestones: "New Phase",
+                          "time-logs": "New Time Log",
+                          users: "Invite Users",
+                        };
+                        const quickAddLabel =
+                          QUICK_ADD_LABELS[item.id] ?? `New ${item.label.replace(/s$/, "")}`;
+                        return item.id === "users" ? (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button
+                                type="button"
+                                aria-label={quickAddLabel}
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  if (!canInvite) {
+                                    toast.error("Admin or Owner role required to invite users.");
+                                    return;
+                                  }
+                                  setInviteOpen(true);
+                                }}
+                                className="flex size-5 items-center justify-center rounded-md text-muted-foreground opacity-0 transition hover:bg-background hover:text-foreground group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100"
+                              >
+                                <Plus className="size-3.5" />
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent side="right">{quickAddLabel}</TooltipContent>
+                          </Tooltip>
+                        ) : (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Link
+                                href={getModuleHref(orgSlug, item.quickAddPath!)}
+                                aria-label={quickAddLabel}
+                                onClick={() => {
+                                  window.dispatchEvent(
+                                    new CustomEvent("bs-quick-add", { detail: item.id }),
+                                  );
+                                  onNavigate?.();
+                                }}
+                                className="flex size-5 items-center justify-center rounded-md text-muted-foreground opacity-0 transition hover:bg-background hover:text-foreground group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100"
+                              >
+                                <Plus className="size-3.5" />
+                              </Link>
+                            </TooltipTrigger>
+                            <TooltipContent side="right">{quickAddLabel}</TooltipContent>
+                          </Tooltip>
+                        );
+                      })()}
                   </div>
                 </div>
               );
