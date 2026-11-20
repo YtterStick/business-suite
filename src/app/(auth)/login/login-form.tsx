@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ArrowRight, KeyRound, LogOut } from "lucide-react";
+import { KeyRound } from "lucide-react";
 import Link from "next/link";
 
 import { loginAction } from "@/app/(auth)/login/actions";
@@ -25,9 +25,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PasswordInput } from "@/components/ui/password-input";
-import type { MarketingViewer } from "@/server/marketing";
 
-export function LoginForm({ viewer }: { viewer: MarketingViewer | null }) {
+export function LoginForm() {
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [error, setError] = React.useState<string | null>(null);
@@ -73,35 +72,6 @@ export function LoginForm({ viewer }: { viewer: MarketingViewer | null }) {
           label={googleLoading ? "Connecting to Google..." : "Signing you in to Tactiq..."}
           sublabel="Preparing your CRM, Finance & Projects dashboard"
         />
-      )}
-
-      {viewer && (
-        <Card className="mb-4 border-primary/30 bg-primary/[0.04] shadow-sm">
-          <CardContent className="space-y-3 p-4">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wider text-primary">
-                Already signed in
-              </p>
-              <p className="mt-1 text-sm font-medium text-foreground">
-                Signed in as <span className="font-semibold">{viewer.name}</span>
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Button asChild size="sm" className="gap-1.5">
-                <Link href={viewer.workspaceHref}>
-                  Continue to {viewer.workspaceName ?? "Workspace"}
-                  <ArrowRight className="size-3.5" />
-                </Link>
-              </Button>
-              <form action="/api/auth/logout" method="post">
-                <Button type="submit" size="sm" variant="outline" className="gap-1.5">
-                  <LogOut className="size-3.5" />
-                  Switch Account
-                </Button>
-              </form>
-            </div>
-          </CardContent>
-        </Card>
       )}
 
       <Card className="border-border/80 bg-card/95 shadow-sm">

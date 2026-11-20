@@ -114,7 +114,7 @@ export async function signupAction(
       ipAddress: reqHeaders.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
     });
 
-    const redirectTo = `/${created.orgSlug}/projects`;
+    const redirectTo = `/${created.orgSlug}/home`;
     redirect(redirectTo);
   });
 }
