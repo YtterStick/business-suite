@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PasswordInput } from "@/components/ui/password-input";
 import { ROLE_LABEL } from "@/lib/rbac";
 
 interface InviteAcceptanceCardProps {
@@ -36,6 +37,7 @@ export function InviteAcceptanceCard({
 }: InviteAcceptanceCardProps) {
   const [name, setName] = React.useState("");
   const [password, setPassword] = React.useState("");
+  const [confirmPassword, setConfirmPassword] = React.useState("");
   const [error, setError] = React.useState<string | null>(null);
   const [googleLoading, setGoogleLoading] = React.useState(false);
   const [isPending, startTransition] = React.useTransition();
@@ -55,6 +57,10 @@ export function InviteAcceptanceCard({
   const handleRegisterAndAccept = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError(null);
+    if (password !== confirmPassword) {
+      setError("Passwords do not match.");
+      return;
+    }
     startTransition(async () => {
       const res = await registerAndAcceptInviteAction({ token, name, password });
       if (!res.ok) setError(res.error.message);
@@ -118,13 +124,25 @@ export function InviteAcceptanceCard({
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="invite-password">Create password</Label>
-                  <Input
+                  <PasswordInput
                     id="invite-password"
-                    type="password"
+                    autoComplete="new-password"
                     minLength={8}
-                    placeholder="At least 8 characters"
+                    placeholder="Enter password (at least 8 characters)"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="invite-confirm-password">Confirm password</Label>
+                  <PasswordInput
+                    id="invite-confirm-password"
+                    autoComplete="new-password"
+                    minLength={8}
+                    placeholder="Confirm your password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
                     required
                   />
                 </div>

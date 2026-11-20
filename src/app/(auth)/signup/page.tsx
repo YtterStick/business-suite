@@ -15,11 +15,13 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PasswordInput } from "@/components/ui/password-input";
 
 export default function SignupPage() {
   const [name, setName] = React.useState("");
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
+  const [confirmPassword, setConfirmPassword] = React.useState("");
   const [organizationName, setOrganizationName] = React.useState("");
   const [defaultCurrency, setDefaultCurrency] = React.useState<
     "PHP" | "USD" | "EUR" | "GBP" | "SGD"
@@ -36,11 +38,17 @@ export default function SignupPage() {
     event.preventDefault();
     setError(null);
 
+    if (password !== confirmPassword) {
+      setError("Passwords do not match.");
+      return;
+    }
+
     startTransition(async () => {
       const res = await signupAction({
         name,
         email,
         password,
+        confirmPassword,
         organizationName,
         defaultCurrency,
       });
@@ -134,13 +142,25 @@ export default function SignupPage() {
 
             <div className="space-y-2">
               <Label htmlFor="signup-password">Password</Label>
-              <Input
+              <PasswordInput
                 id="signup-password"
-                type="password"
                 autoComplete="new-password"
-                placeholder="At least 8 characters"
+                placeholder="Enter password (at least 8 characters)"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                required
+                minLength={8}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="signup-confirm-password">Confirm password</Label>
+              <PasswordInput
+                id="signup-confirm-password"
+                autoComplete="new-password"
+                placeholder="Confirm your password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
                 required
                 minLength={8}
               />

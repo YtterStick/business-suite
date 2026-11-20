@@ -14,17 +14,23 @@ import { hashPassword } from "@/server/auth/password";
 import { createSession } from "@/server/auth/session";
 import { RESERVED_ORG_SLUGS } from "@/server/tenancy";
 
-const signupSchema = z.object({
-  name: z.string().trim().min(2, "Full name must be at least 2 characters.").max(100),
-  email: z.string().trim().email("Please enter a valid email address.").toLowerCase(),
-  password: z.string().min(8, "Password must be at least 8 characters.").max(128),
-  organizationName: z
-    .string()
-    .trim()
-    .min(2, "Workspace name must be at least 2 characters.")
-    .max(100),
-  defaultCurrency: z.enum(["PHP", "USD", "EUR", "GBP", "SGD"]).default("USD"),
-});
+const signupSchema = z
+  .object({
+    name: z.string().trim().min(2, "Full name must be at least 2 characters.").max(100),
+    email: z.string().trim().email("Please enter a valid email address.").toLowerCase(),
+    password: z.string().min(8, "Password must be at least 8 characters.").max(128),
+    confirmPassword: z.string().optional(),
+    organizationName: z
+      .string()
+      .trim()
+      .min(2, "Workspace name must be at least 2 characters.")
+      .max(100),
+    defaultCurrency: z.enum(["PHP", "USD", "EUR", "GBP", "SGD"]).default("USD"),
+  })
+  .refine((data) => data.confirmPassword === undefined || data.password === data.confirmPassword, {
+    message: "Passwords do not match.",
+    path: ["confirmPassword"],
+  });
 
 function toSlug(name: string): string {
   const base = name
