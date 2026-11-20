@@ -167,7 +167,10 @@ export function AppSwitcherSidebar({
 }: AppSwitcherSidebarProps) {
   const pathname = usePathname();
   const activeModule = resolveActiveModule(pathname, orgSlug);
-  const isOnHome = pathname === `/${orgSlug}/home` || pathname.startsWith(`/${orgSlug}/home/`);
+  const isOnHome =
+    pathname === `/${orgSlug}/home` ||
+    pathname.startsWith(`/${orgSlug}/home/`) ||
+    pathname === `/${orgSlug}/projects/home`;
   const [inviteOpen, setInviteOpen] = React.useState(false);
   const [overviewOpen, setOverviewOpen] = React.useState(true);
   const [recentProjectsOpen, setRecentProjectsOpen] = React.useState(true);
@@ -409,7 +412,7 @@ export function AppSwitcherSidebar({
                     className={cn(
                       "group relative flex size-11 flex-col items-center justify-center rounded-xl transition-all",
                       isOnHome
-                        ? "bg-white/15 text-white shadow-sm"
+                        ? "bg-indigo-600 text-white shadow-sm"
                         : "text-zinc-400 hover:bg-zinc-800/80 hover:text-zinc-100",
                     )}
                   >
@@ -775,8 +778,7 @@ export function AppSwitcherSidebar({
                   </div>
                 )}
 
-                {!isOnHome &&
-                  activeModule.id === "projects" &&
+                {(isOnHome || activeModule.id === "projects") &&
                   orderedRecentProjects.length > 0 && (
                   <div className="mt-4 space-y-1">
                     <div className="flex items-center justify-between gap-1 px-1.5">
@@ -795,9 +797,16 @@ export function AppSwitcherSidebar({
                       </button>
                     </div>
                     {recentProjectsOpen &&
-                      orderedRecentProjects.map((proj) => {
+                      orderedRecentProjects.map((proj, idx) => {
                         const projHref = `/${orgSlug}/projects/${proj.id}`;
                         const isProjActive = pathname === projHref;
+                        const dotColors = [
+                          "bg-violet-500",
+                          "bg-sky-500",
+                          "bg-emerald-500",
+                          "bg-amber-500",
+                          "bg-rose-500",
+                        ];
                         return (
                           <div
                             key={proj.id}
@@ -813,7 +822,12 @@ export function AppSwitcherSidebar({
                               onClick={onNavigate}
                               className="flex min-w-0 flex-1 items-center gap-2 px-2.5 py-1.5 text-xs font-medium"
                             >
-                              <span className="size-1.5 shrink-0 rounded-full bg-violet-500" />
+                              <span
+                                className={cn(
+                                  "size-1.5 shrink-0 rounded-full",
+                                  dotColors[idx % dotColors.length],
+                                )}
+                              />
                               <span className="truncate">{proj.name}</span>
                             </Link>
                             <DropdownMenu>

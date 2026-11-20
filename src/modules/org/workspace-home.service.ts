@@ -14,6 +14,7 @@ import {
 import { addDays, startOfUtcDay, toIsoDate } from "@/lib/dates";
 import { db } from "@/lib/db";
 import { addToTotals } from "@/lib/format";
+import { can, ROLE_LABEL } from "@/lib/rbac";
 import { authorize, type TenantContext } from "@/server/tenancy";
 
 export interface WorkspaceHomeDTO {
@@ -29,6 +30,11 @@ export interface WorkspaceHomeDTO {
   unpaidReceivablesCount: number;
   unpaidReceivablesTotals: Record<string, number>;
   overdueReceivablesTotals: Record<string, number>;
+  workPulse: {
+    tasks: { open: number; closed: number };
+    issues: { open: number; closed: number };
+    phases: { open: number; closed: number };
+  };
   myTasks: Array<{
     id: string;
     title: string;
@@ -43,6 +49,15 @@ export interface WorkspaceHomeDTO {
     title: string;
     severity: string;
     status: IssueStatus;
+    dueDate: string | null;
+    projectId: string;
+    projectName: string;
+  }>;
+  myPhases: Array<{
+    id: string;
+    name: string;
+    status: MilestoneStatus;
+    dueDate: string | null;
     projectId: string;
     projectName: string;
   }>;
@@ -75,7 +90,33 @@ export interface WorkspaceHomeDTO {
     totalHours: number;
     billableHours: number;
     status: TimesheetStatus;
+    recentLogs: Array<{
+      id: string;
+      projectName: string;
+      taskTitle: string | null;
+      hours: number;
+      billable: boolean;
+      loggedDate: string;
+      notes: string | null;
+    }>;
   };
+  teamWorkload: Array<{
+    userId: string;
+    name: string;
+    role: string;
+    openTasks: number;
+    overdueTasks: number;
+    openIssues: number;
+    highIssues: number;
+  }>;
+  upcomingSchedule: Array<{
+    id: string;
+    kind: "Phase" | "Invoice" | "Deal";
+    title: string;
+    subtitle: string;
+    dueDate: string;
+    href: string;
+  }>;
   onboarding: {
     hasClientOrDeal: boolean;
     hasWonDeal: boolean;
@@ -212,6 +253,7 @@ export async function getWorkspaceHome(ctx: TenantContext): Promise<WorkspaceHom
   const dow = today.getUTCDay();
   const weekStart = addDays(today, dow === 0 ? -6 : 1 - dow);
   const weekEnd = addDays(weekStart, 6);
+  const canManageTeam = can(ctx, "projects.project.manage");
 
   const [
     openDeals,
@@ -223,6 +265,13 @@ export async function getWorkspaceHome(ctx: TenantContext): Promise<WorkspaceHom
     unpaidInvoices,
     myTasksRaw,
     myIssuesRaw,
+    myPhasesRaw,
+    openTasksCount,
+    closedTasksCount,
+    openIssuesCount,
+    closedIssuesCount,
+    openPhasesCount,
+    closedPhasesCount,
     recentFlowsRaw,
     auditLogs,
     members,
@@ -231,6 +280,11 @@ export async function getWorkspaceHome(ctx: TenantContext): Promise<WorkspaceHom
     totalInvoiceCount,
     weeklyTimeLogs,
     weeklyTimesheet,
+    recentTimeLogsRaw,
+    teamTasksRaw,
+    teamIssuesRaw,
+    upcomingScheduleInvoices,
+    upcomingScheduleDeals,
   ] = await Promise.all([
     db.deal.findMany({
       where: { organizationId, status: DealStatus.OPEN },
@@ -271,7 +325,7 @@ export async function getWorkspaceHome(ctx: TenantContext): Promise<WorkspaceHom
         OR: [{ assigneeId: ctx.user.id }, { assigneeId: null }],
       },
       orderBy: [{ dueDate: "asc" }, { priority: "desc" }, { createdAt: "desc" }],
-      take: 12,
+      take: 25,
       select: {
         id: true,
         title: true,
@@ -288,14 +342,65 @@ export async function getWorkspaceHome(ctx: TenantContext): Promise<WorkspaceHom
         project: { isArchived: false },
         OR: [{ assigneeId: ctx.user.id }, { assigneeId: null }],
       },
-      orderBy: [{ createdAt: "desc" }],
-      take: 4,
+      orderBy: [{ dueDate: "asc" }, { createdAt: "desc" }],
+      take: 15,
       select: {
         id: true,
         title: true,
         severity: true,
         status: true,
+        dueDate: true,
         project: { select: { id: true, name: true } },
+      },
+    }),
+    db.milestone.findMany({
+      where: {
+        organizationId,
+        status: { not: MilestoneStatus.COMPLETED },
+        project: { isArchived: false },
+      },
+      orderBy: [{ dueDate: "asc" }, { position: "asc" }],
+      take: 15,
+      select: {
+        id: true,
+        name: true,
+        status: true,
+        dueDate: true,
+        project: { select: { id: true, name: true } },
+      },
+    }),
+    db.task.count({
+      where: { organizationId, status: { not: TaskStatus.DONE }, project: { isArchived: false } },
+    }),
+    db.task.count({
+      where: { organizationId, status: TaskStatus.DONE, project: { isArchived: false } },
+    }),
+    db.issue.count({
+      where: {
+        organizationId,
+        status: { in: [IssueStatus.OPEN, IssueStatus.IN_PROGRESS] },
+        project: { isArchived: false },
+      },
+    }),
+    db.issue.count({
+      where: {
+        organizationId,
+        status: { in: [IssueStatus.RESOLVED, IssueStatus.CLOSED] },
+        project: { isArchived: false },
+      },
+    }),
+    db.milestone.count({
+      where: {
+        organizationId,
+        status: { not: MilestoneStatus.COMPLETED },
+        project: { isArchived: false },
+      },
+    }),
+    db.milestone.count({
+      where: {
+        organizationId,
+        status: MilestoneStatus.COMPLETED,
+        project: { isArchived: false },
       },
     }),
     db.deal.findMany({
@@ -336,8 +441,8 @@ export async function getWorkspaceHome(ctx: TenantContext): Promise<WorkspaceHom
       },
     }),
     db.membership.findMany({
-      where: { organizationId },
-      select: { user: { select: { id: true, name: true } } },
+      where: { organizationId, isActive: true },
+      select: { role: true, user: { select: { id: true, name: true } } },
     }),
     db.company.count({ where: { organizationId } }),
     db.task.count({ where: { organizationId } }),
@@ -359,6 +464,72 @@ export async function getWorkspaceHome(ctx: TenantContext): Promise<WorkspaceHom
         },
       },
       select: { status: true },
+    }),
+    db.timeLog.findMany({
+      where: { organizationId, userId: ctx.user.id },
+      orderBy: [{ loggedDate: "desc" }, { createdAt: "desc" }],
+      take: 5,
+      select: {
+        id: true,
+        hours: true,
+        billable: true,
+        loggedDate: true,
+        notes: true,
+        project: { select: { name: true } },
+        task: { select: { title: true } },
+      },
+    }),
+    canManageTeam
+      ? db.task.findMany({
+          where: {
+            organizationId,
+            status: { not: TaskStatus.DONE },
+            project: { isArchived: false },
+            assigneeId: { not: null },
+          },
+          select: { assigneeId: true, dueDate: true },
+        })
+      : Promise.resolve([]),
+    canManageTeam
+      ? db.issue.findMany({
+          where: {
+            organizationId,
+            status: { in: [IssueStatus.OPEN, IssueStatus.IN_PROGRESS] },
+            project: { isArchived: false },
+            assigneeId: { not: null },
+          },
+          select: { assigneeId: true, severity: true },
+        })
+      : Promise.resolve([]),
+    db.invoice.findMany({
+      where: {
+        organizationId,
+        status: { in: [InvoiceStatus.SENT, InvoiceStatus.PARTIALLY_PAID, InvoiceStatus.OVERDUE] },
+        dueDate: { gte: today, lte: milestoneCutoff },
+      },
+      orderBy: { dueDate: "asc" },
+      take: 6,
+      select: {
+        id: true,
+        number: true,
+        dueDate: true,
+        company: { select: { name: true } },
+      },
+    }),
+    db.deal.findMany({
+      where: {
+        organizationId,
+        status: DealStatus.OPEN,
+        expectedCloseDate: { gte: today, lte: milestoneCutoff },
+      },
+      orderBy: { expectedCloseDate: "asc" },
+      take: 6,
+      select: {
+        id: true,
+        title: true,
+        expectedCloseDate: true,
+        company: { select: { name: true } },
+      },
     }),
   ]);
 
@@ -462,6 +633,80 @@ export async function getWorkspaceHome(ctx: TenantContext): Promise<WorkspaceHom
   weeklyTotalHours = Math.round(weeklyTotalHours * 100) / 100;
   weeklyBillableHours = Math.round(weeklyBillableHours * 100) / 100;
 
+  const workloadMap = new Map(
+    members.map((m) => [
+      m.user.id,
+      {
+        userId: m.user.id,
+        name: m.user.name,
+        role: ROLE_LABEL[m.role],
+        openTasks: 0,
+        overdueTasks: 0,
+        openIssues: 0,
+        highIssues: 0,
+      },
+    ]),
+  );
+  for (const t of teamTasksRaw) {
+    if (!t.assigneeId) continue;
+    const entry = workloadMap.get(t.assigneeId);
+    if (!entry) continue;
+    entry.openTasks += 1;
+    if (t.dueDate && toIsoDate(t.dueDate) < todayIso) {
+      entry.overdueTasks += 1;
+    }
+  }
+  for (const i of teamIssuesRaw) {
+    if (!i.assigneeId) continue;
+    const entry = workloadMap.get(i.assigneeId);
+    if (!entry) continue;
+    entry.openIssues += 1;
+    if (i.severity === "HIGH" || i.severity === "CRITICAL") {
+      entry.highIssues += 1;
+    }
+  }
+  const teamWorkload = [...workloadMap.values()].sort(
+    (a, b) => b.openTasks + b.openIssues - (a.openTasks + a.openIssues),
+  );
+
+  const upcomingCutoffIso = toIsoDate(milestoneCutoff);
+  const upcomingSchedule: WorkspaceHomeDTO["upcomingSchedule"] = [
+    ...myPhasesRaw
+      .filter((p) => {
+        if (!p.dueDate) return false;
+        const iso = toIsoDate(p.dueDate);
+        return iso >= todayIso && iso <= upcomingCutoffIso;
+      })
+      .map((p) => ({
+        id: `phase-${p.id}`,
+        kind: "Phase" as const,
+        title: p.name,
+        subtitle: p.project.name,
+        dueDate: toIsoDate(p.dueDate!),
+        href: `/${orgSlug}/projects/${p.project.id}`,
+      })),
+    ...upcomingScheduleInvoices.map((inv) => ({
+      id: `inv-${inv.id}`,
+      kind: "Invoice" as const,
+      title: inv.number,
+      subtitle: inv.company?.name ?? "Invoice due",
+      dueDate: toIsoDate(inv.dueDate),
+      href: `/${orgSlug}/finance/invoices?highlight=${inv.id}`,
+    })),
+    ...upcomingScheduleDeals
+      .filter((d) => d.expectedCloseDate !== null)
+      .map((d) => ({
+        id: `deal-${d.id}`,
+        kind: "Deal" as const,
+        title: d.title,
+        subtitle: d.company?.name ?? "Expected close",
+        dueDate: toIsoDate(d.expectedCloseDate!),
+        href: `/${orgSlug}/crm/deals`,
+      })),
+  ]
+    .sort((a, b) => a.dueDate.localeCompare(b.dueDate))
+    .slice(0, 10);
+
   return {
     todayIso,
     defaultCurrency: ctx.organization.defaultCurrency,
@@ -475,6 +720,11 @@ export async function getWorkspaceHome(ctx: TenantContext): Promise<WorkspaceHom
     unpaidReceivablesCount,
     unpaidReceivablesTotals,
     overdueReceivablesTotals,
+    workPulse: {
+      tasks: { open: openTasksCount, closed: closedTasksCount },
+      issues: { open: openIssuesCount, closed: closedIssuesCount },
+      phases: { open: openPhasesCount, closed: closedPhasesCount },
+    },
     myTasks: myTasksRaw.map((t) => ({
       id: t.id,
       title: t.title,
@@ -489,8 +739,17 @@ export async function getWorkspaceHome(ctx: TenantContext): Promise<WorkspaceHom
       title: i.title,
       severity: i.severity,
       status: i.status,
+      dueDate: i.dueDate ? toIsoDate(i.dueDate) : null,
       projectId: i.project.id,
       projectName: i.project.name,
+    })),
+    myPhases: myPhasesRaw.map((m) => ({
+      id: m.id,
+      name: m.name,
+      status: m.status,
+      dueDate: m.dueDate ? toIsoDate(m.dueDate) : null,
+      projectId: m.project.id,
+      projectName: m.project.name,
     })),
     connectedFlows: recentFlowsRaw.map((d) => ({
       dealId: d.id,
@@ -578,7 +837,18 @@ export async function getWorkspaceHome(ctx: TenantContext): Promise<WorkspaceHom
       totalHours: weeklyTotalHours,
       billableHours: weeklyBillableHours,
       status: weeklyTimesheet?.status ?? TimesheetStatus.DRAFT,
+      recentLogs: recentTimeLogsRaw.map((l) => ({
+        id: l.id,
+        projectName: l.project.name,
+        taskTitle: l.task?.title ?? null,
+        hours: Number(l.hours),
+        billable: l.billable,
+        loggedDate: toIsoDate(l.loggedDate),
+        notes: l.notes ?? null,
+      })),
     },
+    teamWorkload,
+    upcomingSchedule,
     onboarding: {
       hasClientOrDeal: companyCount > 0 || recentFlowsRaw.length > 0,
       hasWonDeal: wonDealCount > 0,

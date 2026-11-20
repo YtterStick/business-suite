@@ -173,6 +173,106 @@ export function DashboardWidgetsSkeleton() {
   );
 }
 
+export function WorkspaceHomeSkeleton() {
+  return (
+    <div className="space-y-6 p-4 lg:p-6" aria-busy="true" aria-label="Loading workspace home">
+      {/* Greeting Bar */}
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="space-y-2">
+          <Skeleton className="h-7 w-72 max-w-full" />
+          <Skeleton className="h-4 w-96 max-w-full" />
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Skeleton className="h-8 w-24 rounded-md" />
+          <Skeleton className="h-8 w-26 rounded-md" />
+          <Skeleton className="h-8 w-28 rounded-md" />
+          <Skeleton className="h-8 w-32 rounded-md" />
+        </div>
+      </div>
+
+      {/* 4 Executive KPI Cards */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div
+            key={i}
+            className="space-y-3 rounded-xl border bg-card p-5 dark:border-zinc-800 dark:bg-zinc-900/70"
+          >
+            <div className="flex items-center justify-between">
+              <Skeleton className="h-3.5 w-28" />
+              <Skeleton className="size-4 rounded" />
+            </div>
+            <Skeleton className="h-7 w-24" />
+            <div className="flex items-center justify-between pt-1">
+              <Skeleton className="h-3 w-28" />
+              <Skeleton className="h-3 w-16" />
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Work Status Mini-Strip */}
+      <div className="grid gap-3 sm:grid-cols-3">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <div
+            key={i}
+            className="flex items-center justify-between rounded-xl border bg-card px-4 py-2.5 dark:border-zinc-800 dark:bg-zinc-900/70"
+          >
+            <Skeleton className="h-4 w-24" />
+            <Skeleton className="h-4 w-28" />
+          </div>
+        ))}
+      </div>
+
+      {/* 2-Column Body */}
+      <div className="grid gap-6 lg:grid-cols-[1.35fr_1fr]">
+        <div className="space-y-6">
+          <div className="space-y-3 rounded-xl border bg-card p-5 dark:border-zinc-800 dark:bg-zinc-900/70">
+            <div className="flex items-center justify-between">
+              <Skeleton className="h-5 w-36" />
+              <Skeleton className="h-4 w-16" />
+            </div>
+            <div className="flex gap-2">
+              {Array.from({ length: 5 }).map((_, t) => (
+                <Skeleton key={t} className="h-7 w-20 rounded-md" />
+              ))}
+            </div>
+            <div className="space-y-2 pt-1">
+              {Array.from({ length: 4 }).map((_, r) => (
+                <Skeleton key={r} className="h-12 w-full rounded-lg" />
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-3 rounded-xl border bg-card p-5 dark:border-zinc-800 dark:bg-zinc-900/70">
+            <div className="flex items-center justify-between">
+              <Skeleton className="h-5 w-44" />
+              <Skeleton className="h-4 w-20" />
+            </div>
+            <Skeleton className="h-20 w-full rounded-xl" />
+            <Skeleton className="h-20 w-full rounded-xl" />
+          </div>
+        </div>
+
+        <div className="space-y-6">
+          <div className="space-y-3 rounded-xl border bg-card p-5 dark:border-zinc-800 dark:bg-zinc-900/70">
+            <Skeleton className="h-5 w-40" />
+            {Array.from({ length: 5 }).map((_, r) => (
+              <Skeleton key={r} className="h-14 w-full rounded-lg" />
+            ))}
+          </div>
+
+          <div className="space-y-3 rounded-xl border bg-card p-5 dark:border-zinc-800 dark:bg-zinc-900/70">
+            <Skeleton className="h-5 w-32" />
+            {Array.from({ length: 3 }).map((_, r) => (
+              <Skeleton key={r} className="h-14 w-full rounded-lg" />
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function CollaborationSkeleton() {
   return (
     <div className="space-y-5 p-4 lg:p-6">

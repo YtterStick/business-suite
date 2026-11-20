@@ -545,7 +545,18 @@ export function SuiteBottomBar({
       }
     };
     window.addEventListener("bs-toggle-task-timer", onToggleTaskTimer);
-    return () => window.removeEventListener("bs-toggle-task-timer", onToggleTaskTimer);
+    const onOpenTimer = (event: Event) => {
+      const detail = (event as CustomEvent<{ start?: boolean }>).detail;
+      setActivePanel("timer");
+      if (detail?.start) {
+        setTimerRunning(true);
+      }
+    };
+    window.addEventListener("bs-open-timer", onOpenTimer);
+    return () => {
+      window.removeEventListener("bs-toggle-task-timer", onToggleTaskTimer);
+      window.removeEventListener("bs-open-timer", onOpenTimer);
+    };
   }, [timerRunning, timerTaskId]);
 
   React.useEffect(() => {
