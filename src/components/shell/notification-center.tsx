@@ -338,7 +338,7 @@ export function NotificationCenter({
         {settingsView ? (
           <div className="space-y-3 p-4">
             <p className="text-xs text-muted-foreground">
-              Choose which Zoho Projects workspace alerts appear in your Notification Center and digest emails.
+              Choose which Tactiq workspace alerts appear in your Notification Center and digest emails.
             </p>
             <div className="divide-y rounded-lg border dark:divide-zinc-800 dark:border-zinc-800">
               {(

@@ -727,7 +727,7 @@ export function MilestonesPanel({
           <SheetHeader>
             <SheetTitle>Create Project Phase</SheetTitle>
             <SheetDescription>
-              Define a Zoho-style project phase with schedule dates, ownership, visibility flag, and dependency link.
+              Define a project phase with schedule dates, ownership, visibility flag, and dependency link.
             </SheetDescription>
           </SheetHeader>
           <form onSubmit={handleCreateSubmit} className="mt-5 flex flex-col gap-4">

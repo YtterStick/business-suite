@@ -31,11 +31,9 @@ function OnboardingSubmitState() {
 
 export function OnboardingForm({
   userName,
-  suggestedName,
   error,
 }: {
   userName: string;
-  suggestedName: string;
   error?: string;
 }) {
   return (
@@ -60,8 +58,7 @@ export function OnboardingForm({
             <Input
               id="workspaceName"
               name="workspaceName"
-              defaultValue={suggestedName}
-              placeholder="e.g. Acme Studio"
+              placeholder="Your company or team name"
               required
               minLength={2}
               maxLength={60}

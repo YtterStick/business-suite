@@ -8,6 +8,7 @@ import {
   acceptExistingUserInviteAction,
   registerAndAcceptInviteAction,
 } from "@/app/(auth)/invite/[token]/actions";
+import { AuthDivider, GoogleAuthButton } from "@/components/brand/google-auth-button";
 import { TactiqLoader, TactiqMark, TactiqSpinner } from "@/components/brand/tactiq-logo";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -36,10 +37,12 @@ export function InviteAcceptanceCard({
   const [name, setName] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [error, setError] = React.useState<string | null>(null);
+  const [googleLoading, setGoogleLoading] = React.useState(false);
   const [isPending, startTransition] = React.useTransition();
 
   const emailMatchesSession =
     signedInEmail !== null && signedInEmail.toLowerCase() === invitedEmail.toLowerCase();
+  const isBusy = isPending || googleLoading;
 
   const handleAcceptExisting = () => {
     setError(null);
@@ -60,10 +63,10 @@ export function InviteAcceptanceCard({
 
   return (
     <>
-      {isPending && (
+      {isBusy && (
         <TactiqLoader
           overlay
-          label={`Opening ${organizationName}...`}
+          label={googleLoading ? "Connecting to Google..." : `Opening ${organizationName}...`}
           sublabel="Configuring your workspace access & projects"
         />
       )}
@@ -80,46 +83,63 @@ export function InviteAcceptanceCard({
         <CardContent className="space-y-4">
           {emailMatchesSession ? (
             <div className="space-y-3">
-              <Button onClick={handleAcceptExisting} className="w-full" disabled={isPending}>
+              <Button onClick={handleAcceptExisting} className="w-full" disabled={isBusy}>
                 {isPending && <TactiqSpinner className="size-4" />}
                 Accept &amp; Open {organizationName}
               </Button>
             </div>
           ) : (
-            <form onSubmit={handleRegisterAndAccept} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="invite-name">Full name</Label>
-                <Input
-                  id="invite-name"
-                  placeholder="Your name"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="invite-password">Create password</Label>
-                <Input
-                  id="invite-password"
-                  type="password"
-                  minLength={8}
-                  placeholder="At least 8 characters"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                />
-              </div>
-              <Button type="submit" className="w-full" disabled={isPending}>
-                {isPending && <TactiqSpinner className="size-4" />}
-                Create Account &amp; Join
-              </Button>
-              <p className="text-center text-xs text-muted-foreground">
-                Already have an account for {invitedEmail}?{" "}
-                <Link href="/login" className="font-medium text-primary hover:underline">
-                  Sign in first
-                </Link>
-              </p>
-            </form>
+            <div className="space-y-4">
+              {signedInEmail && (
+                <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-200">
+                  You are currently signed in as{" "}
+                  <span className="font-medium">{signedInEmail}</span>. This invitation is for{" "}
+                  <span className="font-medium">{invitedEmail}</span>.
+                </div>
+              )}
+
+              <GoogleAuthButton
+                mode="login"
+                label="Continue with Google to Join"
+                onLoadingChange={setGoogleLoading}
+              />
+              <AuthDivider label="or create a password" />
+
+              <form onSubmit={handleRegisterAndAccept} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="invite-name">Full name</Label>
+                  <Input
+                    id="invite-name"
+                    placeholder="Your name"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="invite-password">Create password</Label>
+                  <Input
+                    id="invite-password"
+                    type="password"
+                    minLength={8}
+                    placeholder="At least 8 characters"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                  />
+                </div>
+                <Button type="submit" className="w-full" disabled={isBusy}>
+                  {isPending && <TactiqSpinner className="size-4" />}
+                  Create Account &amp; Join
+                </Button>
+                <p className="text-center text-xs text-muted-foreground">
+                  Already have an account for {invitedEmail}?{" "}
+                  <Link href="/login" className="font-medium text-primary hover:underline">
+                    Sign in first
+                  </Link>
+                </p>
+              </form>
+            </div>
           )}
 
           {error && (

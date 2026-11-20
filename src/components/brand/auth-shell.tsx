@@ -93,12 +93,7 @@ export function AuthShell({ children }: { children: React.ReactNode }) {
 
       {/* Form panel */}
       <main className="relative flex flex-1 items-center justify-center p-6 sm:p-10">
-        <div className="tq-rise w-full max-w-md">
-          <div className="mb-8 flex justify-center lg:hidden">
-            <TactiqLogo animated markClassName="size-9" />
-          </div>
-          {children}
-        </div>
+        <div className="tq-rise w-full max-w-md">{children}</div>
       </main>
     </div>
   );

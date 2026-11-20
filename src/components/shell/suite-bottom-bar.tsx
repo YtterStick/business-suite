@@ -281,13 +281,21 @@ export function SuiteBottomBar({
 
   // My Pins (persisted in localStorage per org)
   const defaultPins = React.useMemo<PinnedRoute[]>(
-    () => [
-      { label: "CRM Deal Pipeline", href: `/${orgSlug}/crm/deals` },
-      { label: "Finance Invoices", href: `/${orgSlug}/finance/invoices` },
-      { label: "Projects", href: `/${orgSlug}/projects` },
-      { label: "Weekly Timesheets", href: `/${orgSlug}/projects/timesheets` },
-    ],
-    [orgSlug],
+    () =>
+      canViewContacts
+        ? [
+            { label: "CRM Deal Pipeline", href: `/${orgSlug}/crm/deals` },
+            { label: "Finance Invoices", href: `/${orgSlug}/finance/invoices` },
+            { label: "Projects", href: `/${orgSlug}/projects` },
+            { label: "Weekly Timesheets", href: `/${orgSlug}/projects/timesheets` },
+          ]
+        : [
+            { label: "Projects", href: `/${orgSlug}/projects` },
+            { label: "Task Board", href: `/${orgSlug}/projects/tasks` },
+            { label: "Issues & Bugs", href: `/${orgSlug}/projects/issues` },
+            { label: "Collaboration", href: `/${orgSlug}/projects/collaboration` },
+          ],
+    [orgSlug, canViewContacts],
   );
   const [pins, setPins] = React.useState<PinnedRoute[]>(defaultPins);
 

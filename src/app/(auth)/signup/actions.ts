@@ -21,9 +21,9 @@ const signupSchema = z.object({
   organizationName: z
     .string()
     .trim()
-    .min(2, "Organization name must be at least 2 characters.")
+    .min(2, "Workspace name must be at least 2 characters.")
     .max(100),
-  defaultCurrency: z.enum(["PHP", "USD"]).default("PHP"),
+  defaultCurrency: z.enum(["PHP", "USD", "EUR", "GBP", "SGD"]).default("USD"),
 });
 
 function toSlug(name: string): string {

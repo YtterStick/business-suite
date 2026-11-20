@@ -1,11 +1,11 @@
-import { MembershipRole, PortalProfile } from "@prisma/client";
+import { TaskPriority, TaskStatus } from "@prisma/client";
 import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 
-import { db, type Tx } from "@/lib/db";
-import { ensureDefaultPipeline } from "@/modules/crm/deals.service";
+import { db } from "@/lib/db";
+import { recordAudit } from "@/server/audit";
 import { createSession } from "@/server/auth/session";
-import { listUserOrganizations, RESERVED_ORG_SLUGS } from "@/server/tenancy";
+import { listUserOrganizations } from "@/server/tenancy";
 
 const OAUTH_COOKIE = "tq_google_oauth";
 
@@ -24,57 +24,6 @@ interface GoogleUserInfo {
   email_verified?: boolean;
   name?: string;
   picture?: string;
-}
-
-function toSlug(name: string): string {
-  const base = name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 40);
-  return base || "workspace";
-}
-
-async function provisionWorkspace(tx: Tx, userId: string, displayName: string): Promise<string> {
-  const firstWord = displayName.trim().split(/\s+/)[0] || "Tactiq";
-  const orgName = `${firstWord}'s Workspace`;
-  const baseSlug = toSlug(orgName);
-  let slug = RESERVED_ORG_SLUGS.has(baseSlug) ? `${baseSlug}-org` : baseSlug;
-
-  const slugTaken = await tx.organization.findUnique({
-    where: { slug },
-    select: { id: true },
-  });
-  if (slugTaken) {
-    slug = `${slug}-${Math.random().toString(36).slice(2, 6)}`;
-  }
-
-  const org = await tx.organization.create({
-    data: {
-      name: orgName,
-      slug,
-      defaultCurrency: "USD",
-      timezone: "UTC",
-    },
-    select: { id: true, slug: true },
-  });
-
-  await tx.membership.create({
-    data: {
-      organizationId: org.id,
-      userId,
-      role: MembershipRole.OWNER,
-      portalProfile: PortalProfile.PORTAL_OWNER,
-    },
-  });
-
-  await tx.user.update({
-    where: { id: userId },
-    data: { lastActiveOrgId: org.id },
-  });
-
-  await ensureDefaultPipeline(tx, org.id);
-  return org.slug;
 }
 
 export async function GET(req: NextRequest) {
@@ -155,7 +104,7 @@ export async function GET(req: NextRequest) {
     const avatarUrl = typeof profile.picture === "string" ? profile.picture : null;
 
     let userId: string;
-    let redirectPath: string;
+    let lastActiveOrgId: string | null = null;
 
     const existingUser = await db.user.findUnique({
       where: { email },
@@ -169,6 +118,7 @@ export async function GET(req: NextRequest) {
 
     if (existingUser) {
       userId = existingUser.id;
+      lastActiveOrgId = existingUser.lastActiveOrgId;
       if ((!existingUser.avatarUrl && avatarUrl) || !existingUser.emailVerifiedAt) {
         await db.user.update({
           where: { id: existingUser.id },
@@ -178,10 +128,6 @@ export async function GET(req: NextRequest) {
           },
         });
       }
-
-      const orgs = await listUserOrganizations(existingUser.id);
-      const preferred = orgs.find((o) => o.id === existingUser.lastActiveOrgId) ?? orgs[0];
-      redirectPath = preferred ? `/${preferred.slug}/projects` : "/onboarding";
     } else {
       const user = await db.user.create({
         data: {
@@ -194,8 +140,106 @@ export async function GET(req: NextRequest) {
         select: { id: true },
       });
       userId = user.id;
-      redirectPath = "/onboarding";
     }
+
+    const now = new Date();
+    const pendingInvites = await db.invitation.findMany({
+      where: {
+        email,
+        acceptedAt: null,
+        expiresAt: { gt: now },
+      },
+      orderBy: { createdAt: "asc" },
+      select: {
+        id: true,
+        organizationId: true,
+        email: true,
+        role: true,
+        userType: true,
+        portalProfile: true,
+        assignedProjectId: true,
+      },
+    });
+
+    if (pendingInvites.length > 0) {
+      lastActiveOrgId = await db.$transaction(async (tx) => {
+        let latestOrgId = lastActiveOrgId;
+        for (const inv of pendingInvites) {
+          await tx.membership.upsert({
+            where: {
+              organizationId_userId: {
+                organizationId: inv.organizationId,
+                userId,
+              },
+            },
+            create: {
+              organizationId: inv.organizationId,
+              userId,
+              role: inv.role,
+              userType: inv.userType,
+              portalProfile: inv.portalProfile,
+              isActive: true,
+            },
+            update: {
+              isActive: true,
+            },
+          });
+
+          if (inv.assignedProjectId) {
+            const proj = await tx.project.findUnique({
+              where: {
+                id_organizationId: {
+                  id: inv.assignedProjectId,
+                  organizationId: inv.organizationId,
+                },
+              },
+              select: { id: true },
+            });
+            if (proj) {
+              await tx.task.create({
+                data: {
+                  organizationId: inv.organizationId,
+                  projectId: proj.id,
+                  assigneeId: userId,
+                  title: `Join project kickoff (${inv.email})`,
+                  status: TaskStatus.TODO,
+                  priority: TaskPriority.MEDIUM,
+                  position: 1024,
+                },
+              });
+            }
+          }
+
+          await tx.invitation.update({
+            where: { id: inv.id },
+            data: { acceptedAt: now },
+          });
+
+          await recordAudit(tx, {
+            organizationId: inv.organizationId,
+            actorId: userId,
+            entityType: "Invitation",
+            entityId: inv.id,
+            action: "org.invitation_accepted",
+            metadata: { role: inv.role, via: "google" },
+          });
+
+          latestOrgId = inv.organizationId;
+        }
+
+        if (latestOrgId) {
+          await tx.user.update({
+            where: { id: userId },
+            data: { lastActiveOrgId: latestOrgId },
+          });
+        }
+        return latestOrgId;
+      });
+    }
+
+    const orgs = await listUserOrganizations(userId);
+    const preferred = orgs.find((o) => o.id === lastActiveOrgId) ?? orgs[0];
+    const redirectPath = preferred ? `/${preferred.slug}/projects` : "/onboarding";
 
     cookieStore.delete(OAUTH_COOKIE);
     await createSession(userId, {

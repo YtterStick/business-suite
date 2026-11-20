@@ -396,7 +396,7 @@ export function NewProjectSheet({
               </Label>
               <Input
                 id="proj-title"
-                placeholder="e.g. Acme ERP Implementation"
+                placeholder="e.g. Website Redesign & Launch"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 required

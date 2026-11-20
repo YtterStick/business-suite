@@ -231,7 +231,7 @@ export function AiProjectDialog({
               rows={3}
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
-              placeholder="e.g. Launch a 6-week ERP and CRM onboarding project for Metro Retail..."
+              placeholder="e.g. Launch a 6-week customer portal rollout with UAT and deployment..."
               required
               className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
             />
@@ -341,7 +341,7 @@ export function BrowseTemplatesDialog({
             Browse Project Templates
           </DialogTitle>
           <DialogDescription>
-            Choose a curated Zoho-style project blueprint with phases, starter tasks, and tabs.
+            Choose a curated Tactiq project blueprint with phases, starter tasks, and tabs.
           </DialogDescription>
         </DialogHeader>
 

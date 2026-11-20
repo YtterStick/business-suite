@@ -18,12 +18,10 @@ export default async function OnboardingPage({
   }
 
   const { error } = await searchParams;
-  const firstWord = user.name.trim().split(/\s+/)[0] || "Tactiq";
-  const suggestedName = `${firstWord}'s Workspace`;
 
   return (
     <AuthShell>
-      <OnboardingForm userName={user.name} suggestedName={suggestedName} error={error} />
+      <OnboardingForm userName={user.name} error={error} />
     </AuthShell>
   );
 }

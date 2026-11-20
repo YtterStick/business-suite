@@ -21,7 +21,9 @@ export default function SignupPage() {
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [organizationName, setOrganizationName] = React.useState("");
-  const [defaultCurrency, setDefaultCurrency] = React.useState<"PHP" | "USD">("PHP");
+  const [defaultCurrency, setDefaultCurrency] = React.useState<
+    "PHP" | "USD" | "EUR" | "GBP" | "SGD"
+  >("USD");
   const [error, setError] = React.useState<string | null>(null);
   const [googleLoading, setGoogleLoading] = React.useState(false);
   const googleError = useGoogleAuthError();
@@ -79,7 +81,7 @@ export default function SignupPage() {
               <Label htmlFor="signup-name">Your full name</Label>
               <Input
                 id="signup-name"
-                placeholder="Andrei Dilag"
+                placeholder="Enter your full name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 required
@@ -87,10 +89,10 @@ export default function SignupPage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="signup-org">Organization name</Label>
+              <Label htmlFor="signup-org">Workspace name</Label>
               <Input
                 id="signup-org"
-                placeholder="Acme Ventures Inc."
+                placeholder="Your company or team name"
                 value={organizationName}
                 onChange={(e) => setOrganizationName(e.target.value)}
                 required
@@ -104,7 +106,7 @@ export default function SignupPage() {
                   id="signup-email"
                   type="email"
                   autoComplete="email"
-                  placeholder="you@company.com"
+                  placeholder="name@company.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
@@ -116,11 +118,16 @@ export default function SignupPage() {
                 <select
                   id="signup-currency"
                   value={defaultCurrency}
-                  onChange={(e) => setDefaultCurrency(e.target.value as "PHP" | "USD")}
+                  onChange={(e) =>
+                    setDefaultCurrency(e.target.value as "PHP" | "USD" | "EUR" | "GBP" | "SGD")
+                  }
                   className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:border-zinc-800 dark:bg-zinc-950"
                 >
-                  <option value="PHP">PHP (₱)</option>
                   <option value="USD">USD ($)</option>
+                  <option value="PHP">PHP (₱)</option>
+                  <option value="EUR">EUR (€)</option>
+                  <option value="GBP">GBP (£)</option>
+                  <option value="SGD">SGD (S$)</option>
                 </select>
               </div>
             </div>

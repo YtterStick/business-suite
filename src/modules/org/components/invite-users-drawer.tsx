@@ -242,7 +242,9 @@ export function InviteUsersDrawer({
                     }
                   }}
                   placeholder={
-                    emails.length === 0 ? "alice@acme.com, bob@acme.com" : "Add another email..."
+                    emails.length === 0
+                      ? "teammate@company.com, client@partner.com"
+                      : "Add another email..."
                   }
                   className="min-w-36 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
                 />
@@ -375,9 +377,7 @@ export function CsvImportUsersDialog({
   onOpenChange: (open: boolean) => void;
   orgSlug: string;
 }) {
-  const [csvText, setCsvText] = React.useState(
-    "email,role,portal_profile\nalex.dev@company.com,Employee,Standard\nsarah.pm@company.com,Manager,Standard",
-  );
+  const [csvText, setCsvText] = React.useState("");
   const [isPending, startTransition] = React.useTransition();
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -465,6 +465,9 @@ export function CsvImportUsersDialog({
             rows={6}
             value={csvText}
             onChange={(e) => setCsvText(e.target.value)}
+            placeholder={
+              "email,role,portal_profile\nteammate@company.com,Employee,Standard\nmanager@company.com,Manager,Standard"
+            }
             className="flex w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-xs shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
           />
 

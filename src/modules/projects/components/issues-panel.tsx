@@ -1022,7 +1022,7 @@ export function IssuesPanel({
           <SheetHeader className="border-b pb-4">
             <SheetTitle>Submit Issue / Defect</SheetTitle>
             <SheetDescription>
-              Log a Zoho BugTracker issue with severity, classification, reproducibility, and affected module.
+              Log a project issue or defect with severity, classification, reproducibility, and affected module.
             </SheetDescription>
           </SheetHeader>
           <form onSubmit={handleCreate} className="space-y-4 p-4">

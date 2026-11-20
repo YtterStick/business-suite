@@ -40,6 +40,12 @@ export async function loginAction(
     const passwordHash = user?.passwordHash ?? (await getDummyPasswordHash());
     const valid = await verifyPassword(password, passwordHash);
 
+    if (user && !user.passwordHash) {
+      throw new ValidationError(
+        "This account uses Google Sign-In. Please click Continue with Google.",
+      );
+    }
+
     if (!user || !user.passwordHash || !valid) {
       throw new ValidationError("Invalid email or password.");
     }
@@ -53,7 +59,7 @@ export async function loginAction(
     const orgs = await listUserOrganizations(user.id);
     const preferred = orgs.find((o) => o.id === user.lastActiveOrgId) ?? orgs[0];
     if (!preferred) {
-      throw new ValidationError("No organization membership is associated with this account.");
+      redirect("/onboarding");
     }
 
     const redirectTo = can(preferred, "crm.deal.read")

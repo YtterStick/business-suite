@@ -15,7 +15,7 @@ export default async function HomePage() {
     orgs.find((o) => o.id === session.user.lastActiveOrgId) ?? orgs[0];
 
   if (!preferred) {
-    redirect("/login");
+    redirect("/onboarding");
   }
 
   redirect(
