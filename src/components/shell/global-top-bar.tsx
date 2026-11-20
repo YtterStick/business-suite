@@ -217,6 +217,9 @@ export function GlobalTopBar({
     canWriteInvoices ||
     canInvite;
 
+  const isOnWorkspaceHome =
+    pathname === `/${orgSlug}/home` || pathname.startsWith(`/${orgSlug}/home/`);
+
   const subPageBreadcrumb = React.useMemo(() => {
     const prefix = `/${orgSlug}`;
     const rel = pathname.startsWith(prefix) ? pathname.slice(prefix.length) : pathname;
@@ -326,19 +329,25 @@ export function GlobalTopBar({
               {activeOrg.name}
             </Link>
             <span className="text-muted-foreground">/</span>
-            <Link
-              href={getModuleHref(orgSlug, activeModule.defaultPath)}
-              className={cn(
-                "shrink-0 font-medium transition hover:text-foreground",
-                subPageBreadcrumb ? "text-muted-foreground" : "text-foreground",
-              )}
-            >
-              {activeModule.name}
-            </Link>
-            {subPageBreadcrumb && (
+            {isOnWorkspaceHome ? (
+              <span className="font-medium text-foreground">Home</span>
+            ) : (
               <>
-                <span className="text-muted-foreground">/</span>
-                <span className="font-medium text-foreground">{subPageBreadcrumb}</span>
+                <Link
+                  href={getModuleHref(orgSlug, activeModule.defaultPath)}
+                  className={cn(
+                    "shrink-0 font-medium transition hover:text-foreground",
+                    subPageBreadcrumb ? "text-muted-foreground" : "text-foreground",
+                  )}
+                >
+                  {activeModule.name}
+                </Link>
+                {subPageBreadcrumb && (
+                  <>
+                    <span className="text-muted-foreground">/</span>
+                    <span className="font-medium text-foreground">{subPageBreadcrumb}</span>
+                  </>
+                )}
               </>
             )}
           </nav>

@@ -75,29 +75,126 @@ export interface WorkspaceHomeDTO {
   };
 }
 
+const AUDIT_ACTION_MAP: Record<
+  string,
+  { app: "CRM" | "Projects" | "Finance" | "Workspace"; label: string }
+> = {
+  "project.auto_created_from_deal": {
+    app: "Projects",
+    label: "Project auto-created from deal",
+  },
+  "invoice.auto_created_from_deal": {
+    app: "Finance",
+    label: "Invoice auto-created from deal",
+  },
+  "contact.promoted_to_customer": {
+    app: "CRM",
+    label: "Contact promoted to customer",
+  },
+  "deal.stage_changed": { app: "CRM", label: "Deal stage updated" },
+  "deal.created": { app: "CRM", label: "Deal created" },
+  "deal.updated": { app: "CRM", label: "Deal updated" },
+  "invoice.created_from_expenses": {
+    app: "Finance",
+    label: "Invoice generated from expenses",
+  },
+  "invoice.payment_recorded": {
+    app: "Finance",
+    label: "Invoice payment recorded",
+  },
+  "invoice.created": { app: "Finance", label: "Invoice created" },
+  "invoice.sent": { app: "Finance", label: "Invoice sent to client" },
+  "invoice.updated": { app: "Finance", label: "Invoice updated" },
+  "project.created": { app: "Projects", label: "Project created" },
+  "project.updated": { app: "Projects", label: "Project updated" },
+  "project.cloned": { app: "Projects", label: "Project cloned" },
+  "project.imported": { app: "Projects", label: "Projects imported from CSV" },
+  "project.bulk_status_updated": {
+    app: "Projects",
+    label: "Projects updated in bulk",
+  },
+  "task.status_changed": { app: "Projects", label: "Task status updated" },
+  "task.updated": { app: "Projects", label: "Task updated" },
+  "task.quick_updated": { app: "Projects", label: "Task details updated" },
+  "task.imported": { app: "Projects", label: "Tasks imported from CSV" },
+  "task.created": { app: "Projects", label: "Task created" },
+  "organization.portal_updated": {
+    app: "Workspace",
+    label: "Workspace settings updated",
+  },
+  "organization.created": { app: "Workspace", label: "Workspace created" },
+  "org.member_invited": { app: "Workspace", label: "Team member invited" },
+  "org.member_updated": {
+    app: "Workspace",
+    label: "Member permissions updated",
+  },
+  "org.invitation_accepted": {
+    app: "Workspace",
+    label: "Workspace invitation accepted",
+  },
+  "workspace.sample_cleared": {
+    app: "Workspace",
+    label: "Sample workspace data cleared",
+  },
+};
+
 function formatAuditActionLabel(action: string, entityType: string): {
   app: "CRM" | "Projects" | "Finance" | "Workspace";
   label: string;
 } {
-  if (action.includes("deal")) {
-    return { app: "CRM", label: `CRM deal ${action.replace(/^deal\./, "").replace(/_/g, " ")}` };
+  const normalized = action.trim().toLowerCase();
+  const mapped = AUDIT_ACTION_MAP[normalized];
+  if (mapped) {
+    return mapped;
   }
-  if (action.includes("invoice") || action.includes("payment") || action.includes("quote")) {
-    return {
-      app: "Finance",
-      label: `Finance ${entityType.toLowerCase()} ${action.split(".")[1]?.replace(/_/g, " ") ?? "updated"}`,
-    };
+
+  let app: "CRM" | "Projects" | "Finance" | "Workspace" = "Workspace";
+  if (
+    normalized.startsWith("deal.") ||
+    normalized.startsWith("contact.") ||
+    normalized.startsWith("company.") ||
+    normalized.includes("deal")
+  ) {
+    app = "CRM";
+  } else if (
+    normalized.startsWith("invoice.") ||
+    normalized.startsWith("payment.") ||
+    normalized.startsWith("quote.") ||
+    normalized.startsWith("expense.") ||
+    normalized.includes("invoice")
+  ) {
+    app = "Finance";
+  } else if (
+    normalized.startsWith("project.") ||
+    normalized.startsWith("task.") ||
+    normalized.startsWith("milestone.") ||
+    normalized.startsWith("issue.") ||
+    normalized.startsWith("timesheet.") ||
+    normalized.includes("project") ||
+    normalized.includes("task")
+  ) {
+    app = "Projects";
   }
-  if (action.includes("project") || action.includes("task") || action.includes("milestone")) {
-    return {
-      app: "Projects",
-      label: `${entityType} ${action.split(".")[1]?.replace(/_/g, " ") ?? "updated"}`,
-    };
-  }
-  return {
-    app: "Workspace",
-    label: `${entityType} ${action.split(".")[1]?.replace(/_/g, " ") ?? action}`,
-  };
+
+  const parts = normalized.split(".").filter(Boolean);
+  const rawEntity = parts.length > 1 ? parts[0]! : entityType.replace(/[._]+/g, " ").trim().toLowerCase();
+  const cleanEntity = rawEntity === "org" ? "workspace" : rawEntity;
+  const rawVerb = (parts.length > 1 ? parts.slice(1).join(" ") : normalized)
+    .replace(/auto[_\s]?created/g, "auto-created")
+    .replace(/[._]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const combined =
+    cleanEntity && !rawVerb.includes(cleanEntity)
+      ? `${cleanEntity} ${rawVerb}`.trim()
+      : rawVerb || `${cleanEntity} updated`.trim();
+
+  const sentenceCased = combined
+    .replace(/\bcsv\b/gi, "CSV")
+    .replace(/^([a-z])/, (ch) => ch.toUpperCase());
+
+  return { app, label: sentenceCased };
 }
 
 export async function getWorkspaceHome(ctx: TenantContext): Promise<WorkspaceHomeDTO> {
@@ -166,7 +263,7 @@ export async function getWorkspaceHome(ctx: TenantContext): Promise<WorkspaceHom
         OR: [{ assigneeId: ctx.user.id }, { assigneeId: null }],
       },
       orderBy: [{ dueDate: "asc" }, { priority: "desc" }, { createdAt: "desc" }],
-      take: 6,
+      take: 12,
       select: {
         id: true,
         title: true,
@@ -219,7 +316,7 @@ export async function getWorkspaceHome(ctx: TenantContext): Promise<WorkspaceHom
     db.auditLog.findMany({
       where: { organizationId },
       orderBy: { createdAt: "desc" },
-      take: 8,
+      take: 20,
       select: { id: true, actorId: true, entityType: true, action: true, createdAt: true },
     }),
     db.membership.findMany({

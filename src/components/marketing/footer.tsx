@@ -109,9 +109,9 @@ export function PublicFooter({ viewer: _viewer = null }: { viewer?: MarketingVie
               CRM, Finance, and Projects in one connected workspace. Built for teams that sell,
               deliver, and bill together.
             </p>
-            <div className="mt-5 inline-flex items-center gap-2 rounded-full border bg-muted/40 px-2.5 py-1 text-[11px] font-medium text-muted-foreground">
-              <span className="size-1.5 rounded-full bg-emerald-500" />
-              All core modules included · Free workspace access
+            <div className="mt-5 inline-flex items-center gap-2 rounded-full border bg-muted/40 px-2.5 py-1 text-[11px] font-medium whitespace-nowrap text-muted-foreground">
+              <span className="size-1.5 shrink-0 rounded-full bg-emerald-500" />
+              Free access · All core modules included
             </div>
           </div>
           {FOOTER_COLUMNS.map((col) => (

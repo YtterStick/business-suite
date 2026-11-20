@@ -7,7 +7,7 @@ import { z } from "zod";
 import type { ActionResult } from "@/lib/action-result";
 import { db } from "@/lib/db";
 import { ValidationError } from "@/lib/errors";
-import { can } from "@/lib/rbac";
+import { isClientUser } from "@/lib/rbac";
 import { runAction } from "@/server/action";
 import { getDummyPasswordHash, verifyPassword } from "@/server/auth/password";
 import { createSession } from "@/server/auth/session";
@@ -62,9 +62,9 @@ export async function loginAction(
       redirect("/onboarding");
     }
 
-    const redirectTo = can(preferred, "crm.deal.read")
-      ? `/${preferred.slug}/crm/deals`
-      : `/${preferred.slug}/projects`;
+    const redirectTo = isClientUser(preferred)
+      ? `/${preferred.slug}/projects`
+      : `/${preferred.slug}/home`;
     redirect(redirectTo);
   });
 }

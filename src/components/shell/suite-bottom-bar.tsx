@@ -4,39 +4,29 @@ import * as React from "react";
 import {
   Activity,
   BellRing,
-  Briefcase,
-  Bug,
   Check,
   CheckCircle2,
-  CheckSquare,
   Clock,
-  Flag,
-  FolderKanban,
   HelpCircle,
   History,
   Keyboard,
-  Laptop,
   Loader2,
   MessageCircle,
   MessageSquare,
-  Moon,
   Pause,
   Pin,
   PinOff,
   Play,
   Plus,
-  Receipt,
   Send,
   Square,
   StickyNote,
-  Sun,
   Trash2,
   Users,
   XCircle,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useTheme } from "@/components/theme-provider";
 import { toast } from "sonner";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -49,14 +39,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
@@ -163,7 +145,6 @@ export function SuiteBottomBar({
   const allowTimer = canLogTime ?? canWriteProjects;
   const pathname = usePathname();
   const router = useRouter();
-  const { theme, setTheme } = useTheme();
   const [activePanel, setActivePanel] = React.useState<UtilityPanel>(null);
   const [bgTasks, setBgTasks] = React.useState<BackgroundTaskItem[]>([]);
   const [stickyNotes, setStickyNotes] = React.useState<StickyNoteEntry[]>([]);
@@ -280,13 +261,6 @@ export function SuiteBottomBar({
 
   const activeRunningTask = bgTasks.find((t) => t.status === "running") ?? null;
   const dockProgressPercent = activeRunningTask ? activeRunningTask.progress : 0;
-
-  const triggerDockQuickAdd = (href: string, quickEventKey?: string) => {
-    if (quickEventKey) {
-      window.dispatchEvent(new CustomEvent("bs-quick-add", { detail: quickEventKey }));
-    }
-    router.push(href);
-  };
 
   // My Pins (persisted in localStorage per org)
   const defaultPins = React.useMemo<PinnedRoute[]>(
@@ -768,22 +742,29 @@ export function SuiteBottomBar({
 
           {/* Sticky Notes Quick-Pad Popover */}
           <Popover>
-            <PopoverTrigger asChild>
-              <button
-                type="button"
-                aria-label="Sticky Notes"
-                title="Sticky Notes"
-                className="inline-flex shrink-0 items-center gap-1 rounded px-2 py-1 font-medium whitespace-nowrap transition hover:bg-accent hover:text-foreground"
-              >
-                <StickyNote className="size-3.5 shrink-0 text-amber-500" />
-                <span className="hidden xl:inline">Notes</span>
-                {stickyNotes.length > 0 && (
-                  <Badge variant="secondary" className="h-4 px-1 text-[10px] tabular-nums">
-                    {stickyNotes.length}
-                  </Badge>
-                )}
-              </button>
-            </PopoverTrigger>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label="Sticky Notes"
+                    className="inline-flex shrink-0 items-center gap-1 rounded px-2 py-1 font-medium whitespace-nowrap transition hover:bg-accent hover:text-foreground"
+                  >
+                    <StickyNote className="size-3.5 shrink-0 text-amber-500" />
+                    <span className="hidden xl:inline">Notes</span>
+                    {stickyNotes.length > 0 && (
+                      <Badge variant="secondary" className="h-4 px-1 text-[10px] tabular-nums">
+                        {stickyNotes.length}
+                      </Badge>
+                    )}
+                  </button>
+                </PopoverTrigger>
+              </TooltipTrigger>
+              <TooltipContent side="top">
+                <p className="font-medium">Sticky Notes</p>
+                <p className="text-[11px] opacity-80">Quick personal scratchpad across workspace sessions.</p>
+              </TooltipContent>
+            </Tooltip>
             <PopoverContent side="top" align="start" className="w-80 p-3">
               <div className="space-y-3">
                 <div className="flex items-center justify-between border-b pb-2">
@@ -866,21 +847,28 @@ export function SuiteBottomBar({
           </Popover>
         </div>
 
-        {/* Right: Recent, Reminders, Quick Add, Theme, Shortcuts (?), Background Tasks (0%), Timer */}
+        {/* Right: Recent, Reminders, Shortcuts (?), Background Tasks (0%), Timer */}
         <div className="flex shrink-0 items-center gap-1">
           {/* Recent Items Popover */}
           <Popover>
-            <PopoverTrigger asChild>
-              <button
-                type="button"
-                aria-label="Recent items"
-                title="Recent Items"
-                className="inline-flex shrink-0 items-center gap-1 rounded px-2 py-1 whitespace-nowrap text-muted-foreground transition hover:bg-accent hover:text-foreground"
-              >
-                <History className="size-3.5 shrink-0" />
-                <span className="hidden xl:inline">Recent</span>
-              </button>
-            </PopoverTrigger>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label="Recent items"
+                    className="inline-flex shrink-0 items-center gap-1 rounded px-2 py-1 whitespace-nowrap text-muted-foreground transition hover:bg-accent hover:text-foreground"
+                  >
+                    <History className="size-3.5 shrink-0" />
+                    <span className="hidden xl:inline">Recent</span>
+                  </button>
+                </PopoverTrigger>
+              </TooltipTrigger>
+              <TooltipContent side="top">
+                <p className="font-medium">Recent Items</p>
+                <p className="text-[11px] opacity-80">Jump back to recently visited workspace views.</p>
+              </TooltipContent>
+            </Tooltip>
             <PopoverContent side="top" align="end" className="w-72 p-0">
               <div className="border-b px-3 py-2.5">
                 <p className="text-xs font-semibold">Recent Items</p>
@@ -905,22 +893,29 @@ export function SuiteBottomBar({
 
           {/* Reminders Popover */}
           <Popover>
-            <PopoverTrigger asChild>
-              <button
-                type="button"
-                aria-label="Reminders"
-                title="Reminders"
-                className="inline-flex shrink-0 items-center gap-1 rounded px-2 py-1 whitespace-nowrap text-muted-foreground transition hover:bg-accent hover:text-foreground"
-              >
-                <BellRing className="size-3.5 shrink-0" />
-                <span className="hidden xl:inline">Reminders</span>
-                {reminders.filter((r) => !r.done).length > 0 && (
-                  <Badge variant="secondary" className="h-4 px-1 text-[10px] tabular-nums">
-                    {reminders.filter((r) => !r.done).length}
-                  </Badge>
-                )}
-              </button>
-            </PopoverTrigger>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label="Reminders"
+                    className="inline-flex shrink-0 items-center gap-1 rounded px-2 py-1 whitespace-nowrap text-muted-foreground transition hover:bg-accent hover:text-foreground"
+                  >
+                    <BellRing className="size-3.5 shrink-0" />
+                    <span className="hidden xl:inline">Reminders</span>
+                    {reminders.filter((r) => !r.done).length > 0 && (
+                      <Badge variant="secondary" className="h-4 px-1 text-[10px] tabular-nums">
+                        {reminders.filter((r) => !r.done).length}
+                      </Badge>
+                    )}
+                  </button>
+                </PopoverTrigger>
+              </TooltipTrigger>
+              <TooltipContent side="top">
+                <p className="font-medium">Personal Reminders</p>
+                <p className="text-[11px] opacity-80">Quick follow-ups &amp; due dates for your session.</p>
+              </TooltipContent>
+            </Tooltip>
             <PopoverContent side="top" align="end" className="w-80 p-3">
               <div className="space-y-3">
                 <div>
@@ -1007,108 +1002,23 @@ export function SuiteBottomBar({
             </PopoverContent>
           </Popover>
 
-          {/* Quick Add (+) Menu */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                type="button"
-                aria-label="Quick add item"
-                title="Quick Add (+)"
-                className="inline-flex shrink-0 items-center gap-1 rounded px-2 py-1 font-medium whitespace-nowrap text-muted-foreground transition hover:bg-accent hover:text-foreground"
-              >
-                <Plus className="size-3.5 shrink-0 text-primary" />
-                <span className="hidden 2xl:inline">Quick Add</span>
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent side="top" align="end" className="w-52">
-              <DropdownMenuLabel>Quick Create</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                onClick={() => triggerDockQuickAdd(`/${orgSlug}/projects?new=1`, "projects")}
-              >
-                <FolderKanban className="size-3.5 text-violet-600" />
-                New Project
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => triggerDockQuickAdd(`/${orgSlug}/projects/tasks?new=1`, "tasks")}
-              >
-                <CheckSquare className="size-3.5 text-blue-600" />
-                New Task
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => triggerDockQuickAdd(`/${orgSlug}/projects/issues?new=1`, "issues")}
-              >
-                <Bug className="size-3.5 text-rose-600" />
-                New Issue
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() =>
-                  triggerDockQuickAdd(`/${orgSlug}/projects/milestones?new=1`, "milestones")
-                }
-              >
-                <Flag className="size-3.5 text-amber-600" />
-                New Phase / Milestone
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setActivePanel("timer")}>
-                <Clock className="size-3.5 text-emerald-600" />
-                Log Time
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => triggerDockQuickAdd(`/${orgSlug}/crm/deals`)}>
-                <Briefcase className="size-3.5 text-blue-600" />
-                New CRM Deal
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => triggerDockQuickAdd(`/${orgSlug}/finance/invoices`)}>
-                <Receipt className="size-3.5 text-emerald-600" />
-                New Finance Invoice
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          {/* Theme / Dark Mode Toggle */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                type="button"
-                aria-label="Toggle theme"
-                title="Switch Theme (Light / Dark / System)"
-                className="relative inline-flex shrink-0 items-center justify-center rounded px-1.5 py-1 text-muted-foreground transition hover:bg-accent hover:text-foreground"
-              >
-                <Sun className="size-3.5 scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90" />
-                <Moon className="absolute size-3.5 scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent side="top" align="end" className="w-36">
-              <DropdownMenuLabel className="text-xs">Theme</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onSelect={() => setTheme("light")} className="gap-2 text-xs">
-                <Sun className="size-3.5" />
-                <span>Light</span>
-                {theme === "light" && <span className="ml-auto text-primary">●</span>}
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => setTheme("dark")} className="gap-2 text-xs">
-                <Moon className="size-3.5" />
-                <span>Dark</span>
-                {theme === "dark" && <span className="ml-auto text-primary">●</span>}
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => setTheme("system")} className="gap-2 text-xs">
-                <Laptop className="size-3.5" />
-                <span>System</span>
-                {theme === "system" && <span className="ml-auto text-primary">●</span>}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-
           {/* Keyboard Shortcuts (?) Modal Trigger */}
-          <button
-            type="button"
-            aria-label="Keyboard Shortcuts"
-            title="Keyboard Shortcuts (?)"
-            onClick={() => setShortcutsOpen(true)}
-            className="inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-1 text-muted-foreground transition hover:bg-accent hover:text-foreground"
-          >
-            <HelpCircle className="size-3.5" />
-          </button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                aria-label="Keyboard Shortcuts"
+                onClick={() => setShortcutsOpen(true)}
+                className="inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-1 text-muted-foreground transition hover:bg-accent hover:text-foreground"
+              >
+                <HelpCircle className="size-3.5" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="top">
+              <p className="font-medium">Help &amp; Shortcuts (?)</p>
+              <p className="text-[11px] opacity-80">View keyboard shortcuts &amp; workspace tips.</p>
+            </TooltipContent>
+          </Tooltip>
 
           {/* Background Task / Export Progress Indicator */}
           <Popover>

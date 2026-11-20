@@ -23,7 +23,7 @@ export default async function WorkspaceHomePage({
     <WorkspaceHomeDashboard
       orgSlug={orgSlug}
       orgName={tenant.organization.name}
-      firstName={tenant.user.name.split(" ")[0] ?? tenant.user.name}
+      firstName={tenant.user.name.trim().split(/\s+/)[0] ?? tenant.user.name.trim()}
       canManage={can(tenant, "projects.project.manage")}
       home={home}
     />

@@ -40,6 +40,55 @@ export interface SuiteModuleConfig {
   items: ModuleNavItem[];
 }
 
+export const WORKSPACE_HOME_ITEMS: ModuleNavItem[] = [
+  { id: "home", label: "Home", path: "/home", icon: "home", section: "main" },
+  {
+    id: "crm-pipeline",
+    label: "CRM Pipeline",
+    path: "/crm/deals",
+    icon: "kanban",
+    section: "main",
+    quickAddPath: "/crm/deals?new=1",
+  },
+  {
+    id: "finance-dashboard",
+    label: "Finance Dashboard",
+    path: "/finance/dashboard",
+    icon: "bar-chart",
+    section: "main",
+  },
+  {
+    id: "active-projects",
+    label: "Active Projects",
+    path: "/projects",
+    icon: "folder-kanban",
+    section: "main",
+    quickAddPath: "/projects?new=1",
+  },
+  {
+    id: "approvals",
+    label: "My Approvals",
+    path: "/projects/approvals",
+    icon: "check-circle",
+    section: "main",
+  },
+  {
+    id: "reports",
+    label: "Reports",
+    path: "/projects/reports",
+    icon: "bar-chart",
+    section: "main",
+  },
+  {
+    id: "users",
+    label: "Users",
+    path: "/projects/users",
+    icon: "users",
+    section: "main",
+    quickAddPath: "/projects/users?invite=1",
+  },
+];
+
 export const SUITE_MODULES: SuiteModuleConfig[] = [
   {
     id: "crm",

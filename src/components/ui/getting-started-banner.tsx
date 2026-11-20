@@ -24,6 +24,7 @@ export function GettingStartedBanner({
   isBusy = false,
   onSeedSample,
   onClearSample,
+  onVisibilityChange,
   forceShow = false,
 }: {
   orgSlug: string;
@@ -33,6 +34,7 @@ export function GettingStartedBanner({
   isBusy?: boolean;
   onSeedSample?: () => void;
   onClearSample?: () => void;
+  onVisibilityChange?: (visible: boolean) => void;
   forceShow?: boolean;
 }) {
   const [dismissed, setDismissed] = React.useState(false);
@@ -49,6 +51,7 @@ export function GettingStartedBanner({
 
   const dismiss = () => {
     setDismissed(true);
+    onVisibilityChange?.(false);
     try {
       window.localStorage.setItem(`bs_getting_started_dismissed_${orgSlug}`, "1");
     } catch {
@@ -78,7 +81,13 @@ export function GettingStartedBanner({
   ];
 
   const completedCount = steps.filter((s) => s.done).length;
-  if (!forceShow && (dismissed || (completedCount === 3 && !hasSampleData))) {
+  const isVisible = forceShow || (!dismissed && !(completedCount === 3 && !hasSampleData));
+
+  React.useEffect(() => {
+    onVisibilityChange?.(isVisible);
+  }, [isVisible, onVisibilityChange]);
+
+  if (!isVisible) {
     return null;
   }
 

@@ -44,6 +44,23 @@ function getGreeting(): string {
   return "Good evening";
 }
 
+function pluralize(count: number, singular: string, plural = `${singular}s`): string {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
+function humanizeAuditTitle(raw: string): string {
+  const cleaned = raw
+    .trim()
+    .replace(/^(CRM deal|CRM|Finance|Projects)\s+/i, "")
+    .replace(/\.auto[_\s]?created/gi, " auto-created")
+    .replace(/[._]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!cleaned) return "Workspace activity";
+  const cased = cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+  return cased.replace(/\bcsv\b/gi, "CSV");
+}
+
 export function WorkspaceHomeDashboard({
   orgSlug,
   orgName,
@@ -60,7 +77,18 @@ export function WorkspaceHomeDashboard({
   const router = useRouter();
   const [greeting, setGreeting] = React.useState("Welcome back");
   const [isSampleBusy, setIsSampleBusy] = React.useState(false);
+  const [isBannerVisible, setIsBannerVisible] = React.useState(true);
   const [tasks, setTasks] = React.useState(home.myTasks);
+  const overdueTotal = React.useMemo(
+    () => Object.values(home.overdueReceivablesTotals).reduce((sum, v) => sum + v, 0),
+    [home.overdueReceivablesTotals],
+  );
+  const formattedHeading = React.useMemo(() => {
+    const g = greeting.trim();
+    const f = firstName.trim();
+    const o = orgName.trim();
+    return f ? `${g}, ${f} — ${o}` : `${g} — ${o}`;
+  }, [greeting, firstName, orgName]);
 
   React.useEffect(() => {
     setGreeting(getGreeting());
@@ -96,7 +124,7 @@ export function WorkspaceHomeDashboard({
         return;
       }
       toast.success("Sample records cleared", {
-        description: `Removed ${res.data.deletedDeals} deal(s), ${res.data.deletedProjects} project(s), and ${res.data.deletedInvoices} invoice(s).`,
+        description: `Removed ${pluralize(res.data.deletedDeals, "deal")}, ${pluralize(res.data.deletedProjects, "project")}, and ${pluralize(res.data.deletedInvoices, "invoice")}.`,
       });
       router.refresh();
     } finally {
@@ -146,9 +174,7 @@ export function WorkspaceHomeDashboard({
       {/* Greeting Header & Quick-Launch Pills */}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold tracking-tight sm:text-2xl">
-            {greeting}, {firstName} — {orgName}
-          </h1>
+          <h1 className="text-xl font-bold tracking-tight sm:text-2xl">{formattedHeading}</h1>
           <p className="mt-0.5 text-sm text-muted-foreground">
             Unified command center across CRM pipelines, active delivery projects, and Finance billing.
           </p>
@@ -173,39 +199,23 @@ export function WorkspaceHomeDashboard({
               New Invoice
             </Link>
           </Button>
-          {canManage &&
-            (home.onboarding.hasSampleData ? (
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                disabled={isSampleBusy}
-                onClick={handleClearSample}
-                className="gap-1.5 text-xs text-rose-600 hover:bg-rose-500/10 hover:text-rose-600"
-              >
-                {isSampleBusy ? (
-                  <Loader2 className="size-3.5 animate-spin" />
-                ) : (
-                  <Trash2 className="size-3.5" />
-                )}
-                Clear Sample Data
-              </Button>
-            ) : (
-              <Button
-                type="button"
-                size="sm"
-                disabled={isSampleBusy}
-                onClick={handleSeedSample}
-                className="gap-1.5 text-xs"
-              >
-                {isSampleBusy ? (
-                  <Loader2 className="size-3.5 animate-spin" />
-                ) : (
-                  <Sparkles className="size-3.5" />
-                )}
-                Load Sample Workspace
-              </Button>
-            ))}
+          {canManage && home.onboarding.hasSampleData && !isBannerVisible && (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              disabled={isSampleBusy}
+              onClick={handleClearSample}
+              className="gap-1.5 text-xs text-rose-600 hover:bg-rose-500/10 hover:text-rose-600"
+            >
+              {isSampleBusy ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <Trash2 className="size-3.5" />
+              )}
+              Clear Sample Data
+            </Button>
+          )}
         </div>
       </div>
 
@@ -218,6 +228,7 @@ export function WorkspaceHomeDashboard({
         isBusy={isSampleBusy}
         onSeedSample={handleSeedSample}
         onClearSample={handleClearSample}
+        onVisibilityChange={setIsBannerVisible}
       />
 
       {/* Cross-App 4-Card KPI Strip */}
@@ -248,9 +259,12 @@ export function WorkspaceHomeDashboard({
               {formatCurrencyTotals(home.openPipelineTotals, home.defaultCurrency)}
             </CardTitle>
           </CardHeader>
-          <CardContent className="flex items-center justify-between text-xs text-muted-foreground">
-            <span>{home.openPipelineCount} active deal(s)</span>
-            <Link href={`/${orgSlug}/crm/deals`} className="font-medium text-primary hover:underline">
+          <CardContent className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+            <span className="truncate">{pluralize(home.openPipelineCount, "active deal")}</span>
+            <Link
+              href={`/${orgSlug}/crm/deals`}
+              className="shrink-0 font-medium whitespace-nowrap text-primary hover:underline"
+            >
               Open CRM →
             </Link>
           </CardContent>
@@ -264,9 +278,19 @@ export function WorkspaceHomeDashboard({
             </CardDescription>
             <CardTitle className="text-2xl tabular-nums">{home.activeProjectsCount}</CardTitle>
           </CardHeader>
-          <CardContent className="flex items-center justify-between text-xs text-muted-foreground">
-            <span>{home.upcomingMilestonesCount} milestone(s) due in 14d</span>
-            <Link href={`/${orgSlug}/projects`} className="font-medium text-primary hover:underline">
+          <CardContent className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="truncate">{home.upcomingMilestonesCount} due in 14d</span>
+              </TooltipTrigger>
+              <TooltipContent>
+                {pluralize(home.upcomingMilestonesCount, "milestone")} due in the next 14 days
+              </TooltipContent>
+            </Tooltip>
+            <Link
+              href={`/${orgSlug}/projects`}
+              className="shrink-0 font-medium whitespace-nowrap text-primary hover:underline"
+            >
               View Projects →
             </Link>
           </CardContent>
@@ -280,13 +304,14 @@ export function WorkspaceHomeDashboard({
             </CardDescription>
             <CardTitle className="text-2xl tabular-nums">{home.pendingApprovalsCount}</CardTitle>
           </CardHeader>
-          <CardContent className="flex items-center justify-between text-xs text-muted-foreground">
-            <span>
-              {home.pendingTimesheetsCount} timesheet · {home.pendingExpensesCount} expense
+          <CardContent className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+            <span className="truncate">
+              {pluralize(home.pendingTimesheetsCount, "timesheet")} ·{" "}
+              {pluralize(home.pendingExpensesCount, "expense")}
             </span>
             <Link
               href={`/${orgSlug}/projects/approvals`}
-              className="font-medium text-primary hover:underline"
+              className="shrink-0 font-medium whitespace-nowrap text-primary hover:underline"
             >
               Review →
             </Link>
@@ -319,13 +344,20 @@ export function WorkspaceHomeDashboard({
               {formatCurrencyTotals(home.unpaidReceivablesTotals, home.defaultCurrency)}
             </CardTitle>
           </CardHeader>
-          <CardContent className="flex items-center justify-between text-xs">
-            <span className="text-rose-600">
+          <CardContent className="flex items-center justify-between gap-2 text-xs">
+            <span
+              className={cn(
+                "truncate",
+                overdueTotal > 0
+                  ? "font-medium text-red-600 dark:text-red-400"
+                  : "text-muted-foreground",
+              )}
+            >
               Overdue: {formatCurrencyTotals(home.overdueReceivablesTotals, home.defaultCurrency)}
             </span>
             <Link
               href={`/${orgSlug}/finance/invoices`}
-              className="font-medium text-primary hover:underline"
+              className="shrink-0 font-medium whitespace-nowrap text-primary hover:underline"
             >
               Invoices →
             </Link>
@@ -345,12 +377,12 @@ export function WorkspaceHomeDashboard({
               </div>
               <Link
                 href={`/${orgSlug}/projects/tasks`}
-                className="text-xs font-medium text-primary hover:underline"
+                className="shrink-0 text-xs font-medium whitespace-nowrap text-primary hover:underline"
               >
                 All Tasks →
               </Link>
             </CardHeader>
-            <CardContent className="space-y-2">
+            <CardContent>
               {tasks.length === 0 && home.myIssues.length === 0 ? (
                 <EmptyState
                   icon={CheckCircle2}
@@ -364,7 +396,7 @@ export function WorkspaceHomeDashboard({
                   }}
                 />
               ) : (
-                <>
+                <div className="max-h-[260px] space-y-2 overflow-y-auto pr-1 [scrollbar-width:thin]">
                   {tasks.map((task) => {
                     const isDone = task.status === "DONE";
                     return (
@@ -422,7 +454,7 @@ export function WorkspaceHomeDashboard({
                       </Badge>
                     </Link>
                   ))}
-                </>
+                </div>
               )}
             </CardContent>
           </Card>
@@ -435,7 +467,7 @@ export function WorkspaceHomeDashboard({
               </div>
               <Link
                 href={`/${orgSlug}/crm/deals`}
-                className="text-xs font-medium text-primary hover:underline"
+                className="shrink-0 text-xs font-medium whitespace-nowrap text-primary hover:underline"
               >
                 Pipeline →
               </Link>
@@ -448,7 +480,7 @@ export function WorkspaceHomeDashboard({
                   description="Close a deal in CRM or load sample data to watch Tactiq link the deal, project, and invoice automatically."
                   compact
                   action={
-                    canManage
+                    !isBannerVisible && canManage
                       ? {
                           label: "Load Sample Workspace",
                           icon: <Sparkles className="size-3.5" />,
@@ -531,30 +563,42 @@ export function WorkspaceHomeDashboard({
               <CardTitle className="text-base">Recent Activity Feed</CardTitle>
               <CardDescription>Audit updates across CRM, Projects &amp; Finance</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-2.5">
+            <CardContent>
               {home.recentActivity.length === 0 ? (
                 <p className="py-6 text-center text-xs text-muted-foreground">
                   Activity across CRM, Projects, and Finance will appear here as your team works.
                 </p>
               ) : (
-                home.recentActivity.map((log) => (
-                  <div
-                    key={log.id}
-                    className="flex items-start justify-between gap-2 rounded-lg border px-3 py-2 text-xs"
-                  >
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <Badge variant="outline" className="px-1.5 py-0 text-[10px]">
-                          {log.app}
-                        </Badge>
-                        <span className="truncate font-medium capitalize">{log.action}</span>
+                <div className="relative">
+                  <div className="max-h-[420px] space-y-2.5 overflow-y-auto pr-1 [scrollbar-width:thin]">
+                    {home.recentActivity.map((log) => (
+                      <div
+                        key={log.id}
+                        className="flex items-start justify-between gap-2 rounded-lg border px-3 py-2 text-xs"
+                      >
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <Badge variant="outline" className="shrink-0 px-1.5 py-0 text-[10px]">
+                              {log.app}
+                            </Badge>
+                            <span className="truncate font-medium">
+                              {humanizeAuditTitle(log.action)}
+                            </span>
+                          </div>
+                          <p className="mt-1 text-muted-foreground">
+                            {log.actorName} · {formatDateTimeUtc(log.createdAt)}
+                          </p>
+                        </div>
                       </div>
-                      <p className="mt-1 text-muted-foreground">
-                        {log.actorName} · {formatDateTimeUtc(log.createdAt)}
-                      </p>
-                    </div>
+                    ))}
                   </div>
-                ))
+                  {home.recentActivity.length > 5 && (
+                    <div
+                      aria-hidden="true"
+                      className="pointer-events-none absolute inset-x-0 bottom-0 h-6 bg-gradient-to-t from-card to-transparent"
+                    />
+                  )}
+                </div>
               )}
             </CardContent>
           </Card>

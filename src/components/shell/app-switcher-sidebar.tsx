@@ -60,6 +60,7 @@ import {
   getModuleHref,
   resolveActiveModule,
   SUITE_MODULES,
+  WORKSPACE_HOME_ITEMS,
   type ModuleNavIcon,
   type SuiteModuleId,
 } from "@/config/modules";
@@ -166,6 +167,7 @@ export function AppSwitcherSidebar({
 }: AppSwitcherSidebarProps) {
   const pathname = usePathname();
   const activeModule = resolveActiveModule(pathname, orgSlug);
+  const isOnHome = pathname === `/${orgSlug}/home` || pathname.startsWith(`/${orgSlug}/home/`);
   const [inviteOpen, setInviteOpen] = React.useState(false);
   const [overviewOpen, setOverviewOpen] = React.useState(true);
   const [recentProjectsOpen, setRecentProjectsOpen] = React.useState(true);
@@ -176,6 +178,7 @@ export function AppSwitcherSidebar({
   const access = { role, portalProfile, userType };
   const isClient = isClientUser(access);
   const canInvite = can(access, "org.members.manage");
+  const canWriteDeals = can(access, "crm.deal.write");
   const canManageProjects = can(access, "projects.project.manage");
   const canWriteTasks = can(access, "projects.project.write");
   const canWriteIssues = can(access, "projects.issue.write");
@@ -402,15 +405,15 @@ export function AppSwitcherSidebar({
                   <Link
                     href={`/${orgSlug}/home`}
                     onClick={onNavigate}
-                    aria-current={pathname === `/${orgSlug}/home` ? "page" : undefined}
+                    aria-current={isOnHome ? "page" : undefined}
                     className={cn(
                       "group relative flex size-11 flex-col items-center justify-center rounded-xl transition-all",
-                      pathname === `/${orgSlug}/home`
+                      isOnHome
                         ? "bg-white/15 text-white shadow-sm"
                         : "text-zinc-400 hover:bg-zinc-800/80 hover:text-zinc-100",
                     )}
                   >
-                    {pathname === `/${orgSlug}/home` && (
+                    {isOnHome && (
                       <span
                         aria-hidden="true"
                         className="absolute -left-2.5 h-5 w-1 rounded-r-full bg-white"
@@ -431,7 +434,6 @@ export function AppSwitcherSidebar({
               </Tooltip>
             )}
             {SUITE_MODULES.filter((mod) => !isClient || mod.id === "projects").map((mod) => {
-              const isOnHome = pathname === `/${orgSlug}/home`;
               const isActive = !isOnHome && mod.id === activeModule.id;
               return (
                 <Tooltip key={mod.id}>
@@ -477,7 +479,7 @@ export function AppSwitcherSidebar({
           <div className="min-w-0">
             <div className="flex items-center gap-1.5">
               <span className="truncate text-sm font-semibold tracking-tight">
-                {activeModule.name}
+                {isOnHome ? "Workspace" : activeModule.name}
               </span>
             </div>
             <p className="truncate text-[11px] text-muted-foreground">{activeOrg.name}</p>
@@ -495,6 +497,21 @@ export function AppSwitcherSidebar({
             <DropdownMenuContent align="end" className="w-52">
               <DropdownMenuLabel>Switch App</DropdownMenuLabel>
               <DropdownMenuSeparator />
+              {!isClient && (
+                <DropdownMenuItem asChild>
+                  <Link
+                    href={`/${orgSlug}/home`}
+                    onClick={onNavigate}
+                    className="flex items-center justify-between"
+                  >
+                    <span className="flex items-center gap-2">
+                      <Home className="size-4" />
+                      Workspace Home
+                    </span>
+                    {isOnHome && <Check className="size-3.5" />}
+                  </Link>
+                </DropdownMenuItem>
+              )}
               {SUITE_MODULES.map((mod) => (
                 <DropdownMenuItem key={mod.id} asChild>
                   <Link
@@ -506,7 +523,7 @@ export function AppSwitcherSidebar({
                       {renderModuleIcon(mod.id, "size-4")}
                       {mod.name}
                     </span>
-                    {mod.id === activeModule.id && <Check className="size-3.5" />}
+                    {!isOnHome && mod.id === activeModule.id && <Check className="size-3.5" />}
                   </Link>
                 </DropdownMenuItem>
               ))}
@@ -523,30 +540,40 @@ export function AppSwitcherSidebar({
               "approvals",
               "time-logs",
               "timesheets",
+              "crm-pipeline",
+              "finance-dashboard",
             ]);
             const visibleModuleItems = orderedModuleItems.filter(
               (i) => !(isClient && clientHiddenNavIds.has(i.id)),
             );
-            const mainItems = visibleModuleItems.filter(
-              (i) => i.section !== "overview" && !hiddenIds.includes(i.id),
-            );
-            const overviewItems = visibleModuleItems.filter(
-              (i) => i.section === "overview" && !hiddenIds.includes(i.id),
-            );
+            const mainItems = isOnHome
+              ? WORKSPACE_HOME_ITEMS.filter((i) => !(isClient && clientHiddenNavIds.has(i.id)))
+              : visibleModuleItems.filter(
+                  (i) => i.section !== "overview" && !hiddenIds.includes(i.id),
+                );
+            const overviewItems = isOnHome
+              ? []
+              : visibleModuleItems.filter(
+                  (i) => i.section === "overview" && !hiddenIds.includes(i.id),
+                );
             const renderNavLink = (item: (typeof activeModule.items)[number]) => {
               const href = getModuleHref(orgSlug, item.path);
               const isItemActive =
                 pathname === href ||
-                (item.path !== "/projects" && pathname.startsWith(`${href}/`));
+                (item.path !== "/projects" &&
+                  item.path !== "/home" &&
+                  pathname.startsWith(`${href}/`));
 
               const allowQuickAddByRole =
-                item.id === "projects"
-                  ? canManageProjects
-                  : item.id === "users"
-                    ? canInvite
-                    : item.id === "issues"
-                      ? canWriteIssues
-                      : canWriteTasks;
+                item.id === "crm-pipeline"
+                  ? canWriteDeals
+                  : item.id === "projects" || item.id === "active-projects"
+                    ? canManageProjects
+                    : item.id === "users"
+                      ? canInvite
+                      : item.id === "issues"
+                        ? canWriteIssues
+                        : canWriteTasks;
               const showQuickAdd = Boolean(item.quickAddPath) && allowQuickAddByRole;
 
               return (
@@ -617,12 +644,12 @@ export function AppSwitcherSidebar({
               <>
                 <div className="space-y-1">
                   <p className="px-2.5 pb-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                    {activeModule.name} Workspace
+                    {isOnHome ? "Workspace Overview" : `${activeModule.name} Workspace`}
                   </p>
                   {mainItems.map(renderNavLink)}
                 </div>
 
-                {activeModule.items.some((i) => i.section === "overview") && (
+                {!isOnHome && activeModule.items.some((i) => i.section === "overview") && (
                   <div className="mt-4 space-y-1">
                     <div className="flex items-center justify-between gap-1 px-1.5">
                       <button
@@ -724,7 +751,9 @@ export function AppSwitcherSidebar({
                   </div>
                 )}
 
-                {activeModule.id === "projects" && orderedRecentProjects.length > 0 && (
+                {!isOnHome &&
+                  activeModule.id === "projects" &&
+                  orderedRecentProjects.length > 0 && (
                   <div className="mt-4 space-y-1">
                     <div className="flex items-center justify-between gap-1 px-1.5">
                       <button
