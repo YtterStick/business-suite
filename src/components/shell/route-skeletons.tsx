@@ -1,3 +1,4 @@
+import { TactiqLoader } from "@/components/brand/tactiq-logo";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export function TablePageSkeleton({
@@ -11,6 +12,7 @@ export function TablePageSkeleton({
 }) {
   return (
     <div className="space-y-5 p-6">
+      <TactiqLoader compact label="Loading workspace..." />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="space-y-2">
           <Skeleton className="h-6 w-48" />
@@ -69,6 +71,7 @@ export function TablePageSkeleton({
 export function KanbanBoardSkeleton() {
   return (
     <div className="flex flex-col gap-4 p-4 lg:p-6">
+      <TactiqLoader compact label="Loading board..." />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <Skeleton className="h-8 w-24" />
@@ -121,6 +124,7 @@ export function KanbanBoardSkeleton() {
 export function DashboardWidgetsSkeleton() {
   return (
     <div className="space-y-5 p-6">
+      <TactiqLoader compact label="Loading dashboard..." />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="space-y-2">
           <Skeleton className="h-6 w-56" />
@@ -154,6 +158,7 @@ export function DashboardWidgetsSkeleton() {
 export function CollaborationSkeleton() {
   return (
     <div className="space-y-5 p-4 lg:p-6">
+      <TactiqLoader compact label="Loading feed & collaboration..." />
       <div className="space-y-2">
         <Skeleton className="h-6 w-40" />
         <Skeleton className="h-3.5 w-80 max-w-full" />

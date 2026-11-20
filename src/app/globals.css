@@ -257,9 +257,109 @@
   animation: tq-check-pop 6.5s ease-in-out infinite;
 }
 
+@keyframes tq-bar-loop {
+  0%,
+  100% {
+    opacity: 0.72;
+    transform: scaleX(0.82);
+  }
+  30%,
+  72% {
+    opacity: 1;
+    transform: scaleX(1);
+  }
+}
+
+@keyframes tq-stem-loop {
+  0% {
+    stroke-dashoffset: 100;
+    opacity: 0.25;
+  }
+  42%,
+  74% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+  92%,
+  100% {
+    stroke-dashoffset: -100;
+    opacity: 0.25;
+  }
+}
+
+@keyframes tq-orbit-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes tq-aura-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.92);
+  }
+  50% {
+    opacity: 0.75;
+    transform: scale(1.08);
+  }
+}
+
+@keyframes tq-progress-slide {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(260%);
+  }
+}
+
+.tq-loop .tq-mark-bar {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: tq-bar-loop 1.8s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+
+.tq-loop .tq-mark-stem {
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+  animation: tq-stem-loop 1.8s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+
+.tq-hover-animate:hover .tq-mark-bar {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: tq-bar-in 500ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.tq-hover-animate:hover .tq-mark-stem {
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+  animation: tq-stem-draw 650ms cubic-bezier(0.22, 1, 0.36, 1) 120ms both;
+}
+
+.tq-orbit {
+  animation: tq-orbit-spin 1.35s linear infinite;
+}
+
+.tq-aura {
+  animation: tq-aura-pulse 2.2s ease-in-out infinite;
+}
+
+.tq-progress-bar {
+  animation: tq-progress-slide 1.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .tq-animated .tq-mark-bar,
   .tq-animated .tq-mark-stem,
+  .tq-loop .tq-mark-bar,
+  .tq-loop .tq-mark-stem,
+  .tq-hover-animate:hover .tq-mark-bar,
+  .tq-hover-animate:hover .tq-mark-stem,
+  .tq-orbit,
+  .tq-aura,
+  .tq-progress-bar,
   .tq-wordmark-in,
   .tq-rise,
   .tq-blob,

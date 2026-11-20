@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import { Loader2 } from "lucide-react";
 import Link from "next/link";
 
 import { loginAction } from "@/app/(auth)/login/actions";
@@ -11,7 +10,7 @@ import {
   GoogleAuthButton,
   useGoogleAuthError,
 } from "@/components/brand/google-auth-button";
-import { TactiqMark } from "@/components/brand/tactiq-logo";
+import { TactiqLoader, TactiqMark, TactiqSpinner } from "@/components/brand/tactiq-logo";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -21,10 +20,12 @@ export default function LoginPage() {
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [error, setError] = React.useState<string | null>(null);
+  const [googleLoading, setGoogleLoading] = React.useState(false);
   const googleError = useGoogleAuthError();
   const [isPending, startTransition] = React.useTransition();
 
   const activeError = error ?? googleError;
+  const isAuthenticating = isPending || googleLoading;
 
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -40,16 +41,28 @@ export default function LoginPage() {
 
   return (
     <AuthShell>
+      {isAuthenticating && (
+        <TactiqLoader
+          overlay
+          label={googleLoading ? "Connecting to Google..." : "Signing you in to Tactiq..."}
+          sublabel="Preparing your CRM, Finance & Projects dashboard"
+        />
+      )}
+
       <Card className="border-border/80 bg-card/95 shadow-sm">
         <CardHeader className="space-y-2 text-center">
-          <TactiqMark animated className="mx-auto size-10 lg:hidden" />
+          <TactiqMark animated className="mx-auto size-10" />
           <CardTitle className="text-xl">Sign in to Tactiq</CardTitle>
           <CardDescription>
             Access CRM, Finance, and Projects for your organization.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <GoogleAuthButton mode="login" label="Continue with Google" />
+          <GoogleAuthButton
+            mode="login"
+            label="Continue with Google"
+            onLoadingChange={setGoogleLoading}
+          />
           <AuthDivider />
 
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -84,8 +97,8 @@ export default function LoginPage() {
               </p>
             )}
 
-            <Button type="submit" className="w-full" disabled={isPending}>
-              {isPending && <Loader2 className="size-4 animate-spin" />}
+            <Button type="submit" className="w-full" disabled={isAuthenticating}>
+              {isPending && <TactiqSpinner className="size-4" />}
               Sign in
             </Button>
 

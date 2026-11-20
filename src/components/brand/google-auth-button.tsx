@@ -1,8 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { Loader2 } from "lucide-react";
 
+import { TactiqSpinner } from "@/components/brand/tactiq-logo";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -53,23 +53,31 @@ function GoogleGlyph({ className }: { className?: string }) {
 export function GoogleAuthButton({
   mode,
   label = "Continue with Google",
+  onLoadingChange,
 }: {
   mode: "login" | "signup";
   label?: string;
+  onLoadingChange?: (loading: boolean) => void;
 }) {
   const [loading, setLoading] = React.useState(false);
 
   // Reset the spinner if the user navigates back from Google (bfcache restore).
   React.useEffect(() => {
-    const reset = () => setLoading(false);
+    const reset = () => {
+      setLoading(false);
+      onLoadingChange?.(false);
+    };
     window.addEventListener("pageshow", reset);
     return () => window.removeEventListener("pageshow", reset);
-  }, []);
+  }, [onLoadingChange]);
 
   return (
     <a
       href={`/api/auth/google?mode=${mode}`}
-      onClick={() => setLoading(true)}
+      onClick={() => {
+        setLoading(true);
+        onLoadingChange?.(true);
+      }}
       aria-disabled={loading}
       className={cn(
         buttonVariants({ variant: "outline" }),
@@ -78,7 +86,7 @@ export function GoogleAuthButton({
       )}
     >
       {loading ? (
-        <Loader2 className="size-4 animate-spin" />
+        <TactiqSpinner className="size-4" />
       ) : (
         <GoogleGlyph className="size-4" />
       )}

@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import { Loader2 } from "lucide-react";
 import Link from "next/link";
 
 import { signupAction } from "@/app/(auth)/signup/actions";
@@ -11,7 +10,7 @@ import {
   GoogleAuthButton,
   useGoogleAuthError,
 } from "@/components/brand/google-auth-button";
-import { TactiqMark } from "@/components/brand/tactiq-logo";
+import { TactiqLoader, TactiqMark, TactiqSpinner } from "@/components/brand/tactiq-logo";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -24,10 +23,12 @@ export default function SignupPage() {
   const [organizationName, setOrganizationName] = React.useState("");
   const [defaultCurrency, setDefaultCurrency] = React.useState<"PHP" | "USD">("PHP");
   const [error, setError] = React.useState<string | null>(null);
+  const [googleLoading, setGoogleLoading] = React.useState(false);
   const googleError = useGoogleAuthError();
   const [isPending, startTransition] = React.useTransition();
 
   const activeError = error ?? googleError;
+  const isCreating = isPending || googleLoading;
 
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -49,16 +50,28 @@ export default function SignupPage() {
 
   return (
     <AuthShell>
+      {isCreating && (
+        <TactiqLoader
+          overlay
+          label={googleLoading ? "Connecting to Google..." : "Creating your Tactiq workspace..."}
+          sublabel="Provisioning CRM pipelines, Finance & Projects"
+        />
+      )}
+
       <Card className="border-border/80 bg-card/95 shadow-sm">
         <CardHeader className="space-y-2 text-center">
-          <TactiqMark animated className="mx-auto size-10 lg:hidden" />
+          <TactiqMark animated className="mx-auto size-10" />
           <CardTitle className="text-xl">Create your Tactiq workspace</CardTitle>
           <CardDescription>
             Launch CRM, Finance, and Projects for your team in seconds.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <GoogleAuthButton mode="signup" label="Continue with Google" />
+          <GoogleAuthButton
+            mode="signup"
+            label="Continue with Google"
+            onLoadingChange={setGoogleLoading}
+          />
           <AuthDivider label="or sign up with email" />
 
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -132,8 +145,8 @@ export default function SignupPage() {
               </p>
             )}
 
-            <Button type="submit" className="w-full" disabled={isPending}>
-              {isPending && <Loader2 className="size-4 animate-spin" />}
+            <Button type="submit" className="w-full" disabled={isCreating}>
+              {isPending && <TactiqSpinner className="size-4" />}
               Create Workspace
             </Button>
 

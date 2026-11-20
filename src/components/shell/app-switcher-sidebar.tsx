@@ -426,11 +426,11 @@ export function AppSwitcherSidebar({
         <div className="flex flex-col items-center gap-3">
           <Tooltip>
             <TooltipTrigger asChild>
-              <div className="flex size-8 items-center justify-center rounded-lg bg-zinc-900">
-                <TactiqMark className="size-5" />
+              <div className="tq-hover-animate flex size-8 items-center justify-center rounded-lg bg-zinc-900 transition-transform hover:scale-105">
+                <TactiqMark animated className="size-5" />
               </div>
             </TooltipTrigger>
-            <TooltipContent side="right">Tactiq v1</TooltipContent>
+            <TooltipContent side="right">Tactiq</TooltipContent>
           </Tooltip>
         </div>
       </div>
