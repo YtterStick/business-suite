@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import type { MembershipRole } from "@prisma/client";
+import type { MembershipRole, PortalProfile, UserType } from "@prisma/client";
 import {
   ArrowDown,
   ArrowUp,
@@ -25,8 +25,6 @@ import {
   Handshake,
   Home,
   Kanban,
-  Layers,
-  LogOut,
   MessageSquare,
   MoreVertical,
   Package,
@@ -41,7 +39,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { toast } from "sonner";
 
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu,
@@ -67,8 +64,9 @@ import {
   type SuiteModuleId,
 } from "@/config/modules";
 import { initials } from "@/lib/format";
-import { can, ROLE_LABEL } from "@/lib/rbac";
+import { can, getZohoRoleLabel, isClientUser, ROLE_LABEL } from "@/lib/rbac";
 import { cn } from "@/lib/utils";
+import { TactiqMark } from "@/components/brand/tactiq-logo";
 import { InviteUsersDialog } from "@/modules/org/components/invite-users-dialog";
 
 export interface SidebarOrgOption {
@@ -93,8 +91,10 @@ interface AppSwitcherSidebarProps {
     slug: string;
   };
   role: MembershipRole;
+  portalProfile?: PortalProfile;
+  userType?: UserType;
   organizations: SidebarOrgOption[];
-  user: SidebarUserSummary;
+  user?: SidebarUserSummary;
   recentProjects?: Array<{ id: string; name: string }>;
   onNavigate?: () => void;
   className?: string;
@@ -156,8 +156,9 @@ export function AppSwitcherSidebar({
   orgSlug,
   activeOrg,
   role,
+  portalProfile,
+  userType,
   organizations,
-  user,
   recentProjects = [],
   onNavigate,
   className,
@@ -171,7 +172,12 @@ export function AppSwitcherSidebar({
   const [hiddenIds, setHiddenIds] = React.useState<string[]>([]);
   const [customOrderByModule, setCustomOrderByModule] = React.useState<Record<string, string[]>>({});
   const [draggedNavId, setDraggedNavId] = React.useState<string | null>(null);
-  const canInvite = can(role, "org.members.manage");
+  const access = { role, portalProfile, userType };
+  const isClient = isClientUser(access);
+  const canInvite = can(access, "org.members.manage");
+  const canManageProjects = can(access, "projects.project.manage");
+  const canWriteTasks = can(access, "projects.project.write");
+  const canWriteIssues = can(access, "projects.issue.write");
 
   React.useEffect(() => {
     try {
@@ -342,7 +348,7 @@ export function AppSwitcherSidebar({
               <DropdownMenuLabel className="flex items-center justify-between">
                 <span>Organizations</span>
                 <Badge variant="secondary" className="text-[10px]">
-                  {ROLE_LABEL[role]}
+                  {getZohoRoleLabel(access)}
                 </Badge>
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
@@ -378,7 +384,7 @@ export function AppSwitcherSidebar({
 
           {/* Core Suite Module Icons (CRM / Finance / Projects) */}
           <nav className="flex flex-col items-center gap-2" aria-label="Suite apps">
-            {SUITE_MODULES.map((mod) => {
+            {SUITE_MODULES.filter((mod) => !isClient || mod.id === "projects").map((mod) => {
               const isActive = mod.id === activeModule.id;
               return (
                 <Tooltip key={mod.id}>
@@ -416,56 +422,16 @@ export function AppSwitcherSidebar({
           </nav>
         </div>
 
-        {/* Bottom User Profile & Sign Out */}
+        {/* Bottom Tactiq Brand Badge */}
         <div className="flex flex-col items-center gap-3">
           <Tooltip>
             <TooltipTrigger asChild>
-              <div className="flex size-8 items-center justify-center rounded-lg bg-zinc-900 text-zinc-400">
-                <Layers className="size-4" />
+              <div className="flex size-8 items-center justify-center rounded-lg bg-zinc-900">
+                <TactiqMark className="size-5" />
               </div>
             </TooltipTrigger>
-            <TooltipContent side="right">Business Suite v1</TooltipContent>
+            <TooltipContent side="right">Tactiq v1</TooltipContent>
           </Tooltip>
-
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                type="button"
-                aria-label="User account menu"
-                className="rounded-full ring-2 ring-zinc-800 transition hover:ring-zinc-600 focus-visible:outline-none focus-visible:ring-white"
-              >
-                <Avatar className="size-9">
-                  {user.avatarUrl && <AvatarImage src={user.avatarUrl} alt={user.name} />}
-                  <AvatarFallback className="bg-zinc-800 text-xs text-zinc-100">
-                    {initials(user.name)}
-                  </AvatarFallback>
-                </Avatar>
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent side="right" align="end" className="w-60">
-              <DropdownMenuLabel>
-                <p className="truncate text-sm font-semibold">{user.name}</p>
-                <p className="truncate text-xs font-normal text-muted-foreground">{user.email}</p>
-              </DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem className="justify-between" disabled>
-                <span>Role in {activeOrg.name}</span>
-                <Badge variant="outline">{ROLE_LABEL[role]}</Badge>
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem asChild>
-                <form action="/api/auth/logout" method="post" className="w-full">
-                  <button
-                    type="submit"
-                    className="flex w-full items-center gap-2 text-left text-destructive"
-                  >
-                    <LogOut className="size-4" />
-                    <span>Sign out</span>
-                  </button>
-                </form>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
         </div>
       </div>
 
@@ -519,10 +485,20 @@ export function AppSwitcherSidebar({
         {/* Contextual Navigation Links */}
         <ScrollArea className="flex-1 px-2.5 py-3">
           {(() => {
-            const mainItems = orderedModuleItems.filter(
+            const clientHiddenNavIds = new Set([
+              "reports",
+              "users",
+              "approvals",
+              "time-logs",
+              "timesheets",
+            ]);
+            const visibleModuleItems = orderedModuleItems.filter(
+              (i) => !(isClient && clientHiddenNavIds.has(i.id)),
+            );
+            const mainItems = visibleModuleItems.filter(
               (i) => i.section !== "overview" && !hiddenIds.includes(i.id),
             );
-            const overviewItems = orderedModuleItems.filter(
+            const overviewItems = visibleModuleItems.filter(
               (i) => i.section === "overview" && !hiddenIds.includes(i.id),
             );
             const renderNavLink = (item: (typeof activeModule.items)[number]) => {
@@ -531,7 +507,15 @@ export function AppSwitcherSidebar({
                 pathname === href ||
                 (item.path !== "/projects" && pathname.startsWith(`${href}/`));
 
-              const showQuickAdd = Boolean(item.quickAddPath);
+              const allowQuickAddByRole =
+                item.id === "projects"
+                  ? canManageProjects
+                  : item.id === "users"
+                    ? canInvite
+                    : item.id === "issues"
+                      ? canWriteIssues
+                      : canWriteTasks;
+              const showQuickAdd = Boolean(item.quickAddPath) && allowQuickAddByRole;
 
               return (
                 <div
@@ -797,49 +781,55 @@ export function AppSwitcherSidebar({
             );
           })()}
 
-          <Separator className="my-4" />
+          {!isClient && (
+            <>
+              <Separator className="my-4" />
 
-          {/* Cross-Module Quick Links */}
-          <div className="space-y-1">
-            <p className="px-2.5 pb-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-              Connected Apps
-            </p>
-            {SUITE_MODULES.filter((m) => m.id !== activeModule.id).map((mod) => (
-              <Link
-                key={mod.id}
-                href={getModuleHref(orgSlug, mod.defaultPath)}
-                onClick={onNavigate}
-                className="flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
-              >
-                {renderModuleIcon(mod.id, "size-3.5 shrink-0")}
-                <span>Open {mod.name}</span>
-              </Link>
-            ))}
-          </div>
+              {/* Cross-Module Quick Links */}
+              <div className="space-y-1">
+                <p className="px-2.5 pb-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                  Connected Apps
+                </p>
+                {SUITE_MODULES.filter((m) => m.id !== activeModule.id).map((mod) => (
+                  <Link
+                    key={mod.id}
+                    href={getModuleHref(orgSlug, mod.defaultPath)}
+                    onClick={onNavigate}
+                    className="flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
+                  >
+                    {renderModuleIcon(mod.id, "size-3.5 shrink-0")}
+                    <span>Open {mod.name}</span>
+                  </Link>
+                ))}
+              </div>
+            </>
+          )}
         </ScrollArea>
 
         {/* Suite-Wide Invite Users */}
-        <div className="border-t p-3">
-          {canInvite ? (
-            <button
-              type="button"
-              onClick={() => setInviteOpen(true)}
-              className="flex w-full items-center justify-center gap-2 rounded-lg border bg-background px-3 py-2 text-xs font-semibold text-foreground shadow-2xs transition hover:bg-accent"
-            >
-              <UserPlus className="size-3.5 text-primary" />
-              <span>Invite Users</span>
-            </button>
-          ) : (
-            <Link
-              href={`/${orgSlug}/projects/users`}
-              onClick={onNavigate}
-              className="flex w-full items-center justify-center gap-2 rounded-lg border bg-background px-3 py-2 text-xs font-semibold text-foreground shadow-2xs transition hover:bg-accent"
-            >
-              <Users className="size-3.5 text-primary" />
-              <span>View Users</span>
-            </Link>
-          )}
-        </div>
+        {!isClient && (
+          <div className="border-t p-3">
+            {canInvite ? (
+              <button
+                type="button"
+                onClick={() => setInviteOpen(true)}
+                className="flex w-full items-center justify-center gap-2 rounded-lg border bg-background px-3 py-2 text-xs font-semibold text-foreground shadow-2xs transition hover:bg-accent"
+              >
+                <UserPlus className="size-3.5 text-primary" />
+                <span>Invite Users</span>
+              </button>
+            ) : (
+              <Link
+                href={`/${orgSlug}/projects/users`}
+                onClick={onNavigate}
+                className="flex w-full items-center justify-center gap-2 rounded-lg border bg-background px-3 py-2 text-xs font-semibold text-foreground shadow-2xs transition hover:bg-accent"
+              >
+                <Users className="size-3.5 text-primary" />
+                <span>View Users</span>
+              </Link>
+            )}
+          </div>
+        )}
       </div>
 
       <InviteUsersDialog
@@ -847,6 +837,7 @@ export function AppSwitcherSidebar({
         onOpenChange={setInviteOpen}
         orgSlug={orgSlug}
         orgName={activeOrg.name}
+        isOwner={role === "OWNER"}
       />
     </aside>
   );

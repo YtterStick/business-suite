@@ -33,6 +33,7 @@ interface InviteUsersDrawerProps {
   orgName: string;
   projects: Array<{ id: string; name: string }>;
   defaultUserType?: UserType;
+  isOwner?: boolean;
 }
 
 export function InviteUsersDrawer({
@@ -42,6 +43,7 @@ export function InviteUsersDrawer({
   orgName,
   projects,
   defaultUserType = "PORTAL",
+  isOwner = false,
 }: InviteUsersDrawerProps) {
   const [emails, setEmails] = React.useState<string[]>([]);
   const [emailDraft, setEmailDraft] = React.useState("");
@@ -256,7 +258,12 @@ export function InviteUsersDrawer({
                   onChange={(e) => {
                     const next = e.target.value as UserType;
                     setUserType(next);
-                    setPortalProfile(next === "CLIENT" ? "CLIENT" : "STANDARD");
+                    if (next === "CLIENT") {
+                      setRole("MEMBER");
+                      setPortalProfile("CLIENT");
+                    } else if (portalProfile === "CLIENT") {
+                      setPortalProfile("STANDARD");
+                    }
                   }}
                   className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm"
                 >
@@ -269,13 +276,20 @@ export function InviteUsersDrawer({
                 <Label htmlFor="drawer-role">Role</Label>
                 <select
                   id="drawer-role"
-                  value={role}
-                  onChange={(e) => setRole(e.target.value as MembershipRole)}
-                  className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm"
+                  value={userType === "CLIENT" ? "MEMBER" : role}
+                  disabled={userType === "CLIENT"}
+                  onChange={(e) => {
+                    const nextRole = e.target.value as MembershipRole;
+                    setRole(nextRole);
+                    if (nextRole !== "OWNER" && portalProfile === "PORTAL_OWNER") {
+                      setPortalProfile("STANDARD");
+                    }
+                  }}
+                  className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <option value="MEMBER">Employee</option>
                   <option value="ADMIN">Manager</option>
-                  <option value="OWNER">Administrator</option>
+                  {isOwner && <option value="OWNER">Administrator</option>}
                 </select>
               </div>
             </div>
@@ -286,11 +300,20 @@ export function InviteUsersDrawer({
                 <select
                   id="drawer-profile"
                   value={portalProfile}
-                  onChange={(e) => setPortalProfile(e.target.value as PortalProfile)}
+                  onChange={(e) => {
+                    const nextProfile = e.target.value as PortalProfile;
+                    setPortalProfile(nextProfile);
+                    if (nextProfile === "CLIENT") {
+                      setUserType("CLIENT");
+                      setRole("MEMBER");
+                    } else {
+                      setUserType("PORTAL");
+                    }
+                  }}
                   className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm"
                 >
                   <option value="STANDARD">Standard</option>
-                  <option value="PORTAL_OWNER">Portal Owner</option>
+                  {isOwner && <option value="PORTAL_OWNER">Portal Owner</option>}
                   <option value="CLIENT">Client</option>
                 </select>
               </div>

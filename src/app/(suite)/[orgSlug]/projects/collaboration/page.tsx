@@ -6,7 +6,10 @@ import {
   CollaborationPanel,
   type CollaborationAuditActivity,
 } from "@/modules/projects/components/collaboration-panel";
-import { listCollaborationFeed } from "@/modules/projects/projects.service";
+import {
+  getClientAccessibleProjectIds,
+  listCollaborationFeed,
+} from "@/modules/projects/projects.service";
 import { requireTenant } from "@/server/tenancy";
 
 function projectCodePrefix(name: string): string {
@@ -25,6 +28,7 @@ export default async function CollaborationPage({
   const { orgSlug } = await params;
   const tenant = await requireTenant(orgSlug);
   const orgId = tenant.organization.id;
+  const clientIds = await getClientAccessibleProjectIds(tenant);
 
   const [{ comments, projects }, memberships, auditLogs, tasks, milestones, projectRows] =
     await Promise.all([
@@ -43,7 +47,10 @@ export default async function CollaborationPage({
         take: 30,
       }),
       db.task.findMany({
-        where: { organizationId: orgId },
+        where: {
+          organizationId: orgId,
+          ...(clientIds ? { projectId: { in: Array.from(clientIds) } } : {}),
+        },
         orderBy: { updatedAt: "desc" },
         take: 80,
         select: {
@@ -58,7 +65,10 @@ export default async function CollaborationPage({
         },
       }),
       db.milestone.findMany({
-        where: { organizationId: orgId },
+        where: {
+          organizationId: orgId,
+          ...(clientIds ? { projectId: { in: Array.from(clientIds) } } : {}),
+        },
         orderBy: { dueDate: "asc" },
         take: 60,
         select: {
@@ -72,7 +82,11 @@ export default async function CollaborationPage({
         },
       }),
       db.project.findMany({
-        where: { organizationId: orgId, isArchived: false },
+        where: {
+          organizationId: orgId,
+          isArchived: false,
+          ...(clientIds ? { id: { in: Array.from(clientIds) } } : {}),
+        },
         select: { id: true, name: true, status: true, dueDate: true },
       }),
     ]);
@@ -220,10 +234,14 @@ export default async function CollaborationPage({
         comments={comments}
         projects={projects}
         members={memberships.map((m) => m.user)}
-        auditActivities={auditActivities}
+        auditActivities={
+          clientIds
+            ? auditActivities.filter((a) => a.projectId && clientIds.has(a.projectId))
+            : auditActivities
+        }
         calendarEvents={calendarEvents}
         showZohoTabs
-        canWrite={can(tenant.role, "projects.project.write")}
+        canWrite={can(tenant, "projects.comment.write")}
       />
     </div>
   );

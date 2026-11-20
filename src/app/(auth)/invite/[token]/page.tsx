@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { InviteAcceptanceCard } from "@/app/(auth)/invite/[token]/invite-card";
+import { AuthShell } from "@/components/brand/auth-shell";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { lookupInvitationByToken } from "@/modules/org/team.service";
 import { getSession } from "@/server/auth/session";
@@ -18,8 +19,8 @@ export default async function InvitePage({
 
   if (!invitation) {
     return (
-      <div className="flex min-h-dvh items-center justify-center bg-muted/30 p-4">
-        <Card className="w-full max-w-md text-center">
+      <AuthShell>
+        <Card className="w-full max-w-md border-border/80 bg-card/95 text-center shadow-sm">
           <CardHeader>
             <CardTitle>Invitation Unavailable</CardTitle>
             <CardDescription>
@@ -32,12 +33,12 @@ export default async function InvitePage({
             </Link>
           </CardContent>
         </Card>
-      </div>
+      </AuthShell>
     );
   }
 
   return (
-    <div className="flex min-h-dvh items-center justify-center bg-muted/30 p-4">
+    <AuthShell>
       <InviteAcceptanceCard
         token={token}
         organizationName={invitation.organization.name}
@@ -46,6 +47,6 @@ export default async function InvitePage({
         invitedByName={invitation.invitedBy?.name ?? null}
         signedInEmail={session?.user.email ?? null}
       />
-    </div>
+    </AuthShell>
   );
 }

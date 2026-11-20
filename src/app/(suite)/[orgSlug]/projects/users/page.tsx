@@ -1,3 +1,5 @@
+import { redirect } from "next/navigation";
+
 import { toIsoDate } from "@/lib/dates";
 import { can } from "@/lib/rbac";
 import { UsersPanel } from "@/modules/org/components/users-panel";
@@ -14,7 +16,11 @@ export default async function UsersPage({
   const { orgSlug } = await params;
   const { invite } = await searchParams;
   const tenant = await requireTenant(orgSlug);
+  if (!can(tenant, "org.members.read")) {
+    redirect(`/${orgSlug}/projects`);
+  }
   const team = await listOrganizationTeam(tenant);
+  const canManage = can(tenant, "org.members.manage");
 
   return (
     <UsersPanel
@@ -22,8 +28,9 @@ export default async function UsersPage({
       orgName={tenant.organization.name}
       todayIso={toIsoDate(new Date())}
       team={team}
-      canManage={can(tenant.role, "org.members.manage")}
-      openInviteInitially={invite === "1"}
+      canManage={canManage}
+      isOwner={tenant.role === "OWNER"}
+      openInviteInitially={canManage && invite === "1"}
     />
   );
 }

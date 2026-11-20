@@ -13,7 +13,9 @@ import {
 
 import { addDays, startOfUtcDay, toIsoDate } from "@/lib/dates";
 import { db } from "@/lib/db";
-import { NotFoundError, ValidationError } from "@/lib/errors";
+import { ForbiddenError, NotFoundError, ValidationError } from "@/lib/errors";
+import { isClientUser } from "@/lib/rbac";
+import { extractZohoMeta, type PhaseMeta } from "@/modules/projects/zoho-meta";
 import { recordAudit } from "@/server/audit";
 import { authorize, type TenantContext } from "@/server/tenancy";
 import type {
@@ -141,14 +143,41 @@ const TEMPLATE_DEFINITIONS: Record<
   },
 };
 
+export async function getClientAccessibleProjectIds(
+  ctx: TenantContext,
+): Promise<Set<string> | null> {
+  if (!isClientUser(ctx)) return null;
+  const rows = await db.project.findMany({
+    where: {
+      organizationId: ctx.organization.id,
+      isArchived: false,
+      OR: [
+        { isPublic: true },
+        { ownerId: ctx.user.id },
+        { tasks: { some: { assigneeId: ctx.user.id } } },
+        {
+          issues: {
+            some: { OR: [{ assigneeId: ctx.user.id }, { reporterId: ctx.user.id }] },
+          },
+        },
+      ],
+    },
+    select: { id: true },
+  });
+  return new Set(rows.map((r) => r.id));
+}
+
 export async function listProjectsWorkspace(ctx: TenantContext): Promise<ProjectsWorkspaceDTO> {
   authorize(ctx, "projects.project.read");
   const organizationId = ctx.organization.id;
+  const clientIds = await getClientAccessibleProjectIds(ctx);
+  const isClient = clientIds !== null;
+  const projectFilter = clientIds ? { id: { in: Array.from(clientIds) } } : {};
 
   const [projects, groups, memberships, companies, deals, recentTasks, recentIssues, rawAuditLogs] =
     await Promise.all([
       db.project.findMany({
-        where: { organizationId },
+        where: { organizationId, ...projectFilter },
         orderBy: [{ isArchived: "asc" }, { createdAt: "desc" }],
         include: {
           group: { select: { id: true, name: true } },
@@ -171,26 +200,36 @@ export async function listProjectsWorkspace(ctx: TenantContext): Promise<Project
         orderBy: { user: { name: "asc" } },
         include: { user: { select: { id: true, name: true, email: true } } },
       }),
-      db.company.findMany({
-        where: { organizationId },
-        orderBy: { name: "asc" },
-        take: 100,
-        select: { id: true, name: true },
-      }),
-      db.deal.findMany({
-        where: { organizationId },
-        orderBy: { updatedAt: "desc" },
-        take: 100,
-        select: { id: true, title: true, companyId: true },
-      }),
+      isClient
+        ? Promise.resolve([])
+        : db.company.findMany({
+            where: { organizationId },
+            orderBy: { name: "asc" },
+            take: 100,
+            select: { id: true, name: true },
+          }),
+      isClient
+        ? Promise.resolve([])
+        : db.deal.findMany({
+            where: { organizationId },
+            orderBy: { updatedAt: "desc" },
+            take: 100,
+            select: { id: true, title: true, companyId: true },
+          }),
       db.task.findMany({
-        where: { organizationId },
+        where: {
+          organizationId,
+          ...(clientIds ? { projectId: { in: Array.from(clientIds) } } : {}),
+        },
         orderBy: { updatedAt: "desc" },
         take: 25,
         select: { id: true, title: true, project: { select: { name: true } } },
       }),
       db.issue.findMany({
-        where: { organizationId },
+        where: {
+          organizationId,
+          ...(clientIds ? { projectId: { in: Array.from(clientIds) } } : {}),
+        },
         orderBy: { updatedAt: "desc" },
         take: 25,
         select: { id: true, title: true, project: { select: { name: true } } },
@@ -198,7 +237,9 @@ export async function listProjectsWorkspace(ctx: TenantContext): Promise<Project
       db.auditLog.findMany({
         where: {
           organizationId,
-          entityType: { in: ["Project", "Task", "Milestone", "Issue", "Deal"] },
+          entityType: {
+            in: isClient ? ["Project", "Task", "Milestone", "Issue"] : ["Project", "Task", "Milestone", "Issue", "Deal"],
+          },
         },
         orderBy: { createdAt: "desc" },
         take: 40,
@@ -235,7 +276,7 @@ export async function listProjectsWorkspace(ctx: TenantContext): Promise<Project
       tags: p.tags,
       startDate: p.startDate ? toIsoDate(p.startDate) : null,
       dueDate: p.dueDate ? toIsoDate(p.dueDate) : null,
-      budget: p.budget !== null ? Number(p.budget) : null,
+      budget: isClient ? null : p.budget !== null ? Number(p.budget) : null,
       currency: p.currency,
       completionPercent,
       taskCount,
@@ -243,12 +284,12 @@ export async function listProjectsWorkspace(ctx: TenantContext): Promise<Project
       milestoneCount: p._count.milestones,
       issueCount,
       openIssueCount,
-      expenseCount: p._count.expenses + p._count.expenseClaims,
-      hoursLogged,
+      expenseCount: isClient ? 0 : p._count.expenses + p._count.expenseClaims,
+      hoursLogged: isClient ? 0 : hoursLogged,
       group: p.group,
       owner: p.owner,
       company: p.company,
-      deal: p.deal,
+      deal: isClient ? null : p.deal,
     };
   });
 
@@ -331,7 +372,7 @@ export async function createProject(
     dealId?: string | null;
   },
 ): Promise<{ id: string; name: string }> {
-  authorize(ctx, "projects.project.write");
+  authorize(ctx, "projects.project.manage");
   const organizationId = ctx.organization.id;
 
   return db.$transaction(async (tx) => {
@@ -454,7 +495,7 @@ export async function toggleProjectArchive(
   projectId: string,
   isArchived: boolean,
 ): Promise<void> {
-  authorize(ctx, "projects.project.write");
+  authorize(ctx, "projects.project.manage");
   const updated = await db.project.updateMany({
     where: { id: projectId, organizationId: ctx.organization.id },
     data: { isArchived },
@@ -469,7 +510,7 @@ export async function updateProjectStatus(
   projectId: string,
   status: ProjectStatus,
 ): Promise<void> {
-  authorize(ctx, "projects.project.write");
+  authorize(ctx, "projects.project.manage");
   const updated = await db.project.updateMany({
     where: { id: projectId, organizationId: ctx.organization.id },
     data: { status },
@@ -484,7 +525,7 @@ export async function bulkArchiveProjects(
   projectIds: string[],
   isArchived: boolean,
 ): Promise<{ count: number }> {
-  authorize(ctx, "projects.project.write");
+  authorize(ctx, "projects.project.manage");
   const ids = Array.from(new Set(projectIds)).filter(Boolean);
   if (ids.length === 0) {
     throw new ValidationError("Select at least one project.");
@@ -512,7 +553,7 @@ export async function bulkUpdateProjectsStatus(
   projectIds: string[],
   status: ProjectStatus,
 ): Promise<{ count: number }> {
-  authorize(ctx, "projects.project.write");
+  authorize(ctx, "projects.project.manage");
   const ids = Array.from(new Set(projectIds)).filter(Boolean);
   if (ids.length === 0) {
     throw new ValidationError("Select at least one project.");
@@ -539,7 +580,7 @@ export async function deleteProjects(
   ctx: TenantContext,
   projectIds: string[],
 ): Promise<{ count: number }> {
-  authorize(ctx, "projects.project.write");
+  authorize(ctx, "projects.project.delete");
   const ids = Array.from(new Set(projectIds)).filter(Boolean);
   if (ids.length === 0) {
     throw new ValidationError("Select at least one project to delete.");
@@ -585,7 +626,7 @@ export async function cloneProject(
   ctx: TenantContext,
   projectId: string,
 ): Promise<{ id: string; name: string }> {
-  authorize(ctx, "projects.project.write");
+  authorize(ctx, "projects.project.manage");
   const organizationId = ctx.organization.id;
 
   return db.$transaction(async (tx) => {
@@ -689,7 +730,7 @@ export async function importProjects(
     tags?: string[];
   }>,
 ): Promise<{ count: number }> {
-  authorize(ctx, "projects.project.write");
+  authorize(ctx, "projects.project.manage");
   if (rows.length === 0) {
     throw new ValidationError("No valid project rows provided for import.");
   }
@@ -759,13 +800,22 @@ export async function getTasksBoard(
 ): Promise<TasksBoardDTO> {
   authorize(ctx, "projects.project.read");
   const organizationId = ctx.organization.id;
+  const clientIds = await getClientAccessibleProjectIds(ctx);
+  if (clientIds && projectId && !clientIds.has(projectId)) {
+    throw new ForbiddenError("You do not have access to this project.");
+  }
+  const projectScope = projectId
+    ? { projectId }
+    : clientIds
+      ? { projectId: { in: Array.from(clientIds) } }
+      : {};
 
   const [tasks, projects, milestones, memberships, taskTimeLogs, taskComments, taskAudits] =
     await Promise.all([
       db.task.findMany({
         where: {
           organizationId,
-          ...(projectId ? { projectId } : {}),
+          ...projectScope,
         },
         orderBy: [{ position: "asc" }, { createdAt: "asc" }],
         include: {
@@ -775,12 +825,19 @@ export async function getTasksBoard(
         },
       }),
       db.project.findMany({
-        where: { organizationId, isArchived: false },
+        where: {
+          organizationId,
+          isArchived: false,
+          ...(clientIds ? { id: { in: Array.from(clientIds) } } : {}),
+        },
         orderBy: { name: "asc" },
         select: { id: true, name: true },
       }),
       db.milestone.findMany({
-        where: { organizationId },
+        where: {
+          organizationId,
+          ...(clientIds ? { projectId: { in: Array.from(clientIds) } } : {}),
+        },
         orderBy: [{ position: "asc" }, { name: "asc" }],
         select: { id: true, projectId: true, name: true },
       }),
@@ -789,11 +846,13 @@ export async function getTasksBoard(
         orderBy: { user: { name: "asc" } },
         include: { user: { select: { id: true, name: true } } },
       }),
-      db.timeLog.findMany({
-        where: { organizationId, taskId: { not: null } },
-        orderBy: [{ loggedDate: "desc" }, { createdAt: "desc" }],
-        include: { user: { select: { name: true } } },
-      }),
+      clientIds
+        ? Promise.resolve([])
+        : db.timeLog.findMany({
+            where: { organizationId, taskId: { not: null } },
+            orderBy: [{ loggedDate: "desc" }, { createdAt: "desc" }],
+            include: { user: { select: { name: true } } },
+          }),
       db.comment.findMany({
         where: { organizationId, entityType: "Task" },
         orderBy: { createdAt: "asc" },
@@ -1368,10 +1427,14 @@ export async function listIssues(ctx: TenantContext): Promise<{
 }> {
   authorize(ctx, "projects.project.read");
   const organizationId = ctx.organization.id;
+  const clientIds = await getClientAccessibleProjectIds(ctx);
 
   const [issues, projects, memberships] = await Promise.all([
     db.issue.findMany({
-      where: { organizationId },
+      where: {
+        organizationId,
+        ...(clientIds ? { projectId: { in: Array.from(clientIds) } } : {}),
+      },
       orderBy: [{ status: "asc" }, { createdAt: "desc" }],
       include: {
         project: { select: { name: true } },
@@ -1380,7 +1443,11 @@ export async function listIssues(ctx: TenantContext): Promise<{
       },
     }),
     db.project.findMany({
-      where: { organizationId, isArchived: false },
+      where: {
+        organizationId,
+        isArchived: false,
+        ...(clientIds ? { id: { in: Array.from(clientIds) } } : {}),
+      },
       orderBy: { name: "asc" },
       select: { id: true, name: true },
     }),
@@ -1419,8 +1486,12 @@ export async function createIssue(
     assigneeId?: string | null;
   },
 ): Promise<void> {
-  authorize(ctx, "projects.project.write");
+  authorize(ctx, "projects.issue.write");
   const organizationId = ctx.organization.id;
+  const clientIds = await getClientAccessibleProjectIds(ctx);
+  if (clientIds && !clientIds.has(input.projectId)) {
+    throw new ForbiddenError("You can only log issues in projects shared with you.");
+  }
 
   const project = await db.project.findUnique({
     where: { id_organizationId: { id: input.projectId, organizationId } },
@@ -1447,9 +1518,14 @@ export async function updateIssueStatus(
   issueId: string,
   status: IssueStatus,
 ): Promise<void> {
-  authorize(ctx, "projects.project.write");
+  authorize(ctx, "projects.issue.write");
+  const clientIds = await getClientAccessibleProjectIds(ctx);
   await db.issue.updateMany({
-    where: { id: issueId, organizationId: ctx.organization.id },
+    where: {
+      id: issueId,
+      organizationId: ctx.organization.id,
+      ...(clientIds ? { projectId: { in: Array.from(clientIds) } } : {}),
+    },
     data: { status },
   });
 }
@@ -1466,9 +1542,14 @@ export async function updateIssueDetails(
     dueDate?: string | null;
   },
 ): Promise<void> {
-  authorize(ctx, "projects.project.write");
+  authorize(ctx, "projects.issue.write");
+  const clientIds = await getClientAccessibleProjectIds(ctx);
   const updated = await db.issue.updateMany({
-    where: { id: input.issueId, organizationId: ctx.organization.id },
+    where: {
+      id: input.issueId,
+      organizationId: ctx.organization.id,
+      ...(clientIds ? { projectId: { in: Array.from(clientIds) } } : {}),
+    },
     data: {
       ...(input.title !== undefined ? { title: input.title.trim() } : {}),
       ...(input.description !== undefined ? { description: input.description } : {}),
@@ -1491,7 +1572,7 @@ export async function listTimeLogs(ctx: TenantContext): Promise<{
   tasks: Array<{ id: string; projectId: string; title: string }>;
   defaultCurrency: string;
 }> {
-  authorize(ctx, "projects.project.read");
+  authorize(ctx, "projects.time.read");
   const organizationId = ctx.organization.id;
 
   const [logs, projects, tasks, memberships] = await Promise.all([
@@ -1640,6 +1721,7 @@ export async function listCollaborationFeed(
 }> {
   authorize(ctx, "projects.project.read");
   const organizationId = ctx.organization.id;
+  const clientIds = await getClientAccessibleProjectIds(ctx);
 
   const [comments, projects] = await Promise.all([
     db.comment.findMany({
@@ -1647,6 +1729,14 @@ export async function listCollaborationFeed(
         organizationId,
         ...(filter?.entityType ? { entityType: filter.entityType } : {}),
         ...(filter?.entityId ? { entityId: filter.entityId } : {}),
+        ...(clientIds
+          ? {
+              OR: [
+                { entityType: "Workspace" },
+                { entityType: "Project", entityId: { in: Array.from(clientIds) } },
+              ],
+            }
+          : {}),
       },
       orderBy: { createdAt: "desc" },
       take: 60,
@@ -1655,7 +1745,10 @@ export async function listCollaborationFeed(
       },
     }),
     db.project.findMany({
-      where: { organizationId },
+      where: {
+        organizationId,
+        ...(clientIds ? { id: { in: Array.from(clientIds) } } : {}),
+      },
       orderBy: { updatedAt: "desc" },
       select: { id: true, name: true },
     }),
@@ -1688,7 +1781,16 @@ export async function postComment(
     body: string;
   },
 ): Promise<void> {
-  authorize(ctx, "projects.project.write");
+  authorize(ctx, "projects.comment.write");
+  const clientIds = await getClientAccessibleProjectIds(ctx);
+  if (clientIds) {
+    if (input.entityType === "Deal") {
+      throw new ForbiddenError("Clients cannot comment on CRM deals.");
+    }
+    if (input.entityType === "Project" && !clientIds.has(input.entityId)) {
+      throw new ForbiddenError("You can only comment on projects shared with you.");
+    }
+  }
   await db.comment.create({
     data: {
       organizationId: ctx.organization.id,
@@ -1705,9 +1807,13 @@ export async function updateCommentBody(
   commentId: string,
   body: string,
 ): Promise<void> {
-  authorize(ctx, "projects.project.write");
+  authorize(ctx, "projects.comment.write");
   await db.comment.updateMany({
-    where: { id: commentId, organizationId: ctx.organization.id },
+    where: {
+      id: commentId,
+      organizationId: ctx.organization.id,
+      ...(isClientUser(ctx) ? { authorId: ctx.user.id } : {}),
+    },
     data: { body: body.trim() },
   });
 }
@@ -1716,9 +1822,13 @@ export async function deleteCommentItem(
   ctx: TenantContext,
   commentId: string,
 ): Promise<void> {
-  authorize(ctx, "projects.project.write");
+  authorize(ctx, "projects.comment.write");
   await db.comment.deleteMany({
-    where: { id: commentId, organizationId: ctx.organization.id },
+    where: {
+      id: commentId,
+      organizationId: ctx.organization.id,
+      ...(isClientUser(ctx) ? { authorId: ctx.user.id } : {}),
+    },
   });
 }
 
@@ -1787,7 +1897,7 @@ export async function updateProject(
     tags: string[];
   },
 ): Promise<void> {
-  authorize(ctx, "projects.project.write");
+  authorize(ctx, "projects.project.manage");
   const organizationId = ctx.organization.id;
 
   const existing = await db.project.findUnique({
@@ -1843,6 +1953,11 @@ export async function getSingleProjectWorkspace(
 ): Promise<SingleProjectWorkspaceDTO | null> {
   authorize(ctx, "projects.project.read");
   const organizationId = ctx.organization.id;
+  const clientIds = await getClientAccessibleProjectIds(ctx);
+  const isClient = clientIds !== null;
+  if (clientIds && !clientIds.has(projectId)) {
+    throw new ForbiddenError("You do not have access to this project.");
+  }
 
   const project = await db.project.findUnique({
     where: { id_organizationId: { id: projectId, organizationId } },
@@ -1907,33 +2022,49 @@ export async function getSingleProjectWorkspace(
 
   const [allProjects, memberships, groups, companies, feed] = await Promise.all([
     db.project.findMany({
-      where: { organizationId },
+      where: {
+        organizationId,
+        ...(clientIds ? { id: { in: Array.from(clientIds) } } : {}),
+      },
       orderBy: [{ isArchived: "asc" }, { name: "asc" }],
       select: { id: true, name: true, status: true },
     }),
-    db.membership.findMany({
-      where: { organizationId, isActive: true },
-      orderBy: { user: { name: "asc" } },
-      include: {
-        user: { select: { id: true, name: true, email: true, avatarUrl: true } },
-      },
-    }),
+    isClient
+      ? Promise.resolve([])
+      : db.membership.findMany({
+          where: { organizationId, isActive: true },
+          orderBy: { user: { name: "asc" } },
+          include: {
+            user: { select: { id: true, name: true, email: true, avatarUrl: true } },
+          },
+        }),
     db.projectGroup.findMany({
       where: { organizationId },
       orderBy: { name: "asc" },
       select: { id: true, name: true },
     }),
-    db.company.findMany({
-      where: { organizationId },
-      orderBy: { name: "asc" },
-      select: { id: true, name: true },
-    }),
+    isClient
+      ? Promise.resolve([])
+      : db.company.findMany({
+          where: { organizationId },
+          orderBy: { name: "asc" },
+          select: { id: true, name: true },
+        }),
     listCollaborationFeed(ctx, { entityType: "Project", entityId: project.id }),
   ]);
 
   const totalTasks = project.tasks.length;
   const doneTasks = project.tasks.filter((t) => t.status === TaskStatus.DONE).length;
   const completionPercent = totalTasks > 0 ? Math.round((doneTasks / totalTasks) * 100) : 0;
+
+  const clientVisibleMilestones = isClient
+    ? project.milestones.filter((m) => {
+        const { meta } = extractZohoMeta<PhaseMeta>(m.description);
+        const defaultFlag: "Internal" | "External" =
+          project.company && m.position > 0 ? "External" : "Internal";
+        return (meta.flag ?? defaultFlag) === "External";
+      })
+    : project.milestones;
 
   return {
     project: {
@@ -1948,29 +2079,32 @@ export async function getSingleProjectWorkspace(
       rollupEnabled: project.rollupEnabled,
       businessHours: project.businessHours,
       taskLayout: project.taskLayout,
-      enabledTabs: project.enabledTabs,
+      enabledTabs: isClient
+        ? ["Dashboard", "Tasks", "Phases", "Bugs", "Documents", "Feed"]
+        : project.enabledTabs,
       templateName: project.templateName,
       tags: project.tags,
       startDate: project.startDate ? toIsoDate(project.startDate) : null,
       dueDate: project.dueDate ? toIsoDate(project.dueDate) : null,
-      budget: project.budget !== null ? Number(project.budget) : null,
+      budget: isClient ? null : project.budget !== null ? Number(project.budget) : null,
       currency: project.currency,
       completionPercent,
       group: project.group,
       owner: project.owner,
       company: project.company,
-      deal: project.deal
-        ? {
-            id: project.deal.id,
-            title: project.deal.title,
-            amount: Number(project.deal.amount),
-            currency: project.deal.currency,
-            status: project.deal.status,
-          }
-        : null,
+      deal:
+        !isClient && project.deal
+          ? {
+              id: project.deal.id,
+              title: project.deal.title,
+              amount: Number(project.deal.amount),
+              currency: project.deal.currency,
+              status: project.deal.status,
+            }
+          : null,
     },
     allProjects,
-    milestones: project.milestones.map((m) => {
+    milestones: clientVisibleMilestones.map((m) => {
       const mTasks = project.tasks.filter((t) => t.milestoneId === m.id);
       return {
         id: m.id,
@@ -2011,51 +2145,57 @@ export async function getSingleProjectWorkspace(
       reporter: i.reporter,
       createdAt: i.createdAt.toISOString(),
     })),
-    timeLogs: project.timeLogs.map((l) => ({
-      id: l.id,
-      projectId: project.id,
-      projectName: project.name,
-      taskTitle: l.task?.title ?? null,
-      userName: l.user?.name ?? "Team Member",
-      hours: Number(l.hours),
-      billable: l.billable,
-      loggedDate: toIsoDate(l.loggedDate),
-      notes: l.notes,
-    })),
-    invoices: (project.deal?.invoices ?? []).map((inv) => ({
-      id: inv.id,
-      invoiceNumber: inv.number,
-      status: inv.status,
-      issueDate: toIsoDate(inv.issueDate),
-      dueDate: toIsoDate(inv.dueDate),
-      total: Number(inv.total),
-      balanceDue: Math.max(0, Number(inv.total) - Number(inv.amountPaid)),
-      currency: inv.currency,
-    })),
-    expenses: [
-      ...project.expenses.map((e) => ({
-        id: e.id,
-        title: e.title,
-        category: e.category,
-        amount: Number(e.amount),
-        currency: e.currency,
-        billable: e.billable,
-        expenseDate: toIsoDate(e.expenseDate),
-        source: "FINANCE" as const,
-        status: e.status,
-      })),
-      ...project.expenseClaims.map((c) => ({
-        id: c.id,
-        title: c.title,
-        category: c.category,
-        amount: Number(c.amount),
-        currency: c.currency,
-        billable: true,
-        expenseDate: toIsoDate(c.expenseDate),
-        source: "CLAIM" as const,
-        status: c.status,
-      })),
-    ].sort((a, b) => b.expenseDate.localeCompare(a.expenseDate)),
+    timeLogs: isClient
+      ? []
+      : project.timeLogs.map((l) => ({
+          id: l.id,
+          projectId: project.id,
+          projectName: project.name,
+          taskTitle: l.task?.title ?? null,
+          userName: l.user?.name ?? "Team Member",
+          hours: Number(l.hours),
+          billable: l.billable,
+          loggedDate: toIsoDate(l.loggedDate),
+          notes: l.notes,
+        })),
+    invoices: isClient
+      ? []
+      : (project.deal?.invoices ?? []).map((inv) => ({
+          id: inv.id,
+          invoiceNumber: inv.number,
+          status: inv.status,
+          issueDate: toIsoDate(inv.issueDate),
+          dueDate: toIsoDate(inv.dueDate),
+          total: Number(inv.total),
+          balanceDue: Math.max(0, Number(inv.total) - Number(inv.amountPaid)),
+          currency: inv.currency,
+        })),
+    expenses: isClient
+      ? []
+      : [
+          ...project.expenses.map((e) => ({
+            id: e.id,
+            title: e.title,
+            category: e.category,
+            amount: Number(e.amount),
+            currency: e.currency,
+            billable: e.billable,
+            expenseDate: toIsoDate(e.expenseDate),
+            source: "FINANCE" as const,
+            status: e.status,
+          })),
+          ...project.expenseClaims.map((c) => ({
+            id: c.id,
+            title: c.title,
+            category: c.category,
+            amount: Number(c.amount),
+            currency: c.currency,
+            billable: true,
+            expenseDate: toIsoDate(c.expenseDate),
+            source: "CLAIM" as const,
+            status: c.status,
+          })),
+        ].sort((a, b) => b.expenseDate.localeCompare(a.expenseDate)),
     members: memberships.map((m) => ({
       id: m.user.id,
       name: m.user.name,

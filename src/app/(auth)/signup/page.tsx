@@ -1,10 +1,17 @@
 "use client";
 
 import * as React from "react";
-import { Layers, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import Link from "next/link";
 
 import { signupAction } from "@/app/(auth)/signup/actions";
+import { AuthShell } from "@/components/brand/auth-shell";
+import {
+  AuthDivider,
+  GoogleAuthButton,
+  useGoogleAuthError,
+} from "@/components/brand/google-auth-button";
+import { TactiqMark } from "@/components/brand/tactiq-logo";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -17,7 +24,10 @@ export default function SignupPage() {
   const [organizationName, setOrganizationName] = React.useState("");
   const [defaultCurrency, setDefaultCurrency] = React.useState<"PHP" | "USD">("PHP");
   const [error, setError] = React.useState<string | null>(null);
+  const googleError = useGoogleAuthError();
   const [isPending, startTransition] = React.useTransition();
+
+  const activeError = error ?? googleError;
 
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -38,18 +48,19 @@ export default function SignupPage() {
   };
 
   return (
-    <div className="flex min-h-dvh items-center justify-center bg-muted/30 p-4">
-      <Card className="w-full max-w-md shadow-sm">
+    <AuthShell>
+      <Card className="border-border/80 bg-card/95 shadow-sm">
         <CardHeader className="space-y-2 text-center">
-          <div className="mx-auto flex size-11 items-center justify-center rounded-xl bg-zinc-950 text-white">
-            <Layers className="size-5" />
-          </div>
-          <CardTitle className="text-xl">Create your Business Suite workspace</CardTitle>
+          <TactiqMark animated className="mx-auto size-10 lg:hidden" />
+          <CardTitle className="text-xl">Create your Tactiq workspace</CardTitle>
           <CardDescription>
             Launch CRM, Finance, and Projects for your team in seconds.
           </CardDescription>
         </CardHeader>
         <CardContent>
+          <GoogleAuthButton mode="signup" label="Continue with Google" />
+          <AuthDivider label="or sign up with email" />
+
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="signup-name">Your full name</Label>
@@ -93,7 +104,7 @@ export default function SignupPage() {
                   id="signup-currency"
                   value={defaultCurrency}
                   onChange={(e) => setDefaultCurrency(e.target.value as "PHP" | "USD")}
-                  className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:border-zinc-800 dark:bg-zinc-950"
                 >
                   <option value="PHP">PHP (₱)</option>
                   <option value="USD">USD ($)</option>
@@ -115,9 +126,9 @@ export default function SignupPage() {
               />
             </div>
 
-            {error && (
+            {activeError && (
               <p className="rounded-md bg-destructive/10 px-3 py-2 text-xs font-medium text-destructive">
-                {error}
+                {activeError}
               </p>
             )}
 
@@ -135,6 +146,6 @@ export default function SignupPage() {
           </form>
         </CardContent>
       </Card>
-    </div>
+    </AuthShell>
   );
 }

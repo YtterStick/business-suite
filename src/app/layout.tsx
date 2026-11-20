@@ -15,9 +15,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Business Suite — CRM, Finance & Projects",
-  description:
-    "Modular multi-tenant B2B SaaS Business Suite unifying CRM, Finance, and Projects.",
+  title: "Tactiq — CRM, Finance & Projects",
+  description: "Tactiq unifies CRM, Finance, and Projects in one multi-tenant workspace.",
 };
 
 export default function RootLayout({

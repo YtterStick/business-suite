@@ -82,7 +82,7 @@ export function openInvoicePdfPrintView(invoice: InvoiceRecordDTO, orgName: stri
   <div class="header">
     <div>
       <div style="font-size:18px;font-weight:700;">${escapeHtml(orgName)}</div>
-      <div style="font-size:12px;color:#71717a;">Business Suite Finance</div>
+      <div style="font-size:12px;color:#71717a;">Tactiq Finance</div>
     </div>
     <div style="text-align:right;">
       <div class="title">INVOICE</div>
@@ -400,7 +400,7 @@ export function InvoiceDetailDialog({
           <div className="flex flex-wrap items-start justify-between gap-4 border-b pb-5">
             <div>
               <p className="text-base font-bold">{orgName}</p>
-              <p className="text-xs text-muted-foreground">Business Suite Finance</p>
+              <p className="text-xs text-muted-foreground">Tactiq Finance</p>
             </div>
             <div className="text-right">
               <p className="text-2xl font-extrabold tracking-tight">INVOICE</p>

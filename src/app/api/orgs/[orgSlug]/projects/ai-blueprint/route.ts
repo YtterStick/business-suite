@@ -206,7 +206,7 @@ export async function POST(
   try {
     const { orgSlug } = await context.params;
     const tenant = await assertTenant(orgSlug);
-    authorize(tenant, "projects.project.write");
+    authorize(tenant, "projects.project.manage");
 
     const body = await request.json();
     const parsed = requestSchema.safeParse(body);

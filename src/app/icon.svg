@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="512" height="512" fill="none">
+  <defs>
+    <linearGradient id="tq-bar" x1="9" y1="9" x2="55" y2="21" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#A78BFA" />
+      <stop offset="1" stop-color="#6366F1" />
+    </linearGradient>
+    <linearGradient id="tq-stem" x1="32" y1="28" x2="54" y2="50" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#6366F1" />
+      <stop offset="1" stop-color="#22D3EE" />
+    </linearGradient>
+  </defs>
+  <rect x="9" y="9" width="46" height="12" rx="6" fill="url(#tq-bar)" />
+  <path d="M32 28V42L39.5 49.5L54 33" stroke="url(#tq-stem)" stroke-width="11" stroke-linecap="round" stroke-linejoin="round" />
+</svg>

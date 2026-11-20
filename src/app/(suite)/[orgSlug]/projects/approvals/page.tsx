@@ -1,3 +1,5 @@
+import { redirect } from "next/navigation";
+
 import { toIsoDate } from "@/lib/dates";
 import { can } from "@/lib/rbac";
 import { ApprovalsPanel } from "@/modules/projects/components/approvals-panel";
@@ -14,6 +16,9 @@ export default async function ApprovalsPage({
   const { orgSlug } = await params;
   const { tab, new: newParam } = await searchParams;
   const tenant = await requireTenant(orgSlug);
+  if (!can(tenant, "projects.approvals.read")) {
+    redirect(`/${orgSlug}/projects`);
+  }
   const queue = await getApprovalsQueue(tenant);
 
   const defaultTab =
@@ -25,8 +30,8 @@ export default async function ApprovalsPage({
       defaultCurrency={tenant.organization.defaultCurrency}
       todayIso={toIsoDate(new Date())}
       queue={queue}
-      canWrite={can(tenant.role, "projects.project.write")}
-      canApprove={can(tenant.role, "org.members.manage")}
+      canWrite={can(tenant, "projects.project.write")}
+      canApprove={can(tenant, "projects.approvals.manage")}
       defaultTab={defaultTab}
       openExpenseInitially={tab === "expenses" && newParam === "1"}
     />

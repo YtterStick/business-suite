@@ -1,20 +1,30 @@
 "use client";
 
 import * as React from "react";
-import { Layers, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import Link from "next/link";
 
+import { loginAction } from "@/app/(auth)/login/actions";
+import { AuthShell } from "@/components/brand/auth-shell";
+import {
+  AuthDivider,
+  GoogleAuthButton,
+  useGoogleAuthError,
+} from "@/components/brand/google-auth-button";
+import { TactiqMark } from "@/components/brand/tactiq-logo";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { loginAction } from "@/app/(auth)/login/actions";
 
 export default function LoginPage() {
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [error, setError] = React.useState<string | null>(null);
+  const googleError = useGoogleAuthError();
   const [isPending, startTransition] = React.useTransition();
+
+  const activeError = error ?? googleError;
 
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -29,18 +39,19 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-dvh items-center justify-center bg-muted/30 p-4">
-      <Card className="w-full max-w-md shadow-sm">
+    <AuthShell>
+      <Card className="border-border/80 bg-card/95 shadow-sm">
         <CardHeader className="space-y-2 text-center">
-          <div className="mx-auto flex size-11 items-center justify-center rounded-xl bg-zinc-950 text-white">
-            <Layers className="size-5" />
-          </div>
-          <CardTitle className="text-xl">Sign in to Business Suite</CardTitle>
+          <TactiqMark animated className="mx-auto size-10 lg:hidden" />
+          <CardTitle className="text-xl">Sign in to Tactiq</CardTitle>
           <CardDescription>
             Access CRM, Finance, and Projects for your organization.
           </CardDescription>
         </CardHeader>
         <CardContent>
+          <GoogleAuthButton mode="login" label="Continue with Google" />
+          <AuthDivider />
+
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="login-email">Work email</Label>
@@ -67,9 +78,9 @@ export default function LoginPage() {
               />
             </div>
 
-            {error && (
+            {activeError && (
               <p className="rounded-md bg-destructive/10 px-3 py-2 text-xs font-medium text-destructive">
-                {error}
+                {activeError}
               </p>
             )}
 
@@ -79,14 +90,14 @@ export default function LoginPage() {
             </Button>
 
             <p className="text-center text-xs text-muted-foreground">
-              New to Business Suite?{" "}
+              New to Tactiq?{" "}
               <Link href="/signup" className="font-medium text-primary hover:underline">
-                Create an organization
+                Create a workspace
               </Link>
             </p>
           </form>
         </CardContent>
       </Card>
-    </div>
+    </AuthShell>
   );
 }

@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 
+import { can } from "@/lib/rbac";
 import { getSession } from "@/server/auth/session";
 import { listUserOrganizations } from "@/server/tenancy";
 
@@ -17,5 +18,9 @@ export default async function HomePage() {
     redirect("/login");
   }
 
-  redirect(`/${preferred.slug}/crm/deals`);
+  redirect(
+    can(preferred, "crm.deal.read")
+      ? `/${preferred.slug}/crm/deals`
+      : `/${preferred.slug}/projects`,
+  );
 }

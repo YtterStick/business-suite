@@ -1,3 +1,4 @@
+import { isClientUser } from "@/lib/rbac";
 import { ProjectsHomeDashboard } from "@/modules/projects/components/projects-home-dashboard";
 import { getProjectsHome } from "@/modules/projects/projects-suite.service";
 import { requireTenant } from "@/server/tenancy";
@@ -16,6 +17,7 @@ export default async function ProjectsHomePage({
       orgSlug={orgSlug}
       orgName={tenant.organization.name}
       firstName={tenant.user.name.split(" ")[0] ?? tenant.user.name}
+      isClient={isClientUser(tenant)}
       home={home}
     />
   );

@@ -24,6 +24,7 @@ interface InviteUsersDialogProps {
   orgSlug: string;
   orgName: string;
   defaultUserType?: UserType;
+  isOwner?: boolean;
 }
 
 export function InviteUsersDialog({
@@ -32,6 +33,7 @@ export function InviteUsersDialog({
   orgSlug,
   orgName,
   defaultUserType = "PORTAL",
+  isOwner = false,
 }: InviteUsersDialogProps) {
   const [email, setEmail] = React.useState("");
   const [userType, setUserType] = React.useState<UserType>(defaultUserType);
@@ -132,7 +134,12 @@ export function InviteUsersDialog({
                     onChange={(e) => {
                       const next = e.target.value as UserType;
                       setUserType(next);
-                      setPortalProfile(next === "CLIENT" ? "CLIENT" : "STANDARD");
+                      if (next === "CLIENT") {
+                        setRole("MEMBER");
+                        setPortalProfile("CLIENT");
+                      } else if (portalProfile === "CLIENT") {
+                        setPortalProfile("STANDARD");
+                      }
                     }}
                     className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm"
                   >
@@ -145,13 +152,20 @@ export function InviteUsersDialog({
                   <Label htmlFor="suite-invite-role">Role</Label>
                   <select
                     id="suite-invite-role"
-                    value={role}
-                    onChange={(e) => setRole(e.target.value as MembershipRole)}
-                    className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm"
+                    value={userType === "CLIENT" ? "MEMBER" : role}
+                    disabled={userType === "CLIENT"}
+                    onChange={(e) => {
+                      const nextRole = e.target.value as MembershipRole;
+                      setRole(nextRole);
+                      if (nextRole !== "OWNER" && portalProfile === "PORTAL_OWNER") {
+                        setPortalProfile("STANDARD");
+                      }
+                    }}
+                    className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     <option value="MEMBER">Employee</option>
                     <option value="ADMIN">Manager</option>
-                    <option value="OWNER">Administrator</option>
+                    {isOwner && <option value="OWNER">Administrator</option>}
                   </select>
                 </div>
               </div>
@@ -161,11 +175,20 @@ export function InviteUsersDialog({
                 <select
                   id="suite-invite-profile"
                   value={portalProfile}
-                  onChange={(e) => setPortalProfile(e.target.value as PortalProfile)}
+                  onChange={(e) => {
+                    const nextProfile = e.target.value as PortalProfile;
+                    setPortalProfile(nextProfile);
+                    if (nextProfile === "CLIENT") {
+                      setUserType("CLIENT");
+                      setRole("MEMBER");
+                    } else {
+                      setUserType("PORTAL");
+                    }
+                  }}
                   className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm"
                 >
                   <option value="STANDARD">Standard</option>
-                  <option value="PORTAL_OWNER">Portal Owner</option>
+                  {isOwner && <option value="PORTAL_OWNER">Portal Owner</option>}
                   <option value="CLIENT">Client</option>
                 </select>
               </div>

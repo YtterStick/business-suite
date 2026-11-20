@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import type { MembershipRole } from "@prisma/client";
+import type { MembershipRole, PortalProfile, UserType } from "@prisma/client";
 import {
   Bug,
   CheckSquare,
@@ -10,6 +10,7 @@ import {
   Flag,
   FolderKanban,
   Laptop,
+  LogOut,
   Menu,
   Moon,
   Plus,
@@ -54,7 +55,7 @@ import {
 import { getModuleHref, resolveActiveModule } from "@/config/modules";
 import { initials } from "@/lib/format";
 import type { TopBarNotificationItem } from "@/lib/notifications";
-import { can, ROLE_LABEL } from "@/lib/rbac";
+import { can, getZohoRoleLabel, isClientUser } from "@/lib/rbac";
 import { cn } from "@/lib/utils";
 import { InviteUsersDialog } from "@/modules/org/components/invite-users-dialog";
 
@@ -69,6 +70,8 @@ interface GlobalTopBarProps {
   };
   portalConfig: PortalConfigSummary;
   role: MembershipRole;
+  portalProfile?: PortalProfile;
+  userType?: UserType;
   organizations: SidebarOrgOption[];
   user: SidebarUserSummary;
   notifications: TopBarNotificationItem[];
@@ -80,6 +83,8 @@ export function GlobalTopBar({
   activeOrg,
   portalConfig,
   role,
+  portalProfile,
+  userType,
   organizations,
   user,
   notifications,
@@ -92,7 +97,17 @@ export function GlobalTopBar({
   const [mobileOpen, setMobileOpen] = React.useState(false);
   const [inviteOpen, setInviteOpen] = React.useState(false);
   const [setupOpen, setSetupOpen] = React.useState(false);
-  const canInvite = can(role, "org.members.manage");
+  const access = { role, portalProfile, userType };
+  const isClient = isClientUser(access);
+  const roleLabel = getZohoRoleLabel(access);
+  const canInvite = can(access, "org.members.manage");
+  const canManageProjects = can(access, "projects.project.manage");
+  const canWriteTasks = can(access, "projects.project.write");
+  const canWriteIssues = can(access, "projects.issue.write");
+  const canWriteInvoices = can(access, "finance.invoice.write");
+  const canWriteDeals = can(access, "crm.deal.write");
+  const showQuickCreate =
+    canManageProjects || canWriteTasks || canWriteIssues || canInvite;
 
   const subPageBreadcrumb = React.useMemo(() => {
     const prefix = `/${orgSlug}`;
@@ -152,6 +167,8 @@ export function GlobalTopBar({
                 orgSlug={orgSlug}
                 activeOrg={activeOrg}
                 role={role}
+                portalProfile={portalProfile}
+                userType={userType}
                 organizations={organizations}
                 user={user}
                 recentProjects={recentProjects}
@@ -198,11 +215,11 @@ export function GlobalTopBar({
         {/* Right: Universal Quick-Create (+), Notifications Bell, Setup Gear, Role Badge */}
         <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
           <Badge variant="outline" className="hidden lg:inline-flex">
-            {ROLE_LABEL[role]}
+            {roleLabel}
           </Badge>
 
           {/* Contextual Shortcut for CRM & Finance + Universal Quick-Create for Projects */}
-          {activeModule.id === "finance" && (
+          {activeModule.id === "finance" && canWriteInvoices && (
             <Button asChild size="sm" variant="outline" className="hidden sm:inline-flex">
               <Link href={getModuleHref(orgSlug, "/finance/invoices?new=1")}>
                 <Plus className="size-4" />
@@ -210,7 +227,7 @@ export function GlobalTopBar({
               </Link>
             </Button>
           )}
-          {activeModule.id === "crm" && (
+          {activeModule.id === "crm" && canWriteDeals && (
             <Button asChild size="sm" variant="outline" className="hidden sm:inline-flex">
               <Link href={getModuleHref(orgSlug, "/crm/deals?new=1")}>
                 <Plus className="size-4" />
@@ -220,76 +237,99 @@ export function GlobalTopBar({
           )}
 
           {/* Universal Quick-Create (+) Dropdown Menu */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                size="sm"
-                variant={activeModule.id === "projects" ? "default" : "outline"}
-                aria-label="Quick create item"
-                className="gap-1.5"
-              >
-                <Plus className="size-4" />
-                <span className="hidden sm:inline">Quick Create</span>
-                <ChevronDown className="size-3.5 opacity-80" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56">
-              <DropdownMenuLabel>Quick Create</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                onSelect={() => triggerQuickCreate("projects", "/projects?new=1")}
-                className="gap-2"
-              >
-                <FolderKanban className="size-4 text-violet-600" />
-                <span>Project</span>
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onSelect={() => triggerQuickCreate("tasks", "/projects/tasks?new=1")}
-                className="gap-2"
-              >
-                <CheckSquare className="size-4 text-blue-600" />
-                <span>Task</span>
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onSelect={() => triggerQuickCreate("issues", "/projects/issues?new=1")}
-                className="gap-2"
-              >
-                <Bug className="size-4 text-rose-600" />
-                <span>Issue</span>
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onSelect={() => triggerQuickCreate("milestones", "/projects/milestones?new=1")}
-                className="gap-2"
-              >
-                <Flag className="size-4 text-amber-600" />
-                <span>Phase / Milestone</span>
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onSelect={() => triggerQuickCreate("time-logs", "/projects/time-logs?new=1")}
-                className="gap-2"
-              >
-                <Clock className="size-4 text-emerald-600" />
-                <span>Time Log</span>
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onSelect={() =>
-                  triggerQuickCreate("expense-claim", "/projects/approvals?tab=expenses&new=1")
-                }
-                className="gap-2"
-              >
-                <Receipt className="size-4 text-orange-600" />
-                <span>Expense Claim</span>
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                onSelect={() => triggerQuickCreate("users")}
-                className="gap-2"
-              >
-                <UserPlus className="size-4 text-primary" />
-                <span>User (Invite)</span>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          {showQuickCreate && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  size="sm"
+                  variant={activeModule.id === "projects" ? "default" : "outline"}
+                  aria-label="Quick create item"
+                  className="gap-1.5"
+                >
+                  <Plus className="size-4" />
+                  <span className="hidden sm:inline">Quick Create</span>
+                  <ChevronDown className="size-3.5 opacity-80" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuLabel>Quick Create</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {canManageProjects && (
+                  <DropdownMenuItem
+                    onSelect={() => triggerQuickCreate("projects", "/projects?new=1")}
+                    className="gap-2"
+                  >
+                    <FolderKanban className="size-4 text-violet-600" />
+                    <span>Project</span>
+                  </DropdownMenuItem>
+                )}
+                {canWriteTasks && (
+                  <DropdownMenuItem
+                    onSelect={() => triggerQuickCreate("tasks", "/projects/tasks?new=1")}
+                    className="gap-2"
+                  >
+                    <CheckSquare className="size-4 text-blue-600" />
+                    <span>Task</span>
+                  </DropdownMenuItem>
+                )}
+                {canWriteIssues && (
+                  <DropdownMenuItem
+                    onSelect={() => triggerQuickCreate("issues", "/projects/issues?new=1")}
+                    className="gap-2"
+                  >
+                    <Bug className="size-4 text-rose-600" />
+                    <span>Issue</span>
+                  </DropdownMenuItem>
+                )}
+                {canWriteTasks && (
+                  <>
+                    <DropdownMenuItem
+                      onSelect={() =>
+                        triggerQuickCreate("milestones", "/projects/milestones?new=1")
+                      }
+                      className="gap-2"
+                    >
+                      <Flag className="size-4 text-amber-600" />
+                      <span>Phase / Milestone</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onSelect={() =>
+                        triggerQuickCreate("time-logs", "/projects/time-logs?new=1")
+                      }
+                      className="gap-2"
+                    >
+                      <Clock className="size-4 text-emerald-600" />
+                      <span>Time Log</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onSelect={() =>
+                        triggerQuickCreate(
+                          "expense-claim",
+                          "/projects/approvals?tab=expenses&new=1",
+                        )
+                      }
+                      className="gap-2"
+                    >
+                      <Receipt className="size-4 text-orange-600" />
+                      <span>Expense Claim</span>
+                    </DropdownMenuItem>
+                  </>
+                )}
+                {canInvite && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onSelect={() => triggerQuickCreate("users")}
+                      className="gap-2"
+                    >
+                      <UserPlus className="size-4 text-primary" />
+                      <span>User (Invite)</span>
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
 
           {/* Zoho-Style Notification Center */}
           <NotificationCenter
@@ -333,23 +373,59 @@ export function GlobalTopBar({
           </DropdownMenu>
 
           {/* Portal Setup / Settings Gear Icon */}
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Portal setup"
-            title="Portal Setup"
-            onClick={() => setSetupOpen(true)}
-          >
-            <Settings className="size-4" />
-          </Button>
+          {!isClient && (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Portal setup"
+              title="Portal Setup"
+              onClick={() => setSetupOpen(true)}
+            >
+              <Settings className="size-4" />
+            </Button>
+          )}
 
-          {/* Synchronized Active User Avatar Badge */}
-          <Avatar className="hidden size-7 border sm:flex" title={`${user.name} (${ROLE_LABEL[role]})`}>
-            {user.avatarUrl && <AvatarImage src={user.avatarUrl} alt={user.name} />}
-            <AvatarFallback className="bg-zinc-900 text-[10px] font-semibold text-zinc-100 dark:bg-zinc-800">
-              {initials(user.name)}
-            </AvatarFallback>
-          </Avatar>
+          {/* Active User Account Menu & Sign Out */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                aria-label="User account menu"
+                title={`${user.name} (${roleLabel})`}
+                className="rounded-full ring-1 ring-border transition hover:ring-2 hover:ring-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <Avatar className="size-7">
+                  {user.avatarUrl && <AvatarImage src={user.avatarUrl} alt={user.name} />}
+                  <AvatarFallback className="bg-zinc-900 text-[10px] font-semibold text-zinc-100 dark:bg-zinc-800">
+                    {initials(user.name)}
+                  </AvatarFallback>
+                </Avatar>
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-60">
+              <DropdownMenuLabel>
+                <p className="truncate text-sm font-semibold">{user.name}</p>
+                <p className="truncate text-xs font-normal text-muted-foreground">{user.email}</p>
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem className="justify-between" disabled>
+                <span>Role in {activeOrg.name}</span>
+                <Badge variant="outline">{roleLabel}</Badge>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem asChild>
+                <form action="/api/auth/logout" method="post" className="w-full">
+                  <button
+                    type="submit"
+                    className="flex w-full items-center gap-2 text-left text-destructive"
+                  >
+                    <LogOut className="size-4" />
+                    <span>Sign out</span>
+                  </button>
+                </form>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </header>
 
@@ -358,6 +434,7 @@ export function GlobalTopBar({
         onOpenChange={setInviteOpen}
         orgSlug={orgSlug}
         orgName={activeOrg.name}
+        isOwner={role === "OWNER"}
       />
 
       <PortalSetupDialog

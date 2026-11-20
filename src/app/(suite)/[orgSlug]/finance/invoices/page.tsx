@@ -18,8 +18,8 @@ export default async function InvoicesPage({ params, searchParams }: InvoicesPag
     <InvoicesWorkspace
       orgSlug={orgSlug}
       workspace={workspace}
-      canWrite={can(tenant.role, "finance.invoice.write")}
-      canVoid={can(tenant.role, "finance.invoice.void")}
+      canWrite={can(tenant, "finance.invoice.write")}
+      canVoid={can(tenant, "finance.invoice.void")}
       openCreateInitially={newParam === "1"}
       highlightInvoiceId={highlight}
     />

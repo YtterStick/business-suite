@@ -1,3 +1,5 @@
+import { redirect } from "next/navigation";
+
 import { can } from "@/lib/rbac";
 import { TimesheetsPanel } from "@/modules/projects/components/timesheets-panel";
 import { getWeeklyTimesheet } from "@/modules/projects/projects-suite.service";
@@ -13,13 +15,16 @@ export default async function TimesheetsPage({
   const { orgSlug } = await params;
   const { week } = await searchParams;
   const tenant = await requireTenant(orgSlug);
+  if (!can(tenant, "projects.time.read")) {
+    redirect(`/${orgSlug}/projects`);
+  }
   const data = await getWeeklyTimesheet(tenant, week);
 
   return (
     <TimesheetsPanel
       orgSlug={orgSlug}
       initialData={data}
-      canWrite={can(tenant.role, "projects.project.write")}
+      canWrite={can(tenant, "projects.project.write")}
     />
   );
 }

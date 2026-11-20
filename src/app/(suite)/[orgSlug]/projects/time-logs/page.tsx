@@ -1,3 +1,5 @@
+import { redirect } from "next/navigation";
+
 import { toIsoDate } from "@/lib/dates";
 import { can } from "@/lib/rbac";
 import { TimeLogsPanel } from "@/modules/projects/components/time-logs-panel";
@@ -14,6 +16,9 @@ export default async function TimeLogsPage({
   const { orgSlug } = await params;
   const query = await searchParams;
   const tenant = await requireTenant(orgSlug);
+  if (!can(tenant, "projects.time.read")) {
+    redirect(`/${orgSlug}/projects`);
+  }
   const { logs, projects, tasks, defaultCurrency } = await listTimeLogs(tenant);
 
   return (
@@ -24,7 +29,7 @@ export default async function TimeLogsPage({
       projects={projects}
       tasks={tasks}
       defaultCurrency={defaultCurrency}
-      canWrite={can(tenant.role, "projects.project.write")}
+      canWrite={can(tenant, "projects.project.write")}
       openCreateInitially={query.new === "1"}
     />
   );

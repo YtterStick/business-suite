@@ -139,6 +139,8 @@ export function SuiteBottomBar({
   contacts,
   recentChats,
   canWriteProjects,
+  canLogTime,
+  canViewContacts = true,
 }: {
   orgSlug: string;
   todayIso: string;
@@ -146,7 +148,10 @@ export function SuiteBottomBar({
   contacts: BottomBarContactItem[];
   recentChats: BottomBarChatItem[];
   canWriteProjects: boolean;
+  canLogTime?: boolean;
+  canViewContacts?: boolean;
 }) {
+  const allowTimer = canLogTime ?? canWriteProjects;
   const pathname = usePathname();
   const router = useRouter();
   const { theme, setTheme } = useTheme();
@@ -653,21 +658,23 @@ export function SuiteBottomBar({
             <span className="hidden lg:inline">Live Chat</span>
           </button>
 
-          <button
-            type="button"
-            title="CRM Contacts"
-            onClick={() => setActivePanel(activePanel === "contacts" ? null : "contacts")}
-            className={cn(
-              "inline-flex shrink-0 items-center gap-1 rounded px-2 py-1 font-medium whitespace-nowrap transition hover:bg-accent hover:text-foreground",
-              activePanel === "contacts" && "bg-accent text-foreground",
-            )}
-          >
-            <Users className="size-3.5 shrink-0 text-blue-600" />
-            <span className="hidden lg:inline">Contacts</span>
-            <Badge variant="secondary" className="h-4 px-1 text-[10px] tabular-nums">
-              {contacts.length}
-            </Badge>
-          </button>
+          {canViewContacts && (
+            <button
+              type="button"
+              title="CRM Contacts"
+              onClick={() => setActivePanel(activePanel === "contacts" ? null : "contacts")}
+              className={cn(
+                "inline-flex shrink-0 items-center gap-1 rounded px-2 py-1 font-medium whitespace-nowrap transition hover:bg-accent hover:text-foreground",
+                activePanel === "contacts" && "bg-accent text-foreground",
+              )}
+            >
+              <Users className="size-3.5 shrink-0 text-blue-600" />
+              <span className="hidden lg:inline">Contacts</span>
+              <Badge variant="secondary" className="h-4 px-1 text-[10px] tabular-nums">
+                {contacts.length}
+              </Badge>
+            </button>
+          )}
 
           {/* Sticky Notes Quick-Pad Popover */}
           <Popover>
@@ -1103,50 +1110,48 @@ export function SuiteBottomBar({
             </PopoverContent>
           </Popover>
 
-          <div
-            title={timerTaskLabel ? `Tracking: ${timerTaskLabel}` : "Quick Timer"}
-            className={cn(
-              "flex shrink-0 items-center gap-1.5 rounded-md border px-2 py-0.5 whitespace-nowrap",
-              timerRunning
-                ? "border-emerald-500/40 bg-emerald-500/10"
-                : "border-border bg-muted/40",
-            )}
-          >
-            <Clock
+          {allowTimer && (
+            <div
+              title={timerTaskLabel ? `Tracking: ${timerTaskLabel}` : "Quick Timer"}
               className={cn(
-                "size-3.5 shrink-0",
-                timerRunning ? "animate-pulse text-emerald-600" : "text-muted-foreground",
+                "flex shrink-0 items-center gap-1.5 rounded-md border px-2 py-0.5 whitespace-nowrap",
+                timerRunning
+                  ? "border-emerald-500/40 bg-emerald-500/10"
+                  : "border-border bg-muted/40",
               )}
-            />
-            {timerTaskKey && (
-              <span className="rounded bg-emerald-600 px-1 py-0 font-mono text-[9px] font-bold text-white">
-                {timerTaskKey}
+            >
+              <Clock
+                className={cn(
+                  "size-3.5 shrink-0",
+                  timerRunning ? "animate-pulse text-emerald-600" : "text-muted-foreground",
+                )}
+              />
+              {timerTaskKey && (
+                <span className="rounded bg-emerald-600 px-1 py-0 font-mono text-[9px] font-bold text-white">
+                  {timerTaskKey}
+                </span>
+              )}
+              <span className="font-mono text-xs font-semibold tabular-nums text-foreground">
+                {formatElapsed(elapsedSeconds)}
               </span>
-            )}
-            <span className="font-mono text-xs font-semibold tabular-nums text-foreground">
-              {formatElapsed(elapsedSeconds)}
-            </span>
-            {canWriteProjects && (
-              <>
-                <button
-                  type="button"
-                  title={timerRunning ? "Pause timer" : "Start timer"}
-                  onClick={() => setTimerRunning((prev) => !prev)}
-                  className="rounded p-0.5 text-foreground hover:bg-background"
-                >
-                  {timerRunning ? <Pause className="size-3" /> : <Play className="size-3" />}
-                </button>
-                <button
-                  type="button"
-                  title="Log tracked time"
-                  onClick={() => setActivePanel("timer")}
-                  className="rounded px-1 text-[11px] font-medium text-primary hover:bg-background"
-                >
-                  Log
-                </button>
-              </>
-            )}
-          </div>
+              <button
+                type="button"
+                title={timerRunning ? "Pause timer" : "Start timer"}
+                onClick={() => setTimerRunning((prev) => !prev)}
+                className="rounded p-0.5 text-foreground hover:bg-background"
+              >
+                {timerRunning ? <Pause className="size-3" /> : <Play className="size-3" />}
+              </button>
+              <button
+                type="button"
+                title="Log tracked time"
+                onClick={() => setActivePanel("timer")}
+                className="rounded px-1 text-[11px] font-medium text-primary hover:bg-background"
+              >
+                Log
+              </button>
+            </div>
+          )}
         </div>
       </footer>
 

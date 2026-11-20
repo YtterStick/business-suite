@@ -1,5 +1,5 @@
 import { toIsoDate } from "@/lib/dates";
-import { can } from "@/lib/rbac";
+import { can, isClientUser } from "@/lib/rbac";
 import { ProjectsWorkspace } from "@/modules/projects/components/projects-workspace";
 import { listProjectsWorkspace } from "@/modules/projects/projects.service";
 import { requireTenant } from "@/server/tenancy";
@@ -14,6 +14,7 @@ export default async function ProjectsPage({ params, searchParams }: ProjectsPag
   const { highlight, new: newParam } = await searchParams;
   const tenant = await requireTenant(orgSlug);
   const workspace = await listProjectsWorkspace(tenant);
+  const canManage = can(tenant, "projects.project.manage");
 
   return (
     <ProjectsWorkspace
@@ -21,9 +22,10 @@ export default async function ProjectsPage({ params, searchParams }: ProjectsPag
       defaultCurrency={tenant.organization.defaultCurrency}
       currentUserId={tenant.user.id}
       todayIso={toIsoDate(new Date())}
-      canWrite={can(tenant.role, "projects.project.write")}
+      canWrite={canManage}
+      isClient={isClientUser(tenant)}
       workspace={workspace}
-      openCreateInitially={newParam === "1"}
+      openCreateInitially={canManage && newParam === "1"}
       highlightProjectId={highlight}
     />
   );

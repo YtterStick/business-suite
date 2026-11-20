@@ -21,7 +21,7 @@ export default async function ProjectTasksPage({ params, searchParams }: TasksPa
       todayIso={toIsoDate(new Date())}
       currentUserId={tenant.user.id}
       initialBoard={board}
-      canWrite={can(tenant.role, "projects.project.write")}
+      canWrite={can(tenant, "projects.project.write")}
       defaultProjectId={projectId}
       openCreateInitially={newParam === "1"}
       initialTaskId={taskId ?? null}

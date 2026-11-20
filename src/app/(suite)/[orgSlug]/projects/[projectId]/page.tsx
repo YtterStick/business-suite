@@ -1,7 +1,8 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 
 import { toIsoDate } from "@/lib/dates";
-import { can } from "@/lib/rbac";
+import { ForbiddenError } from "@/lib/errors";
+import { can, isClientUser } from "@/lib/rbac";
 import { SingleProjectWorkspace } from "@/modules/projects/components/single-project-workspace";
 import { getSingleProjectWorkspace } from "@/modules/projects/projects.service";
 import { requireTenant } from "@/server/tenancy";
@@ -13,7 +14,15 @@ export default async function ProjectDetailPage({
 }) {
   const { orgSlug, projectId } = await params;
   const tenant = await requireTenant(orgSlug);
-  const workspace = await getSingleProjectWorkspace(tenant, projectId);
+  let workspace;
+  try {
+    workspace = await getSingleProjectWorkspace(tenant, projectId);
+  } catch (err) {
+    if (err instanceof ForbiddenError) {
+      redirect(`/${orgSlug}/projects`);
+    }
+    throw err;
+  }
 
   if (!workspace) notFound();
 
@@ -22,8 +31,13 @@ export default async function ProjectDetailPage({
       orgSlug={orgSlug}
       orgName={tenant.organization.name}
       todayIso={toIsoDate(new Date())}
-      canWrite={can(tenant.role, "projects.project.write")}
-      canManageUsers={can(tenant.role, "org.members.manage")}
+      canWrite={can(tenant, "projects.project.write")}
+      canManageProject={can(tenant, "projects.project.manage")}
+      canWriteIssues={can(tenant, "projects.issue.write")}
+      canWriteComments={can(tenant, "projects.comment.write")}
+      canManageUsers={can(tenant, "org.members.manage")}
+      isOwner={tenant.role === "OWNER"}
+      isClient={isClientUser(tenant)}
       data={workspace}
     />
   );

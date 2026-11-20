@@ -99,6 +99,7 @@ export interface OrganizationTeamDTO {
 }
 
 export async function listOrganizationTeam(ctx: TenantContext): Promise<OrganizationTeamDTO> {
+  authorize(ctx, "org.members.read");
   const organizationId = ctx.organization.id;
   const now = new Date();
 
@@ -312,8 +313,22 @@ export async function createInvitation(
   authorize(ctx, "org.members.manage");
 
   const email = input.email.trim().toLowerCase();
-  if (input.role === MembershipRole.OWNER && ctx.role !== MembershipRole.OWNER) {
-    throw new ForbiddenError("Only an organization Owner can invite another Owner.");
+  const isClientInvite =
+    input.userType === UserType.CLIENT || input.portalProfile === PortalProfile.CLIENT;
+  const effectiveRole = isClientInvite ? MembershipRole.MEMBER : input.role;
+  const effectiveUserType = isClientInvite ? UserType.CLIENT : UserType.PORTAL;
+  const effectiveProfile = isClientInvite ? PortalProfile.CLIENT : input.portalProfile;
+
+  if (effectiveRole === MembershipRole.OWNER || effectiveProfile === PortalProfile.PORTAL_OWNER) {
+    if (ctx.role !== MembershipRole.OWNER) {
+      throw new ForbiddenError("Only an Administrator can invite an Administrator or Portal Owner.");
+    }
+    if (
+      effectiveProfile === PortalProfile.PORTAL_OWNER &&
+      effectiveRole !== MembershipRole.OWNER
+    ) {
+      throw new ValidationError("Portal Owner profile requires the Administrator role.");
+    }
   }
 
   const existingMember = await db.membership.findFirst({
@@ -336,18 +351,18 @@ export async function createInvitation(
       create: {
         organizationId: ctx.organization.id,
         email,
-        role: input.role,
-        userType: input.userType,
-        portalProfile: input.portalProfile,
+        role: effectiveRole,
+        userType: effectiveUserType,
+        portalProfile: effectiveProfile,
         assignedProjectId: input.assignedProjectId || null,
         tokenHash,
         invitedById: ctx.user.id,
         expiresAt,
       },
       update: {
-        role: input.role,
-        userType: input.userType,
-        portalProfile: input.portalProfile,
+        role: effectiveRole,
+        userType: effectiveUserType,
+        portalProfile: effectiveProfile,
         assignedProjectId: input.assignedProjectId || null,
         tokenHash,
         invitedById: ctx.user.id,
@@ -366,8 +381,8 @@ export async function createInvitation(
       metadata: {
         email: inv.email,
         role: inv.role,
-        userType: input.userType,
-        portalProfile: input.portalProfile,
+        userType: effectiveUserType,
+        portalProfile: effectiveProfile,
         assignedProjectId: input.assignedProjectId ?? null,
       },
     });
@@ -431,30 +446,61 @@ export async function updateMemberRole(
 
   const target = await db.membership.findFirst({
     where: { id: input.membershipId, organizationId: ctx.organization.id },
-    select: { id: true, userId: true, role: true, portalProfile: true },
+    select: { id: true, userId: true, role: true, portalProfile: true, userType: true },
   });
   if (!target) {
     throw new NotFoundError("Member not found.");
   }
 
+  if (target.role === MembershipRole.OWNER && ctx.role !== MembershipRole.OWNER) {
+    throw new ForbiddenError("Only an Administrator can modify an Administrator account.");
+  }
+
   if (
-    input.role &&
-    (target.role === MembershipRole.OWNER || input.role === MembershipRole.OWNER) &&
+    (input.role === MembershipRole.OWNER || input.portalProfile === PortalProfile.PORTAL_OWNER) &&
     ctx.role !== MembershipRole.OWNER
   ) {
-    throw new ForbiddenError("Only an Owner can assign or change Owner roles.");
+    throw new ForbiddenError("Only an Administrator can assign Administrator or Portal Owner access.");
+  }
+
+  let nextRole = input.role ?? target.role;
+  let nextProfile = input.portalProfile ?? target.portalProfile;
+  let nextUserType = target.userType;
+
+  if (input.portalProfile === PortalProfile.CLIENT) {
+    nextUserType = UserType.CLIENT;
+    nextRole = MembershipRole.MEMBER;
+  } else if (input.portalProfile !== undefined) {
+    nextUserType = UserType.PORTAL;
   }
 
   if (
     input.role &&
+    input.role !== MembershipRole.OWNER &&
+    nextProfile === PortalProfile.PORTAL_OWNER
+  ) {
+    nextProfile = PortalProfile.STANDARD;
+  }
+
+  if (nextProfile === PortalProfile.PORTAL_OWNER && nextRole !== MembershipRole.OWNER) {
+    throw new ValidationError("Portal Owner profile requires the Administrator role.");
+  }
+
+  if (
     target.role === MembershipRole.OWNER &&
-    input.role !== MembershipRole.OWNER
+    (nextRole !== MembershipRole.OWNER || nextProfile === PortalProfile.CLIENT)
   ) {
     const ownerCount = await db.membership.count({
-      where: { organizationId: ctx.organization.id, role: MembershipRole.OWNER, isActive: true },
+      where: {
+        organizationId: ctx.organization.id,
+        role: MembershipRole.OWNER,
+        isActive: true,
+        portalProfile: { not: PortalProfile.CLIENT },
+        userType: { not: UserType.CLIENT },
+      },
     });
     if (ownerCount <= 1) {
-      throw new ValidationError("Organization must retain at least one active Owner.");
+      throw new ValidationError("Organization must retain at least one active Administrator.");
     }
   }
 
@@ -462,8 +508,9 @@ export async function updateMemberRole(
     await tx.membership.update({
       where: { id: target.id },
       data: {
-        ...(input.role ? { role: input.role } : {}),
-        ...(input.portalProfile ? { portalProfile: input.portalProfile } : {}),
+        role: nextRole,
+        portalProfile: nextProfile,
+        userType: nextUserType,
         ...(input.jobTitle !== undefined ? { jobTitle: input.jobTitle?.trim() || null } : {}),
         ...(input.hourlyCostRate !== undefined
           ? { hourlyCostRate: new Prisma.Decimal(input.hourlyCostRate).toDecimalPlaces(2) }
@@ -482,8 +529,8 @@ export async function updateMemberRole(
       action: "org.member_updated",
       metadata: {
         previousRole: target.role,
-        nextRole: input.role ?? target.role,
-        nextProfile: input.portalProfile ?? target.portalProfile,
+        nextRole,
+        nextProfile,
       },
     });
   });
@@ -666,8 +713,16 @@ export async function createTeamGroup(
 
 export async function revokeInvitation(ctx: TenantContext, invitationId: string): Promise<void> {
   authorize(ctx, "org.members.manage");
-  await db.invitation.deleteMany({
+  const inv = await db.invitation.findFirst({
     where: { id: invitationId, organizationId: ctx.organization.id },
+    select: { id: true, role: true },
+  });
+  if (!inv) return;
+  if (inv.role === MembershipRole.OWNER && ctx.role !== MembershipRole.OWNER) {
+    throw new ForbiddenError("Only an Administrator can revoke an Administrator invitation.");
+  }
+  await db.invitation.delete({
+    where: { id: inv.id },
   });
 }
 

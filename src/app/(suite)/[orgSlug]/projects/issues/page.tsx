@@ -23,7 +23,7 @@ export default async function IssuesPage({
       issues={data.issues}
       projects={data.projects}
       members={data.members}
-      canWrite={can(tenant.role, "projects.project.write")}
+      canWrite={can(tenant, "projects.issue.write")}
       openCreateInitially={newParam === "1"}
     />
   );

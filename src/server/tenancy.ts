@@ -1,6 +1,6 @@
 import "server-only";
 
-import type { MembershipRole } from "@prisma/client";
+import type { MembershipRole, PortalProfile, UserType } from "@prisma/client";
 import { notFound, redirect } from "next/navigation";
 import { cache } from "react";
 
@@ -25,10 +25,20 @@ export interface TenantContext {
   };
   membershipId: string;
   role: MembershipRole;
+  portalProfile: PortalProfile;
+  userType: UserType;
 }
 
 /** Slugs that collide with top-level routes and must never be assigned to an organization. */
-export const RESERVED_ORG_SLUGS = new Set(["api", "login", "logout", "signup", "invite", "_next", "static"]);
+export const RESERVED_ORG_SLUGS = new Set([
+  "api",
+  "login",
+  "logout",
+  "signup",
+  "invite",
+  "_next",
+  "static",
+]);
 
 export const getTenant = cache(async (orgSlug: string): Promise<TenantContext | null> => {
   const session = await getSession();
@@ -39,6 +49,8 @@ export const getTenant = cache(async (orgSlug: string): Promise<TenantContext | 
     select: {
       id: true,
       role: true,
+      portalProfile: true,
+      userType: true,
       organization: {
         select: { id: true, name: true, slug: true, defaultCurrency: true, timezone: true },
       },
@@ -51,6 +63,8 @@ export const getTenant = cache(async (orgSlug: string): Promise<TenantContext | 
     organization: membership.organization,
     membershipId: membership.id,
     role: membership.role,
+    portalProfile: membership.portalProfile,
+    userType: membership.userType,
   };
 });
 
@@ -75,7 +89,7 @@ export async function assertTenant(orgSlug: string): Promise<TenantContext> {
 }
 
 export function authorize(ctx: TenantContext, permission: Permission): void {
-  if (!can(ctx.role, permission)) {
+  if (!can(ctx, permission)) {
     throw new ForbiddenError(`Your role does not allow this action (${permission}).`);
   }
 }
@@ -84,7 +98,17 @@ export async function listUserOrganizations(userId: string) {
   const memberships = await db.membership.findMany({
     where: { userId, isActive: true },
     orderBy: { organization: { name: "asc" } },
-    select: { role: true, organization: { select: { id: true, name: true, slug: true } } },
+    select: {
+      role: true,
+      portalProfile: true,
+      userType: true,
+      organization: { select: { id: true, name: true, slug: true } },
+    },
   });
-  return memberships.map((m) => ({ ...m.organization, role: m.role }));
+  return memberships.map((m) => ({
+    ...m.organization,
+    role: m.role,
+    portalProfile: m.portalProfile,
+    userType: m.userType,
+  }));
 }

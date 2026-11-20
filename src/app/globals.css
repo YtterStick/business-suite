@@ -132,3 +132,142 @@
     cursor: not-allowed;
   }
 }
+
+@keyframes tq-bar-in {
+  from {
+    opacity: 0;
+    transform: scaleX(0.4);
+  }
+  to {
+    opacity: 1;
+    transform: scaleX(1);
+  }
+}
+
+@keyframes tq-stem-draw {
+  from {
+    stroke-dashoffset: 100;
+    opacity: 0.2;
+  }
+  to {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+}
+
+@keyframes tq-wordmark-fade {
+  from {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes tq-rise-up {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes tq-blob-float {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(18px, -20px, 0) scale(1.07);
+  }
+  100% {
+    transform: translate3d(-14px, 14px, 0) scale(0.96);
+  }
+}
+
+@keyframes tq-card-glide {
+  0%,
+  16% {
+    transform: translate(0, 0) rotate(0deg);
+  }
+  34%,
+  50% {
+    transform: translate(calc(100% + 0.75rem), -4px) rotate(1.5deg);
+  }
+  68%,
+  88% {
+    transform: translate(calc(200% + 1.5rem), 0) rotate(0deg);
+  }
+  100% {
+    transform: translate(0, 0) rotate(0deg);
+  }
+}
+
+@keyframes tq-check-pop {
+  0%,
+  64% {
+    transform: scale(0);
+    opacity: 0;
+  }
+  72%,
+  88% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  96%,
+  100% {
+    transform: scale(0);
+    opacity: 0;
+  }
+}
+
+.tq-animated .tq-mark-bar {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: tq-bar-in 550ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.tq-animated .tq-mark-stem {
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+  animation: tq-stem-draw 750ms cubic-bezier(0.22, 1, 0.36, 1) 240ms both;
+}
+
+.tq-wordmark-in {
+  animation: tq-wordmark-fade 550ms cubic-bezier(0.22, 1, 0.36, 1) 320ms both;
+}
+
+.tq-rise {
+  animation: tq-rise-up 600ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.tq-blob {
+  animation: tq-blob-float 14s ease-in-out infinite alternate;
+}
+
+.tq-card-travel {
+  animation: tq-card-glide 6.5s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+
+.tq-card-check {
+  animation: tq-check-pop 6.5s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tq-animated .tq-mark-bar,
+  .tq-animated .tq-mark-stem,
+  .tq-wordmark-in,
+  .tq-rise,
+  .tq-blob,
+  .tq-card-travel,
+  .tq-card-check {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+    stroke-dashoffset: 0 !important;
+  }
+}

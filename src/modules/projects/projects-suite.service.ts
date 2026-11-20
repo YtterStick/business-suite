@@ -13,6 +13,8 @@ import {
 import { addDays, startOfUtcDay, toIsoDate } from "@/lib/dates";
 import { db } from "@/lib/db";
 import { NotFoundError, ValidationError } from "@/lib/errors";
+import { getClientAccessibleProjectIds } from "@/modules/projects/projects.service";
+import { extractZohoMeta, type PhaseMeta } from "@/modules/projects/zoho-meta";
 import { recordAudit } from "@/server/audit";
 import { authorize, type TenantContext } from "@/server/tenancy";
 
@@ -115,13 +117,19 @@ export async function getProjectsHome(ctx: TenantContext): Promise<ProjectsHomeD
   const todayIso = toIsoDate(today);
   const weekStart = getMondayUtc(now);
   const weekEnd = addDays(weekStart, 6);
+  const clientIds = await getClientAccessibleProjectIds(ctx);
+  const isClient = clientIds !== null;
+  const projScope = clientIds ? { projectId: { in: Array.from(clientIds) } } : {};
 
   const [myTasks, myIssues, weekLogs, projects, milestones, approvedClaims] = await Promise.all([
     db.task.findMany({
       where: {
         organizationId,
         status: { not: TaskStatus.DONE },
-        OR: [{ assigneeId: userId }, { project: { ownerId: userId } }],
+        ...projScope,
+        ...(isClient
+          ? {}
+          : { OR: [{ assigneeId: userId }, { project: { ownerId: userId } }] }),
       },
       orderBy: [{ dueDate: "asc" }, { priority: "desc" }],
       take: 40,
@@ -131,24 +139,32 @@ export async function getProjectsHome(ctx: TenantContext): Promise<ProjectsHomeD
       where: {
         organizationId,
         status: { in: [IssueStatus.OPEN, IssueStatus.IN_PROGRESS] },
-        OR: [{ assigneeId: userId }, { reporterId: userId }],
+        ...projScope,
+        ...(isClient ? {} : { OR: [{ assigneeId: userId }, { reporterId: userId }] }),
       },
       orderBy: [{ severity: "desc" }, { createdAt: "desc" }],
       take: 20,
       include: { project: { select: { id: true, name: true } } },
     }),
-    db.timeLog.findMany({
+    isClient
+      ? Promise.resolve([])
+      : db.timeLog.findMany({
+          where: {
+            organizationId,
+            loggedDate: { gte: weekStart, lte: weekEnd },
+          },
+          select: { userId: true, projectId: true, hours: true, billable: true, loggedDate: true },
+        }),
+    db.project.findMany({
       where: {
         organizationId,
-        loggedDate: { gte: weekStart, lte: weekEnd },
+        isArchived: false,
+        ...(clientIds ? { id: { in: Array.from(clientIds) } } : {}),
       },
-      select: { userId: true, projectId: true, hours: true, billable: true, loggedDate: true },
-    }),
-    db.project.findMany({
-      where: { organizationId, isArchived: false },
       include: {
         tasks: { select: { status: true } },
         timeLogs: { select: { hours: true, billable: true } },
+        company: { select: { id: true } },
       },
       orderBy: { updatedAt: "desc" },
     }),
@@ -156,18 +172,21 @@ export async function getProjectsHome(ctx: TenantContext): Promise<ProjectsHomeD
       where: {
         organizationId,
         status: { not: MilestoneStatus.COMPLETED },
+        ...projScope,
       },
       orderBy: [{ dueDate: "asc" }, { position: "asc" }],
-      take: 8,
+      take: 16,
       include: {
-        project: { select: { id: true, name: true } },
+        project: { select: { id: true, name: true, companyId: true } },
         tasks: { select: { status: true } },
       },
     }),
-    db.expenseClaim.findMany({
-      where: { organizationId, status: ApprovalStatus.APPROVED },
-      select: { projectId: true, amount: true },
-    }),
+    isClient
+      ? Promise.resolve([])
+      : db.expenseClaim.findMany({
+          where: { organizationId, status: ApprovalStatus.APPROVED },
+          select: { projectId: true, amount: true },
+        }),
   ]);
 
   const overdueTasks = myTasks
@@ -265,6 +284,17 @@ export async function getProjectsHome(ctx: TenantContext): Promise<ProjectsHomeD
     }
   }
 
+  const visibleMilestones = (
+    isClient
+      ? milestones.filter((m) => {
+          const { meta } = extractZohoMeta<PhaseMeta>(m.description);
+          const defaultFlag: "Internal" | "External" =
+            m.project.companyId && m.position > 0 ? "External" : "Internal";
+          return (meta.flag ?? defaultFlag) === "External";
+        })
+      : milestones
+  ).slice(0, 8);
+
   return {
     todayIso,
     weekStartIso: toIsoDate(weekStart),
@@ -280,7 +310,7 @@ export async function getProjectsHome(ctx: TenantContext): Promise<ProjectsHomeD
       severity: i.severity,
       status: i.status,
     })),
-    milestonesDueSoon: milestones.map((m) => ({
+    milestonesDueSoon: visibleMilestones.map((m) => ({
       id: m.id,
       name: m.name,
       projectId: m.project.id,
@@ -290,10 +320,10 @@ export async function getProjectsHome(ctx: TenantContext): Promise<ProjectsHomeD
       taskCount: m.tasks.length,
       doneCount: m.tasks.filter((t) => t.status === TaskStatus.DONE).length,
     })),
-    budgetProjects,
-    weeklyDailyHours,
-    weeklyHours,
-    weeklyBillableHours,
+    budgetProjects: isClient ? [] : budgetProjects,
+    weeklyDailyHours: isClient ? [] : weeklyDailyHours,
+    weeklyHours: isClient ? 0 : weeklyHours,
+    weeklyBillableHours: isClient ? 0 : weeklyBillableHours,
     projectHealth: {
       total: projects.length,
       active: projects.filter((p) => p.status === ProjectStatus.ACTIVE).length,
@@ -363,7 +393,7 @@ export interface ProjectsReportsDTO {
 }
 
 export async function getProjectsReports(ctx: TenantContext): Promise<ProjectsReportsDTO> {
-  authorize(ctx, "projects.project.read");
+  authorize(ctx, "projects.reports.read");
   const organizationId = ctx.organization.id;
 
   const [projects, tasks, timeLogs, memberships, expenses] = await Promise.all([
@@ -573,7 +603,7 @@ export async function getWeeklyTimesheet(
   ctx: TenantContext,
   requestedWeekIso?: string,
 ): Promise<TimesheetGridDTO> {
-  authorize(ctx, "projects.project.read");
+  authorize(ctx, "projects.time.read");
   const organizationId = ctx.organization.id;
   const userId = ctx.user.id;
 
@@ -899,7 +929,7 @@ export interface ApprovalsQueueDTO {
 }
 
 export async function getApprovalsQueue(ctx: TenantContext): Promise<ApprovalsQueueDTO> {
-  authorize(ctx, "projects.project.read");
+  authorize(ctx, "projects.approvals.read");
   const organizationId = ctx.organization.id;
 
   const [timesheets, expenses, milestones, projects, pendingMilestones, approvalComments] =
@@ -1117,7 +1147,7 @@ export async function reviewApprovalItem(
     reviewNotes?: string | null;
   },
 ): Promise<void> {
-  authorize(ctx, "org.members.manage");
+  authorize(ctx, "projects.approvals.manage");
   const organizationId = ctx.organization.id;
   const note = input.reviewNotes?.trim() || null;
 
@@ -1182,7 +1212,7 @@ export async function bulkReviewApprovalItems(
     reviewNotes?: string | null;
   },
 ): Promise<{ count: number }> {
-  authorize(ctx, "org.members.manage");
+  authorize(ctx, "projects.approvals.manage");
   if (input.ids.length === 0) {
     throw new ValidationError("Select at least one item.");
   }

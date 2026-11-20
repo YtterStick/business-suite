@@ -362,22 +362,40 @@ export function SingleProjectWorkspace({
   orgName,
   todayIso,
   canWrite,
+  canManageProject,
+  canWriteIssues,
+  canWriteComments,
   canManageUsers,
+  isOwner = false,
+  isClient = false,
   data,
 }: {
   orgSlug: string;
   orgName: string;
   todayIso: string;
   canWrite: boolean;
+  canManageProject?: boolean;
+  canWriteIssues?: boolean;
+  canWriteComments?: boolean;
   canManageUsers: boolean;
+  isOwner?: boolean;
+  isClient?: boolean;
   data: SingleProjectWorkspaceDTO;
 }) {
+  const allowProjectEdit = canManageProject ?? canWrite;
+  const allowIssuesWrite = canWriteIssues ?? canWrite;
+  const allowCommentsWrite = canWriteComments ?? canWrite;
   const router = useRouter();
   const dndId = React.useId();
   const { project, allProjects, milestones, issues, timeLogs, invoices, expenses, members, comments } =
     data;
 
-  const tabs = React.useMemo(() => mapEnabledTabs(project.enabledTabs), [project.enabledTabs]);
+  const tabs = React.useMemo(() => {
+    const base = mapEnabledTabs(project.enabledTabs);
+    return isClient
+      ? base.filter((t) => t.id !== "time-logs" && t.id !== "finance" && t.id !== "users")
+      : base;
+  }, [project.enabledTabs, isClient]);
   const [activeTab, setActiveTab] = React.useState<ProjectWorkspaceTab>("dashboard");
   const [tasksView, setTasksView] = React.useState<TasksViewMode>("list");
   const [tasks, setTasks] = React.useState<TaskCardDTO[]>(data.tasks);
@@ -763,7 +781,7 @@ export function SingleProjectWorkspace({
             <div className="flex flex-wrap items-center gap-2.5">
               <h1 className="text-xl font-bold tracking-tight">{project.name}</h1>
 
-              {canWrite ? (
+              {allowProjectEdit ? (
                 <select
                   aria-label="Project status"
                   value={project.status}
@@ -810,16 +828,16 @@ export function SingleProjectWorkspace({
           {/* Quick Actions */}
           <div className="flex flex-wrap items-center gap-2">
             {canWrite && (
-              <>
-                <Button size="sm" variant="outline" onClick={() => setTaskDrawerOpen(true)}>
-                  <Plus className="size-3.5" />
-                  New Task
-                </Button>
-                <Button size="sm" onClick={() => setEditOpen(true)}>
-                  <Pencil className="size-3.5" />
-                  Edit Project
-                </Button>
-              </>
+              <Button size="sm" variant="outline" onClick={() => setTaskDrawerOpen(true)}>
+                <Plus className="size-3.5" />
+                New Task
+              </Button>
+            )}
+            {allowProjectEdit && (
+              <Button size="sm" onClick={() => setEditOpen(true)}>
+                <Pencil className="size-3.5" />
+                Edit Project
+              </Button>
             )}
           </div>
         </div>
@@ -851,7 +869,7 @@ export function SingleProjectWorkspace({
             })}
           </div>
 
-          {canWrite && (
+          {allowProjectEdit && (
             <button
               type="button"
               onClick={() => setEditOpen(true)}
@@ -881,40 +899,55 @@ export function SingleProjectWorkspace({
                 </CardContent>
               </Card>
 
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardDescription>Hours Logged</CardDescription>
-                  <CardTitle className="text-2xl tabular-nums">{totalHours.toFixed(1)}h</CardTitle>
-                </CardHeader>
-                <CardContent className="text-xs text-muted-foreground">
-                  {billableHours.toFixed(1)}h billable · {(totalHours - billableHours).toFixed(1)}h
-                  internal
-                </CardContent>
-              </Card>
+              {!isClient && (
+                <>
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardDescription>Hours Logged</CardDescription>
+                      <CardTitle className="text-2xl tabular-nums">{totalHours.toFixed(1)}h</CardTitle>
+                    </CardHeader>
+                    <CardContent className="text-xs text-muted-foreground">
+                      {billableHours.toFixed(1)}h billable · {(totalHours - billableHours).toFixed(1)}h
+                      internal
+                    </CardContent>
+                  </Card>
 
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardDescription>Open Issues</CardDescription>
-                  <CardTitle className="text-2xl tabular-nums">{openIssuesCount}</CardTitle>
-                </CardHeader>
-                <CardContent className="text-xs text-muted-foreground">
-                  {issues.length} total issues logged
-                </CardContent>
-              </Card>
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardDescription>Open Issues</CardDescription>
+                      <CardTitle className="text-2xl tabular-nums">{openIssuesCount}</CardTitle>
+                    </CardHeader>
+                    <CardContent className="text-xs text-muted-foreground">
+                      {issues.length} total issues logged
+                    </CardContent>
+                  </Card>
 
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardDescription>Budget Burn</CardDescription>
-                  <CardTitle className="text-2xl tabular-nums">
-                    {budgetAmount > 0 ? `${budgetBurnPct}%` : formatCurrency(actualBurn, project.currency)}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="text-xs text-muted-foreground">
-                  {budgetAmount > 0
-                    ? `${formatCurrency(actualBurn, project.currency)} of ${formatCurrency(budgetAmount, project.currency)}`
-                    : "No planned budget cap set"}
-                </CardContent>
-              </Card>
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardDescription>Budget Burn</CardDescription>
+                      <CardTitle className="text-2xl tabular-nums">
+                        {budgetAmount > 0 ? `${budgetBurnPct}%` : formatCurrency(actualBurn, project.currency)}
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="text-xs text-muted-foreground">
+                      {budgetAmount > 0
+                        ? `${formatCurrency(actualBurn, project.currency)} of ${formatCurrency(budgetAmount, project.currency)}`
+                        : "No planned budget cap set"}
+                    </CardContent>
+                  </Card>
+                </>
+              )}
+              {isClient && (
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardDescription>Open Issues</CardDescription>
+                    <CardTitle className="text-2xl tabular-nums">{openIssuesCount}</CardTitle>
+                  </CardHeader>
+                  <CardContent className="text-xs text-muted-foreground">
+                    {issues.length} total issues logged
+                  </CardContent>
+                </Card>
+              )}
             </div>
 
             <div className="grid gap-6 lg:grid-cols-2">
@@ -1404,7 +1437,7 @@ export function SingleProjectWorkspace({
                 </CardTitle>
                 <CardDescription>Bugs and blockers tracked inside {project.name}.</CardDescription>
               </div>
-              {canWrite && (
+              {allowIssuesWrite && (
                 <Button size="sm" onClick={() => setIssueDrawerOpen(true)}>
                   <Plus className="size-3.5" />
                   Submit Issue
@@ -1441,7 +1474,7 @@ export function SingleProjectWorkspace({
                           </Badge>
                         </TableCell>
                         <TableCell>
-                          {canWrite ? (
+                          {allowIssuesWrite ? (
                             <select
                               value={issue.status}
                               disabled={isPending}
@@ -1906,7 +1939,7 @@ export function SingleProjectWorkspace({
             comments={regularComments}
             projects={[{ id: project.id, name: project.name }]}
             fixedProjectId={project.id}
-            canWrite={canWrite}
+            canWrite={allowCommentsWrite}
           />
         )}
       </div>
@@ -1924,6 +1957,7 @@ export function SingleProjectWorkspace({
         onOpenChange={setInviteOpen}
         orgSlug={orgSlug}
         orgName={orgName}
+        isOwner={isOwner}
       />
 
       {/* New Task Drawer */}

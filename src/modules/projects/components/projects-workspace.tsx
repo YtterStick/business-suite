@@ -260,6 +260,7 @@ interface ProjectsWorkspaceProps {
   currentUserId: string;
   todayIso: string;
   canWrite: boolean;
+  isClient?: boolean;
   workspace: ProjectsWorkspaceDTO;
   openCreateInitially?: boolean;
   highlightProjectId?: string;
@@ -271,6 +272,7 @@ export function ProjectsWorkspace({
   currentUserId,
   todayIso,
   canWrite,
+  isClient = false,
   workspace,
   openCreateInitially = false,
   highlightProjectId,
@@ -305,7 +307,7 @@ export function ProjectsWorkspace({
   const selectAllRef = React.useRef<HTMLInputElement>(null);
 
   // Modals / Sheets
-  const [sheetOpen, setSheetOpen] = React.useState(openCreateInitially);
+  const [sheetOpen, setSheetOpen] = React.useState(openCreateInitially && canWrite);
   const [sheetTemplate, setSheetTemplate] = React.useState<ProjectTemplateKey>("NONE");
   const [automationOpen, setAutomationOpen] = React.useState(false);
   const [importOpen, setImportOpen] = React.useState(false);
@@ -343,18 +345,18 @@ export function ProjectsWorkspace({
   }, [orgSlug]);
 
   React.useEffect(() => {
-    if (openCreateInitially) setSheetOpen(true);
-  }, [openCreateInitially]);
+    if (openCreateInitially && canWrite) setSheetOpen(true);
+  }, [openCreateInitially, canWrite]);
 
   React.useEffect(() => {
     const onQuickAdd = (event: Event) => {
-      if ((event as CustomEvent<string>).detail === "projects") {
+      if ((event as CustomEvent<string>).detail === "projects" && canWrite) {
         setSheetOpen(true);
       }
     };
     window.addEventListener("bs-quick-add", onQuickAdd);
     return () => window.removeEventListener("bs-quick-add", onQuickAdd);
-  }, []);
+  }, [canWrite]);
 
   const persistColumnOrder = (next: ColumnKey[]) => {
     setColumnOrder(next);
@@ -819,9 +821,23 @@ export function ProjectsWorkspace({
   const showProjectCollection =
     activeTab === "active" || activeTab === "public" || activeTab === "archived";
 
+  const visibleTabs = React.useMemo(
+    () =>
+      isClient
+        ? TABS.filter((t) => t.id === "active" || t.id === "groups" || t.id === "public")
+        : TABS,
+    [isClient],
+  );
+
+  const availableColumnOrder = React.useMemo(
+    () =>
+      isClient ? columnOrder.filter((key) => key !== "budget" && key !== "connected") : columnOrder,
+    [columnOrder, isClient],
+  );
+
   const orderedVisibleColumns = React.useMemo(
-    () => columnOrder.filter((key) => visibleColumns[key]),
-    [columnOrder, visibleColumns],
+    () => availableColumnOrder.filter((key) => visibleColumns[key]),
+    [availableColumnOrder, visibleColumns],
   );
 
   const cellPad = density === "compact" ? "py-1.5" : "py-3";
@@ -1239,7 +1255,7 @@ export function ProjectsWorkspace({
         </div>
 
         <nav className="mt-4 flex gap-5 overflow-x-auto" aria-label="Projects views">
-          {TABS.map((tab) => {
+          {visibleTabs.map((tab) => {
             const isActive = activeTab === tab.id;
             return (
               <button
@@ -1570,7 +1586,7 @@ export function ProjectsWorkspace({
                       </button>
                     </div>
                     <div className="mt-2 max-h-72 space-y-1 overflow-y-auto">
-                      {columnOrder.map((colKey, idx) => {
+                      {availableColumnOrder.map((colKey, idx) => {
                         const col = COLUMN_DEFS[colKey];
                         return (
                           <div
@@ -1624,7 +1640,7 @@ export function ProjectsWorkspace({
                               </button>
                               <button
                                 type="button"
-                                disabled={idx === columnOrder.length - 1}
+                                disabled={idx === availableColumnOrder.length - 1}
                                 aria-label={`Move ${col.label} down`}
                                 onClick={() => moveColumnStep(colKey, 1)}
                                 className="rounded p-0.5 text-muted-foreground hover:bg-background hover:text-foreground disabled:opacity-30"

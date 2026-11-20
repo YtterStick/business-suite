@@ -3,6 +3,7 @@ import "server-only";
 import { db } from "@/lib/db";
 import { formatCurrency } from "@/lib/format";
 import { can } from "@/lib/rbac";
+import { getClientAccessibleProjectIds } from "@/modules/projects/projects.service";
 import type { TenantContext } from "@/server/tenancy";
 
 export type SearchModuleKind = "crm" | "finance" | "projects";
@@ -32,9 +33,10 @@ export async function globalSearch(
 
   const orgId = ctx.organization.id;
   const orgSlug = ctx.organization.slug;
+  const clientIds = await getClientAccessibleProjectIds(ctx);
 
   const [deals, contacts, companies, invoices, quotes, projects] = await Promise.all([
-    can(ctx.role, "crm.deal.read")
+    can(ctx, "crm.deal.read")
       ? db.deal.findMany({
           where: {
             organizationId: orgId,
@@ -56,7 +58,7 @@ export async function globalSearch(
         })
       : Promise.resolve([]),
 
-    can(ctx.role, "crm.contact.read")
+    can(ctx, "crm.contact.read")
       ? db.contact.findMany({
           where: {
             organizationId: orgId,
@@ -79,7 +81,7 @@ export async function globalSearch(
         })
       : Promise.resolve([]),
 
-    can(ctx.role, "crm.contact.read")
+    can(ctx, "crm.contact.read")
       ? db.company.findMany({
           where: {
             organizationId: orgId,
@@ -94,7 +96,7 @@ export async function globalSearch(
         })
       : Promise.resolve([]),
 
-    can(ctx.role, "finance.invoice.read")
+    can(ctx, "finance.invoice.read")
       ? db.invoice.findMany({
           where: {
             organizationId: orgId,
@@ -117,7 +119,7 @@ export async function globalSearch(
         })
       : Promise.resolve([]),
 
-    can(ctx.role, "finance.invoice.read")
+    can(ctx, "finance.invoice.read")
       ? db.quote.findMany({
           where: {
             organizationId: orgId,
@@ -139,10 +141,11 @@ export async function globalSearch(
         })
       : Promise.resolve([]),
 
-    can(ctx.role, "projects.project.read")
+    can(ctx, "projects.project.read")
       ? db.project.findMany({
           where: {
             organizationId: orgId,
+            ...(clientIds ? { id: { in: Array.from(clientIds) } } : {}),
             OR: [
               { name: { contains: query, mode: "insensitive" } },
               { company: { name: { contains: query, mode: "insensitive" } } },

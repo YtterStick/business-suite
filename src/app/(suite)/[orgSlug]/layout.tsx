@@ -6,7 +6,8 @@ import { GlobalTopBar, type TopBarNotificationItem } from "@/components/shell/gl
 import { SuiteBottomBar } from "@/components/shell/suite-bottom-bar";
 import { startOfUtcDay, toIsoDate } from "@/lib/dates";
 import { db } from "@/lib/db";
-import { can } from "@/lib/rbac";
+import { can, isClientUser } from "@/lib/rbac";
+import { getClientAccessibleProjectIds } from "@/modules/projects/projects.service";
 import { listUserOrganizations, requireTenant } from "@/server/tenancy";
 
 interface SuiteLayoutProps {
@@ -94,6 +95,10 @@ export default async function SuiteLayout({ children, params }: SuiteLayoutProps
   const tenant = await requireTenant(orgSlug);
   const orgId = tenant.organization.id;
   const todayStart = startOfUtcDay(new Date());
+  const clientIds = await getClientAccessibleProjectIds(tenant);
+  const isClient = isClientUser(tenant);
+  const clientProjFilter = clientIds ? { id: { in: Array.from(clientIds) } } : {};
+  const clientProjRelFilter = clientIds ? { projectId: { in: Array.from(clientIds) } } : {};
 
   const [
     orgDetails,
@@ -119,26 +124,38 @@ export default async function SuiteLayout({ children, params }: SuiteLayoutProps
     }),
     listUserOrganizations(tenant.user.id),
     db.project.findMany({
-      where: { organizationId: orgId, isArchived: false },
+      where: { organizationId: orgId, isArchived: false, ...clientProjFilter },
       orderBy: { name: "asc" },
       take: 50,
       select: { id: true, name: true },
     }),
-    db.contact.findMany({
-      where: { organizationId: orgId },
-      orderBy: { updatedAt: "desc" },
-      take: 25,
-      select: {
-        id: true,
-        firstName: true,
-        lastName: true,
-        email: true,
-        lifecycleStage: true,
-        company: { select: { name: true } },
-      },
-    }),
+    isClient
+      ? Promise.resolve([])
+      : db.contact.findMany({
+          where: { organizationId: orgId },
+          orderBy: { updatedAt: "desc" },
+          take: 25,
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            lifecycleStage: true,
+            company: { select: { name: true } },
+          },
+        }),
     db.comment.findMany({
-      where: { organizationId: orgId },
+      where: {
+        organizationId: orgId,
+        ...(clientIds
+          ? {
+              OR: [
+                { entityType: "Workspace" },
+                { entityType: "Project", entityId: { in: Array.from(clientIds) } },
+              ],
+            }
+          : {}),
+      },
       orderBy: { createdAt: "desc" },
       take: 15,
       include: { author: { select: { name: true } } },
@@ -157,32 +174,39 @@ export default async function SuiteLayout({ children, params }: SuiteLayoutProps
         createdAt: true,
       },
     }),
-    db.timesheet.findMany({
-      where: { organizationId: orgId, status: TimesheetStatus.SUBMITTED },
-      orderBy: { createdAt: "desc" },
-      take: 5,
-      include: { user: { select: { name: true } } },
-    }),
-    db.expenseClaim.findMany({
-      where: { organizationId: orgId, status: ApprovalStatus.PENDING },
-      orderBy: { createdAt: "desc" },
-      take: 5,
-      include: {
-        submitter: { select: { name: true } },
-        project: { select: { name: true } },
-      },
-    }),
-    db.milestone.findMany({
-      where: { organizationId: orgId, signoffStatus: ApprovalStatus.PENDING },
-      orderBy: { updatedAt: "desc" },
-      take: 5,
-      include: { project: { select: { name: true } } },
-    }),
+    isClient
+      ? Promise.resolve([])
+      : db.timesheet.findMany({
+          where: { organizationId: orgId, status: TimesheetStatus.SUBMITTED },
+          orderBy: { createdAt: "desc" },
+          take: 5,
+          include: { user: { select: { name: true } } },
+        }),
+    isClient
+      ? Promise.resolve([])
+      : db.expenseClaim.findMany({
+          where: { organizationId: orgId, status: ApprovalStatus.PENDING },
+          orderBy: { createdAt: "desc" },
+          take: 5,
+          include: {
+            submitter: { select: { name: true } },
+            project: { select: { name: true } },
+          },
+        }),
+    isClient
+      ? Promise.resolve([])
+      : db.milestone.findMany({
+          where: { organizationId: orgId, signoffStatus: ApprovalStatus.PENDING },
+          orderBy: { updatedAt: "desc" },
+          take: 5,
+          include: { project: { select: { name: true } } },
+        }),
     db.task.findMany({
       where: {
         organizationId: orgId,
         status: { not: TaskStatus.DONE },
         dueDate: { lt: todayStart },
+        ...clientProjRelFilter,
       },
       orderBy: { dueDate: "asc" },
       take: 5,
@@ -192,7 +216,11 @@ export default async function SuiteLayout({ children, params }: SuiteLayoutProps
       },
     }),
     db.task.findMany({
-      where: { organizationId: orgId, assigneeId: { not: null } },
+      where: {
+        organizationId: orgId,
+        assigneeId: { not: null },
+        ...clientProjRelFilter,
+      },
       orderBy: { updatedAt: "desc" },
       take: 5,
       include: {
@@ -335,6 +363,8 @@ export default async function SuiteLayout({ children, params }: SuiteLayoutProps
         orgSlug={orgSlug}
         activeOrg={activeOrg}
         role={tenant.role}
+        portalProfile={tenant.portalProfile}
+        userType={tenant.userType}
         organizations={organizations}
         user={userSummary}
         recentProjects={projects}
@@ -348,6 +378,8 @@ export default async function SuiteLayout({ children, params }: SuiteLayoutProps
           activeOrg={activeOrg}
           portalConfig={portalConfig}
           role={tenant.role}
+          portalProfile={tenant.portalProfile}
+          userType={tenant.userType}
           organizations={organizations}
           user={userSummary}
           notifications={notifications}
@@ -383,7 +415,9 @@ export default async function SuiteLayout({ children, params }: SuiteLayoutProps
               body: c.body,
               createdAt: c.createdAt.toISOString(),
             }))}
-          canWriteProjects={can(tenant.role, "projects.project.write")}
+          canWriteProjects={can(tenant, "projects.comment.write")}
+          canLogTime={can(tenant, "projects.project.write")}
+          canViewContacts={can(tenant, "crm.contact.read")}
         />
       </div>
     </div>

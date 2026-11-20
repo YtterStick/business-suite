@@ -189,6 +189,7 @@ export function UsersPanel({
   todayIso = "",
   team,
   canManage,
+  isOwner = false,
   openInviteInitially = false,
 }: {
   orgSlug: string;
@@ -196,6 +197,7 @@ export function UsersPanel({
   todayIso?: string;
   team: OrganizationTeamDTO;
   canManage: boolean;
+  isOwner?: boolean;
   openInviteInitially?: boolean;
 }) {
   const [activeTab, setActiveTab] = React.useState<UsersTopTab>("portal");
@@ -221,7 +223,7 @@ export function UsersPanel({
   const [pageSize, setPageSize] = React.useState(10);
 
   // Modals & Drawers
-  const [inviteOpen, setInviteOpen] = React.useState(openInviteInitially);
+  const [inviteOpen, setInviteOpen] = React.useState(openInviteInitially && canManage);
   const [inviteUserType, setInviteUserType] = React.useState<UserType>("PORTAL");
   const [csvImportOpen, setCsvImportOpen] = React.useState(false);
   const [automationOpen, setAutomationOpen] = React.useState(false);
@@ -241,8 +243,8 @@ export function UsersPanel({
   const [isPending, startTransition] = React.useTransition();
 
   React.useEffect(() => {
-    if (openInviteInitially) setInviteOpen(true);
-  }, [openInviteInitially]);
+    if (openInviteInitially && canManage) setInviteOpen(true);
+  }, [openInviteInitially, canManage]);
 
   React.useEffect(() => {
     const onQuickAdd = (event: Event) => {
@@ -1228,7 +1230,7 @@ export function UsersPanel({
                           </TableCell>
 
                           <TableCell onClick={(e) => e.stopPropagation()} className="px-1.5">
-                            {canManage ? (
+                            {canManage && (isOwner || member.role !== "OWNER") ? (
                               <select
                                 value={member.role}
                                 onChange={(e) =>
@@ -1239,7 +1241,7 @@ export function UsersPanel({
                                 }
                                 className="h-7 w-[98px] rounded-md border border-input bg-background px-1.5 text-xs dark:border-zinc-800 dark:bg-zinc-950"
                               >
-                                <option value="OWNER">Administrator</option>
+                                {isOwner && <option value="OWNER">Administrator</option>}
                                 <option value="ADMIN">Manager</option>
                                 <option value="MEMBER">Employee</option>
                               </select>
@@ -1249,7 +1251,7 @@ export function UsersPanel({
                           </TableCell>
 
                           <TableCell onClick={(e) => e.stopPropagation()} className="px-1.5">
-                            {canManage ? (
+                            {canManage && (isOwner || member.role !== "OWNER") ? (
                               <select
                                 value={member.portalProfile}
                                 onChange={(e) =>
@@ -1260,7 +1262,7 @@ export function UsersPanel({
                                 }
                                 className="h-7 w-[102px] rounded-md border border-input bg-background px-1.5 text-xs dark:border-zinc-800 dark:bg-zinc-950"
                               >
-                                <option value="PORTAL_OWNER">Portal Owner</option>
+                                {isOwner && <option value="PORTAL_OWNER">Portal Owner</option>}
                                 <option value="STANDARD">Standard</option>
                                 <option value="CLIENT">Client</option>
                               </select>
@@ -1349,46 +1351,52 @@ export function UsersPanel({
                                       <Eye className="size-3.5" />
                                       View Profile
                                     </DropdownMenuItem>
-                                    <DropdownMenuItem
-                                      onSelect={() => setEditMemberId(member.membershipId)}
-                                    >
-                                      <Pencil className="size-3.5" />
-                                      Edit User
-                                    </DropdownMenuItem>
+                                    {(isOwner || member.role !== "OWNER") && (
+                                      <DropdownMenuItem
+                                        onSelect={() => setEditMemberId(member.membershipId)}
+                                      >
+                                        <Pencil className="size-3.5" />
+                                        Edit User
+                                      </DropdownMenuItem>
+                                    )}
                                     <DropdownMenuItem
                                       onSelect={() => setAssignMemberId(member.membershipId)}
                                     >
                                       <FolderKanban className="size-3.5" />
                                       Assign to Project
                                     </DropdownMenuItem>
-                                    <DropdownMenuItem
-                                      onSelect={() =>
-                                        handleSetMembersActive(
-                                          [member.membershipId],
-                                          !member.isActive,
-                                        )
-                                      }
-                                    >
-                                      {member.isActive ? (
-                                        <>
-                                          <UserX className="size-3.5" />
-                                          Deactivate User
-                                        </>
-                                      ) : (
-                                        <>
-                                          <UserCheck className="size-3.5" />
-                                          Reactivate User
-                                        </>
-                                      )}
-                                    </DropdownMenuItem>
-                                    <DropdownMenuSeparator />
-                                    <DropdownMenuItem
-                                      onSelect={() => handleRemoveMember(member)}
-                                      className="text-destructive focus:text-destructive"
-                                    >
-                                      <UserMinus className="size-3.5" />
-                                      Remove User
-                                    </DropdownMenuItem>
+                                    {(isOwner || member.role !== "OWNER") && (
+                                      <>
+                                        <DropdownMenuItem
+                                          onSelect={() =>
+                                            handleSetMembersActive(
+                                              [member.membershipId],
+                                              !member.isActive,
+                                            )
+                                          }
+                                        >
+                                          {member.isActive ? (
+                                            <>
+                                              <UserX className="size-3.5" />
+                                              Deactivate User
+                                            </>
+                                          ) : (
+                                            <>
+                                              <UserCheck className="size-3.5" />
+                                              Reactivate User
+                                            </>
+                                          )}
+                                        </DropdownMenuItem>
+                                        <DropdownMenuSeparator />
+                                        <DropdownMenuItem
+                                          onSelect={() => handleRemoveMember(member)}
+                                          className="text-destructive focus:text-destructive"
+                                        >
+                                          <UserMinus className="size-3.5" />
+                                          Remove User
+                                        </DropdownMenuItem>
+                                      </>
+                                    )}
                                   </DropdownMenuContent>
                                 </DropdownMenu>
                               )}
@@ -1640,6 +1648,7 @@ export function UsersPanel({
         orgName={orgName}
         projects={team.projects}
         defaultUserType={inviteUserType}
+        isOwner={isOwner}
       />
 
       <CsvImportUsersDialog
@@ -1667,6 +1676,7 @@ export function UsersPanel({
         orgSlug={orgSlug}
         defaultCurrency={team.defaultCurrency}
         member={editMember}
+        isOwner={isOwner}
       />
 
       <AssignProjectDialog

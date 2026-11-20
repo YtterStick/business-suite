@@ -262,12 +262,14 @@ export function EditUserDialog({
   orgSlug,
   defaultCurrency,
   member,
+  isOwner = false,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   orgSlug: string;
   defaultCurrency: string;
   member: TeamMemberDTO | null;
+  isOwner?: boolean;
 }) {
   const [role, setRole] = React.useState<MembershipRole>("MEMBER");
   const [portalProfile, setPortalProfile] = React.useState<PortalProfile>("STANDARD");
@@ -336,10 +338,17 @@ export function EditUserDialog({
               <select
                 id="edit-role"
                 value={role}
-                onChange={(e) => setRole(e.target.value as MembershipRole)}
-                className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm"
+                disabled={portalProfile === "CLIENT"}
+                onChange={(e) => {
+                  const nextRole = e.target.value as MembershipRole;
+                  setRole(nextRole);
+                  if (nextRole !== "OWNER" && portalProfile === "PORTAL_OWNER") {
+                    setPortalProfile("STANDARD");
+                  }
+                }}
+                className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm disabled:cursor-not-allowed disabled:opacity-60"
               >
-                <option value="OWNER">Administrator</option>
+                {isOwner && <option value="OWNER">Administrator</option>}
                 <option value="ADMIN">Manager</option>
                 <option value="MEMBER">Employee</option>
               </select>
@@ -349,10 +358,16 @@ export function EditUserDialog({
               <select
                 id="edit-profile"
                 value={portalProfile}
-                onChange={(e) => setPortalProfile(e.target.value as PortalProfile)}
+                onChange={(e) => {
+                  const nextProfile = e.target.value as PortalProfile;
+                  setPortalProfile(nextProfile);
+                  if (nextProfile === "CLIENT") {
+                    setRole("MEMBER");
+                  }
+                }}
                 className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm"
               >
-                <option value="PORTAL_OWNER">Portal Owner</option>
+                {isOwner && <option value="PORTAL_OWNER">Portal Owner</option>}
                 <option value="STANDARD">Standard</option>
                 <option value="CLIENT">Client</option>
               </select>

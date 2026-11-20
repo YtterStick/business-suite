@@ -57,11 +57,13 @@ export function ProjectsHomeDashboard({
   orgSlug,
   orgName,
   firstName,
+  isClient = false,
   home,
 }: {
   orgSlug: string;
   orgName: string;
   firstName: string;
+  isClient?: boolean;
   home: ProjectsHomeDTO;
 }) {
   const [widgets, setWidgets] = React.useState<Record<HomeWidgetKey, boolean>>(DEFAULT_WIDGETS);
@@ -119,7 +121,11 @@ export function ProjectsHomeDashboard({
                 </button>
               </div>
               <div className="mt-2 space-y-1.5">
-                {WIDGET_LABELS.map((w) => (
+                {WIDGET_LABELS.filter(
+                  (w) =>
+                    !isClient ||
+                    (w.key !== "budgetVsActuals" && w.key !== "weeklyTimesheetChart"),
+                ).map((w) => (
                   <label
                     key={w.key}
                     className="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-xs hover:bg-muted/60"
@@ -139,12 +145,14 @@ export function ProjectsHomeDashboard({
             </PopoverContent>
           </Popover>
 
-          <Button asChild size="sm" variant="outline">
-            <Link href={`/${orgSlug}/projects/timesheets`}>
-              <CalendarClock className="size-4" />
-              Weekly Timesheet
-            </Link>
-          </Button>
+          {!isClient && (
+            <Button asChild size="sm" variant="outline">
+              <Link href={`/${orgSlug}/projects/timesheets`}>
+                <CalendarClock className="size-4" />
+                Weekly Timesheet
+              </Link>
+            </Button>
+          )}
           <Button asChild size="sm">
             <Link href={`/${orgSlug}/projects`}>
               <FolderKanban className="size-4" />
@@ -155,7 +163,7 @@ export function ProjectsHomeDashboard({
       </div>
 
       {/* Top KPI Summary Cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className={cn("grid gap-4 sm:grid-cols-2", isClient ? "lg:grid-cols-3" : "lg:grid-cols-4")}>
         <Card>
           <CardHeader className="pb-2">
             <CardDescription className="flex items-center justify-between">
@@ -184,20 +192,22 @@ export function ProjectsHomeDashboard({
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription className="flex items-center justify-between">
-              <span>Weekly Time Logged</span>
-              <Clock className="size-4 text-blue-600" />
-            </CardDescription>
-            <CardTitle className="text-2xl tabular-nums">
-              {home.weeklyHours.toFixed(1)}h
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs text-muted-foreground">
-            {home.weeklyBillableHours.toFixed(1)}h billable (week of {formatDate(home.weekStartIso)})
-          </CardContent>
-        </Card>
+        {!isClient && (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardDescription className="flex items-center justify-between">
+                <span>Weekly Time Logged</span>
+                <Clock className="size-4 text-blue-600" />
+              </CardDescription>
+              <CardTitle className="text-2xl tabular-nums">
+                {home.weeklyHours.toFixed(1)}h
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="text-xs text-muted-foreground">
+              {home.weeklyBillableHours.toFixed(1)}h billable (week of {formatDate(home.weekStartIso)})
+            </CardContent>
+          </Card>
+        )}
 
         <Card>
           <CardHeader className="pb-2">
@@ -262,7 +272,7 @@ export function ProjectsHomeDashboard({
         )}
 
         {/* Weekly Timesheet Summary Bar Chart */}
-        {widgets.weeklyTimesheetChart && (
+        {!isClient && widgets.weeklyTimesheetChart && (
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
               <div>
@@ -450,7 +460,7 @@ export function ProjectsHomeDashboard({
         )}
 
         {/* Project Budget vs. Actuals */}
-        {widgets.budgetVsActuals && (
+        {!isClient && widgets.budgetVsActuals && (
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
               <div>
