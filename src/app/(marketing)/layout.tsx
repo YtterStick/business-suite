@@ -8,7 +8,7 @@ export default async function MarketingLayout({ children }: { children: React.Re
     <div className="flex min-h-screen flex-col bg-background dark:bg-[#0D0E12]">
       <Navbar viewer={viewer} />
       <main className="flex-1">{children}</main>
-      <Footer />
+      <Footer viewer={viewer} />
     </div>
   );
 }

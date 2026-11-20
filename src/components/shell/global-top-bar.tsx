@@ -3,6 +3,7 @@
 import * as React from "react";
 import type { MembershipRole, PortalProfile, UserType } from "@prisma/client";
 import {
+  BookOpen,
   Bug,
   Building2,
   CalendarClock,
@@ -624,6 +625,12 @@ export function GlobalTopBar({
                     </DropdownMenuItem>
                   </>
                 )}
+                <DropdownMenuItem asChild>
+                  <Link href="/docs" className="gap-2">
+                    <BookOpen className="size-4 text-indigo-500" />
+                    <span>Documentation &amp; Guides</span>
+                  </Link>
+                </DropdownMenuItem>
               </div>
 
               <DropdownMenuSeparator className="my-0" />

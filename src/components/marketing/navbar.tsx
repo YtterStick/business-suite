@@ -3,30 +3,26 @@
 import * as React from "react";
 import { ArrowRight, BookOpen, ChevronDown, Menu } from "lucide-react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 
 import { TactiqLogo } from "@/components/brand/tactiq-logo";
-import { SUITE_APPS } from "@/components/marketing/apps";
+import { SUITE_APPS, type SuiteAppId } from "@/components/marketing/apps";
 import { ThemeToggle } from "@/components/marketing/theme-toggle";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 import type { MarketingViewer } from "@/server/marketing";
 
-const NAV_LINKS = [
-  { label: "Features", href: "/#features" },
-  { label: "Documentation", href: "/docs" },
-  { label: "Pricing", href: "/#pricing" },
-];
-
 export function Navbar({ viewer }: { viewer: MarketingViewer | null }) {
   const pathname = usePathname();
+  const router = useRouter();
   const [scrolled, setScrolled] = React.useState(false);
   const [mobileOpen, setMobileOpen] = React.useState(false);
 
@@ -44,6 +40,39 @@ export function Navbar({ viewer }: { viewer: MarketingViewer | null }) {
       active ? "text-foreground" : "text-muted-foreground",
     );
 
+  const scrollToSection = React.useCallback(
+    (sectionId: string) => {
+      setMobileOpen(false);
+      if (pathname === "/") {
+        window.history.replaceState(null, "", `/#${sectionId}`);
+        window.setTimeout(() => {
+          document.getElementById(sectionId)?.scrollIntoView({ behavior: "smooth", block: "start" });
+        }, 40);
+      } else {
+        router.push(`/#${sectionId}`);
+      }
+    },
+    [pathname, router],
+  );
+
+  const selectApp = React.useCallback(
+    (appId: SuiteAppId) => {
+      setMobileOpen(false);
+      window.dispatchEvent(new CustomEvent("tq-select-app", { detail: appId }));
+      if (pathname === "/") {
+        window.history.replaceState(null, "", `/#${appId}`);
+        window.setTimeout(() => {
+          const target =
+            document.getElementById("app-spotlight") ?? document.getElementById(appId);
+          target?.scrollIntoView({ behavior: "smooth", block: "start" });
+        }, 40);
+      } else {
+        router.push(`/#${appId}`);
+      }
+    },
+    [pathname, router],
+  );
+
   return (
     <header
       className={cn(
@@ -59,45 +88,96 @@ export function Navbar({ viewer }: { viewer: MarketingViewer | null }) {
 
         {/* Center: links */}
         <nav aria-label="Main" className="hidden items-center gap-1 md:flex">
-          <Link href={NAV_LINKS[0]!.href} className={linkClass(false)}>
+          <button
+            type="button"
+            onClick={() => scrollToSection("features")}
+            className={linkClass(false)}
+          >
             Features
-          </Link>
+          </button>
+
           <DropdownMenu>
-            <DropdownMenuTrigger className={cn(linkClass(false), "inline-flex items-center gap-1 outline-none")}>
+            <DropdownMenuTrigger
+              className={cn(linkClass(false), "inline-flex items-center gap-1 outline-none")}
+            >
               Apps
               <ChevronDown className="size-3.5 opacity-70" />
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="center" sideOffset={10} className="w-80 p-2">
+            <DropdownMenuContent
+              align="center"
+              sideOffset={10}
+              onCloseAutoFocus={(e) => e.preventDefault()}
+              className="w-80 p-2"
+            >
               {SUITE_APPS.map((app) => {
                 const Icon = app.icon;
                 return (
-                  <DropdownMenuItem key={app.id} asChild className="items-start gap-3 rounded-md p-2.5">
-                    <Link href={`/#${app.id}`}>
-                      <span
-                        className={cn(
-                          "flex size-9 shrink-0 items-center justify-center rounded-lg ring-1",
-                          app.accent,
-                        )}
-                      >
-                        <Icon className="size-4" />
+                  <DropdownMenuItem
+                    key={app.id}
+                    onSelect={() => selectApp(app.id)}
+                    className="cursor-pointer items-start gap-3 rounded-md p-2.5"
+                  >
+                    <span
+                      className={cn(
+                        "flex size-9 shrink-0 items-center justify-center rounded-lg ring-1",
+                        app.accent,
+                      )}
+                    >
+                      <Icon className="size-4" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center justify-between gap-2 text-sm font-semibold">
+                        {app.name}
+                        <ArrowRight className="size-3.5 text-muted-foreground" />
                       </span>
-                      <span className="min-w-0">
-                        <span className="block text-sm font-semibold">{app.name}</span>
-                        <span className="block text-xs leading-snug text-muted-foreground">
-                          {app.description}
-                        </span>
+                      <span className="block text-xs leading-snug text-muted-foreground">
+                        {app.description}
                       </span>
-                    </Link>
+                    </span>
                   </DropdownMenuItem>
                 );
               })}
+              {viewer?.workspaceSlug && (
+                <>
+                  <DropdownMenuSeparator />
+                  <div className="px-2 py-1.5">
+                    <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                      Jump to {viewer.workspaceName ?? "workspace"}
+                    </p>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      {SUITE_APPS.map((app) => (
+                        <DropdownMenuItem key={app.id} asChild className="justify-center p-0">
+                          <Link
+                            href={`/${viewer.workspaceSlug}${app.defaultAppPath}`}
+                            className="flex items-center justify-center rounded-md border bg-muted/40 px-2 py-1 text-xs font-medium hover:bg-accent"
+                          >
+                            {app.name}
+                          </Link>
+                        </DropdownMenuItem>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
+
+          <button
+            type="button"
+            onClick={() => scrollToSection("workflow")}
+            className={linkClass(false)}
+          >
+            How It Connects
+          </button>
+          <button
+            type="button"
+            onClick={() => scrollToSection("capabilities")}
+            className={linkClass(false)}
+          >
+            Capabilities
+          </button>
           <Link href="/docs" className={linkClass(isDocs)}>
             Documentation
-          </Link>
-          <Link href="/#pricing" className={linkClass(false)}>
-            Pricing
           </Link>
         </nav>
 
@@ -135,28 +215,48 @@ export function Navbar({ viewer }: { viewer: MarketingViewer | null }) {
                 <TactiqLogo markClassName="size-7" wordmarkClassName="text-lg" />
               </div>
               <nav className="flex flex-col gap-1 p-4" aria-label="Mobile">
-                <MobileLink href="/#features" onNavigate={() => setMobileOpen(false)}>
+                <button
+                  type="button"
+                  onClick={() => scrollToSection("features")}
+                  className="flex items-center gap-2.5 rounded-md px-3 py-2 text-left text-sm font-medium transition-colors hover:bg-accent"
+                >
                   Features
-                </MobileLink>
+                </button>
                 <p className="mt-3 px-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                   Apps
                 </p>
                 {SUITE_APPS.map((app) => {
                   const Icon = app.icon;
                   return (
-                    <MobileLink key={app.id} href={`/#${app.id}`} onNavigate={() => setMobileOpen(false)}>
+                    <button
+                      key={app.id}
+                      type="button"
+                      onClick={() => selectApp(app.id)}
+                      className="flex items-center gap-2.5 rounded-md px-3 py-2 text-left text-sm font-medium transition-colors hover:bg-accent"
+                    >
                       <Icon className={cn("size-4", app.iconColor)} />
                       {app.name}
-                    </MobileLink>
+                    </button>
                   );
                 })}
                 <div className="my-3 h-px bg-border" />
+                <button
+                  type="button"
+                  onClick={() => scrollToSection("workflow")}
+                  className="flex items-center gap-2.5 rounded-md px-3 py-2 text-left text-sm font-medium transition-colors hover:bg-accent"
+                >
+                  How It Connects
+                </button>
+                <button
+                  type="button"
+                  onClick={() => scrollToSection("capabilities")}
+                  className="flex items-center gap-2.5 rounded-md px-3 py-2 text-left text-sm font-medium transition-colors hover:bg-accent"
+                >
+                  Capabilities
+                </button>
                 <MobileLink href="/docs" onNavigate={() => setMobileOpen(false)}>
                   <BookOpen className="size-4 text-muted-foreground" />
                   Documentation
-                </MobileLink>
-                <MobileLink href="/#pricing" onNavigate={() => setMobileOpen(false)}>
-                  Pricing
                 </MobileLink>
                 <div className="mt-4 flex flex-col gap-2">
                   {viewer ? (

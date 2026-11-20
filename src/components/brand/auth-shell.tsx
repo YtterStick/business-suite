@@ -1,5 +1,6 @@
 import * as React from "react";
-import { Check, FolderKanban, Handshake, Receipt } from "lucide-react";
+import { BookOpen, Check, FolderKanban, Handshake, Home, Receipt } from "lucide-react";
+import Link from "next/link";
 
 import { TactiqLogo } from "@/components/brand/tactiq-logo";
 
@@ -56,7 +57,9 @@ export function AuthShell({ children }: { children: React.ReactNode }) {
         </div>
 
         <div className="relative">
-          <TactiqLogo animated markClassName="size-10" wordmarkClassName="text-2xl text-white" />
+          <Link href="/" className="tq-hover-animate inline-flex" aria-label="Back to Tactiq home">
+            <TactiqLogo animated markClassName="size-10" wordmarkClassName="text-2xl text-white" />
+          </Link>
         </div>
 
         <div className="relative space-y-8">
@@ -86,13 +89,36 @@ export function AuthShell({ children }: { children: React.ReactNode }) {
           <AnimatedBoardPreview />
         </div>
 
-        <p className="relative text-xs text-white/40">
-          © {new Date().getFullYear()} Tactiq · CRM, Finance & Projects in one workspace
-        </p>
+        <div className="relative flex flex-wrap items-center justify-between gap-2 text-xs text-white/50">
+          <p>© {new Date().getFullYear()} Tactiq</p>
+          <div className="flex items-center gap-4">
+            <Link href="/" className="transition-colors hover:text-white">
+              Home
+            </Link>
+            <Link href="/docs" className="transition-colors hover:text-white">
+              Documentation
+            </Link>
+          </div>
+        </div>
       </aside>
 
       {/* Form panel */}
-      <main className="relative flex flex-1 items-center justify-center p-6 sm:p-10">
+      <main className="relative flex flex-1 flex-col items-center justify-center p-6 sm:p-10">
+        <div className="mb-8 flex w-full max-w-md items-center justify-between lg:hidden">
+          <Link href="/" aria-label="Back to Tactiq home">
+            <TactiqLogo markClassName="size-7" wordmarkClassName="text-lg" />
+          </Link>
+          <div className="flex items-center gap-3 text-xs font-medium text-muted-foreground">
+            <Link href="/" className="inline-flex items-center gap-1 hover:text-foreground">
+              <Home className="size-3.5" />
+              Home
+            </Link>
+            <Link href="/docs" className="inline-flex items-center gap-1 hover:text-foreground">
+              <BookOpen className="size-3.5" />
+              Docs
+            </Link>
+          </div>
+        </div>
         <div className="tq-rise w-full max-w-md">{children}</div>
       </main>
     </div>

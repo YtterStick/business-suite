@@ -62,7 +62,8 @@ const FOOTER_COLUMNS = [
       { label: "CRM", href: "/#crm" },
       { label: "Finance", href: "/#finance" },
       { label: "Projects", href: "/#projects" },
-      { label: "Pricing", href: "/#pricing" },
+      { label: "How It Connects", href: "/#workflow" },
+      { label: "Capabilities", href: "/#capabilities" },
     ],
   },
   {
@@ -94,7 +95,7 @@ const FOOTER_COLUMNS = [
   },
 ];
 
-export function Footer() {
+export function Footer({ viewer = null }: { viewer?: MarketingViewer | null }) {
   return (
     <footer className="border-t">
       <div className="mx-auto max-w-7xl px-4 py-14 sm:px-6 lg:px-8">
@@ -105,12 +106,23 @@ export function Footer() {
               CRM, Finance, and Projects in one connected workspace.
             </p>
             <div className="mt-5 flex gap-2">
-              <Button asChild size="sm">
-                <Link href="/signup">Sign Up</Link>
-              </Button>
-              <Button asChild size="sm" variant="outline">
-                <Link href="/login">Log In</Link>
-              </Button>
+              {viewer ? (
+                <Button asChild size="sm">
+                  <Link href={viewer.workspaceHref}>
+                    Open Workspace
+                    <ArrowRight className="size-3.5" />
+                  </Link>
+                </Button>
+              ) : (
+                <>
+                  <Button asChild size="sm">
+                    <Link href="/signup">Sign Up</Link>
+                  </Button>
+                  <Button asChild size="sm" variant="outline">
+                    <Link href="/login">Log In</Link>
+                  </Button>
+                </>
+              )}
             </div>
           </div>
           {FOOTER_COLUMNS.map((col) => (

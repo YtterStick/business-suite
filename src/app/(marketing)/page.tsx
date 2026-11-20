@@ -4,7 +4,6 @@ import { Capabilities } from "@/components/marketing/capabilities";
 import { CtaBanner } from "@/components/marketing/footer";
 import { Hero } from "@/components/marketing/hero";
 import { Pillars } from "@/components/marketing/pillars";
-import { Pricing } from "@/components/marketing/pricing";
 import { Workflow } from "@/components/marketing/workflow";
 import { getMarketingViewer } from "@/server/marketing";
 
@@ -19,13 +18,13 @@ export default async function LandingPage() {
   return (
     <>
       <Hero
+        viewer={viewer}
         primaryHref={viewer ? viewer.workspaceHref : "/signup"}
         primaryLabel={viewer ? "Open your workspace" : "Get Started for Free"}
       />
-      <Pillars />
+      <Pillars viewer={viewer} />
       <Workflow />
       <Capabilities />
-      <Pricing />
       <CtaBanner viewer={viewer} />
     </>
   );

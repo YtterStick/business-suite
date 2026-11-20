@@ -1,12 +1,19 @@
 "use client";
 
 import * as React from "react";
-import { Search } from "lucide-react";
+import { ArrowRight, BookOpen, Search } from "lucide-react";
+import Link from "next/link";
 
 import { TactiqMark } from "@/components/brand/tactiq-logo";
-import { SUITE_APPS, type SuiteAppId } from "@/components/marketing/apps";
+import {
+  getSuiteApp,
+  isSuiteAppId,
+  SUITE_APPS,
+  type SuiteAppId,
+} from "@/components/marketing/apps";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import type { MarketingViewer } from "@/server/marketing";
 
 const AUTO_CYCLE_MS = 6000;
 const SWITCH_SKELETON_MS = 420;
@@ -14,9 +21,10 @@ const SWITCH_SKELETON_MS = 420;
 /**
  * Framed, interactive preview of the Tactiq workspace. Clicking an app in the
  * rail (or the tabs) switches the preview; it auto-cycles until the visitor
- * interacts. A short skeleton is shown while "loading" the next app.
+ * interacts. Also syncs with navbar/pillar selection via `tq-select-app` and
+ * URL hashes (#crm, #finance, #projects).
  */
-export function AppShowcase() {
+export function AppShowcase({ viewer = null }: { viewer?: MarketingViewer | null }) {
   const [active, setActive] = React.useState<SuiteAppId>("projects");
   const [loading, setLoading] = React.useState(false);
   const [interacted, setInteracted] = React.useState(false);
@@ -26,6 +34,30 @@ export function AppShowcase() {
     setActive(next);
     window.setTimeout(() => setLoading(false), SWITCH_SKELETON_MS);
   }, []);
+
+  React.useEffect(() => {
+    const syncHash = () => {
+      const hash = window.location.hash.replace("#", "");
+      if (isSuiteAppId(hash)) {
+        setInteracted(true);
+        setActive(hash);
+      }
+    };
+    const handleEvent = (event: Event) => {
+      const next = (event as CustomEvent<SuiteAppId>).detail;
+      if (isSuiteAppId(next)) {
+        setInteracted(true);
+        switchTo(next);
+      }
+    };
+    syncHash();
+    window.addEventListener("hashchange", syncHash);
+    window.addEventListener("tq-select-app", handleEvent);
+    return () => {
+      window.removeEventListener("hashchange", syncHash);
+      window.removeEventListener("tq-select-app", handleEvent);
+    };
+  }, [switchTo]);
 
   React.useEffect(() => {
     if (interacted) return;
@@ -46,7 +78,10 @@ export function AppShowcase() {
     if (id !== active) switchTo(id);
   };
 
-  const activeApp = SUITE_APPS.find((a) => a.id === active)!;
+  const activeApp = getSuiteApp(active);
+  const liveHref = viewer?.workspaceSlug
+    ? `/${viewer.workspaceSlug}${activeApp.defaultAppPath}`
+    : "/signup";
 
   return (
     <div className="relative">
@@ -136,6 +171,30 @@ export function AppShowcase() {
                   {active === "projects" && <ProjectsPreview />}
                 </div>
               )}
+            </div>
+
+            {/* Footer action bar */}
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t bg-muted/20 px-4 py-2 text-xs">
+              <span className="text-muted-foreground">
+                <strong className="font-medium text-foreground">{activeApp.name}:</strong>{" "}
+                {activeApp.tagline}
+              </span>
+              <div className="flex items-center gap-3">
+                <Link
+                  href={activeApp.docsHref}
+                  className="inline-flex items-center gap-1 font-medium text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  <BookOpen className="size-3.5" />
+                  {activeApp.name} docs
+                </Link>
+                <Link
+                  href={liveHref}
+                  className="inline-flex items-center gap-1 font-medium text-indigo-600 transition-colors hover:text-indigo-500 dark:text-indigo-400"
+                >
+                  {viewer?.workspaceSlug ? `Open ${activeApp.name}` : `Try ${activeApp.name}`}
+                  <ArrowRight className="size-3.5" />
+                </Link>
+              </div>
             </div>
           </div>
         </div>

@@ -8,6 +8,7 @@ import { listUserOrganizations } from "@/server/tenancy";
 export interface MarketingViewer {
   name: string;
   workspaceHref: string;
+  workspaceSlug: string | null;
   workspaceName: string | null;
 }
 
@@ -25,6 +26,7 @@ export const getMarketingViewer = cache(async (): Promise<MarketingViewer | null
     return {
       name: session.user.name,
       workspaceHref: preferred ? `/${preferred.slug}/projects` : "/onboarding",
+      workspaceSlug: preferred?.slug ?? null,
       workspaceName: preferred?.name ?? null,
     };
   } catch {

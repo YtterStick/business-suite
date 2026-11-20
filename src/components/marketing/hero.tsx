@@ -3,8 +3,17 @@ import Link from "next/link";
 
 import { AppShowcase } from "@/components/marketing/app-showcase";
 import { Button } from "@/components/ui/button";
+import type { MarketingViewer } from "@/server/marketing";
 
-export function Hero({ primaryHref, primaryLabel }: { primaryHref: string; primaryLabel: string }) {
+export function Hero({
+  viewer,
+  primaryHref,
+  primaryLabel,
+}: {
+  viewer: MarketingViewer | null;
+  primaryHref: string;
+  primaryLabel: string;
+}) {
   return (
     <section className="relative overflow-hidden">
       {/* Background grid */}
@@ -56,7 +65,11 @@ export function Hero({ primaryHref, primaryLabel }: { primaryHref: string; prima
           </div>
 
           <ul className="mt-6 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-xs text-muted-foreground">
-            {["Free to start", "No credit card required", "Unlimited workspaces"].map((item) => (
+            {[
+              "Unified CRM, Finance & Projects",
+              "Role-based workspaces & approvals",
+              "Unlimited workspaces per account",
+            ].map((item) => (
               <li key={item} className="flex items-center gap-1.5">
                 <Check className="size-3.5 text-emerald-500" />
                 {item}
@@ -65,8 +78,8 @@ export function Hero({ primaryHref, primaryLabel }: { primaryHref: string; prima
           </ul>
         </div>
 
-        <div className="mx-auto mt-14 max-w-5xl sm:mt-16">
-          <AppShowcase />
+        <div id="workspace-preview" className="mx-auto mt-14 max-w-5xl scroll-mt-24 sm:mt-16">
+          <AppShowcase viewer={viewer} />
         </div>
       </div>
     </section>
