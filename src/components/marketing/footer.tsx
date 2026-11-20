@@ -63,7 +63,9 @@ const FOOTER_COLUMNS = [
       { label: "Finance", href: "/#finance" },
       { label: "Projects", href: "/#projects" },
       { label: "How It Connects", href: "/#workflow" },
+      { label: "Use Cases", href: "/#use-cases" },
       { label: "Capabilities", href: "/#capabilities" },
+      { label: "FAQ", href: "/#faq" },
     ],
   },
   {

@@ -90,15 +90,12 @@ export function TactiqLogo({
       {showWordmark && (
         <span
           className={cn(
-            "text-xl font-semibold tracking-tight",
+            "whitespace-nowrap text-xl font-semibold tracking-tight",
             animated && "tq-wordmark-in",
             wordmarkClassName,
           )}
         >
-          Tact
-          <span className="bg-gradient-to-r from-indigo-500 to-cyan-400 bg-clip-text text-transparent">
-            iq
-          </span>
+          Tactiq
         </span>
       )}
     </span>

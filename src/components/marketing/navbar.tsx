@@ -1,7 +1,13 @@
 "use client";
 
 import * as React from "react";
-import { ArrowRight, BookOpen, ChevronDown, Menu } from "lucide-react";
+import {
+  ArrowRight,
+  BookOpen,
+  ChevronDown,
+  Menu,
+  X,
+} from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 
@@ -36,7 +42,7 @@ export function Navbar({ viewer }: { viewer: MarketingViewer | null }) {
   const isDocs = pathname.startsWith("/docs");
   const linkClass = (active: boolean) =>
     cn(
-      "rounded-md px-3 py-1.5 text-sm font-medium transition-colors hover:text-foreground",
+      "rounded-md px-2.5 py-1.5 text-sm font-medium whitespace-nowrap transition-colors hover:text-foreground",
       active ? "text-foreground" : "text-muted-foreground",
     );
 
@@ -46,7 +52,9 @@ export function Navbar({ viewer }: { viewer: MarketingViewer | null }) {
       if (pathname === "/") {
         window.history.replaceState(null, "", `/#${sectionId}`);
         window.setTimeout(() => {
-          document.getElementById(sectionId)?.scrollIntoView({ behavior: "smooth", block: "start" });
+          document
+            .getElementById(sectionId)
+            ?.scrollIntoView({ behavior: "smooth", block: "start" });
         }, 40);
       } else {
         router.push(`/#${sectionId}`);
@@ -76,18 +84,18 @@ export function Navbar({ viewer }: { viewer: MarketingViewer | null }) {
   return (
     <header
       className={cn(
-        "sticky top-0 z-50 h-16 border-b bg-background/80 backdrop-blur-xl transition-shadow supports-[backdrop-filter]:bg-background/70 dark:bg-[#0D0E12]/80",
+        "sticky top-0 z-50 h-16 border-b bg-background/85 backdrop-blur-xl transition-shadow supports-[backdrop-filter]:bg-background/75 dark:bg-[#0D0E12]/85",
         scrolled ? "border-border shadow-sm" : "border-transparent",
       )}
     >
-      <div className="mx-auto flex h-full max-w-7xl items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
+      <div className="mx-auto flex h-full max-w-7xl items-center justify-between gap-3 px-4 sm:px-6 lg:px-8">
         {/* Left: brand */}
         <Link href="/" aria-label="Tactiq home" className="tq-hover-animate shrink-0">
           <TactiqLogo markClassName="size-7" wordmarkClassName="text-lg" />
         </Link>
 
-        {/* Center: links */}
-        <nav aria-label="Main" className="hidden items-center gap-1 md:flex">
+        {/* Center: desktop navigation */}
+        <nav aria-label="Main" className="hidden items-center gap-0.5 lg:flex">
           <button
             type="button"
             onClick={() => scrollToSection("features")}
@@ -171,6 +179,13 @@ export function Navbar({ viewer }: { viewer: MarketingViewer | null }) {
           </button>
           <button
             type="button"
+            onClick={() => scrollToSection("use-cases")}
+            className={linkClass(false)}
+          >
+            Use Cases
+          </button>
+          <button
+            type="button"
             onClick={() => scrollToSection("capabilities")}
             className={linkClass(false)}
           >
@@ -179,11 +194,34 @@ export function Navbar({ viewer }: { viewer: MarketingViewer | null }) {
           <Link href="/docs" className={linkClass(isDocs)}>
             Documentation
           </Link>
+          <button
+            type="button"
+            onClick={() => scrollToSection("faq")}
+            className={linkClass(false)}
+          >
+            FAQ
+          </button>
         </nav>
 
-        {/* Right: CTAs */}
+        {/* Right: actions + mobile drawer trigger */}
         <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
           <ThemeToggle />
+
+          {/* Mobile compact primary CTA */}
+          {viewer ? (
+            <Button asChild size="xs" className="h-8 px-2.5 sm:hidden">
+              <Link href={viewer.workspaceHref}>
+                Workspace
+                <ArrowRight className="size-3" />
+              </Link>
+            </Button>
+          ) : (
+            <Button asChild size="xs" className="h-8 px-2.5 sm:hidden">
+              <Link href="/signup">Get Started</Link>
+            </Button>
+          )}
+
+          {/* Desktop / Tablet CTAs */}
           {viewer ? (
             <Button asChild size="sm" className="hidden sm:inline-flex">
               <Link href={viewer.workspaceHref}>
@@ -202,109 +240,135 @@ export function Navbar({ viewer }: { viewer: MarketingViewer | null }) {
             </>
           )}
 
-          {/* Mobile menu */}
+          {/* Mobile drawer */}
           <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
             <SheetTrigger asChild>
-              <Button variant="ghost" size="icon-sm" className="md:hidden" aria-label="Open menu">
-                <Menu className="size-5" />
+              <Button
+                variant="outline"
+                size="icon-sm"
+                className="lg:hidden"
+                aria-label="Open navigation menu"
+              >
+                <Menu className="size-4" />
               </Button>
             </SheetTrigger>
-            <SheetContent side="right" className="w-80 p-0">
+            <SheetContent side="right" showCloseButton={false} className="flex w-[86vw] max-w-sm flex-col p-0">
               <SheetTitle className="sr-only">Navigation</SheetTitle>
-              <div className="flex h-16 items-center border-b px-5">
-                <TactiqLogo markClassName="size-7" wordmarkClassName="text-lg" />
-              </div>
-              <nav className="flex flex-col gap-1 p-4" aria-label="Mobile">
-                <button
+              <div className="flex h-16 shrink-0 items-center justify-between border-b px-5">
+                <Link href="/" onClick={() => setMobileOpen(false)}>
+                  <TactiqLogo markClassName="size-7" wordmarkClassName="text-lg" />
+                </Link>
+                <Button
                   type="button"
-                  onClick={() => scrollToSection("features")}
-                  className="flex items-center gap-2.5 rounded-md px-3 py-2 text-left text-sm font-medium transition-colors hover:bg-accent"
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={() => setMobileOpen(false)}
+                  aria-label="Close navigation menu"
                 >
-                  Features
-                </button>
-                <p className="mt-3 px-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  <X className="size-4" />
+                </Button>
+              </div>
+
+              <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+                <p className="px-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                   Apps
                 </p>
-                {SUITE_APPS.map((app) => {
-                  const Icon = app.icon;
-                  return (
+                <div className="mt-2 space-y-1.5">
+                  {SUITE_APPS.map((app) => {
+                    const Icon = app.icon;
+                    return (
+                      <button
+                        key={app.id}
+                        type="button"
+                        onClick={() => selectApp(app.id)}
+                        className="flex w-full items-start gap-3 rounded-xl border bg-card/50 p-3 text-left transition-colors hover:bg-accent"
+                      >
+                        <span
+                          className={cn(
+                            "flex size-8 shrink-0 items-center justify-center rounded-lg ring-1",
+                            app.accent,
+                          )}
+                        >
+                          <Icon className="size-4" />
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="flex items-center justify-between text-sm font-semibold">
+                            {app.name}
+                            <ArrowRight className="size-3.5 text-muted-foreground" />
+                          </span>
+                          <span className="mt-0.5 block text-xs text-muted-foreground">
+                            {app.tagline}
+                          </span>
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="my-4 h-px bg-border" />
+
+                <p className="px-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Explore
+                </p>
+                <nav className="mt-1.5 flex flex-col gap-0.5" aria-label="Mobile">
+                  {([
+                    ["Features", "features"],
+                    ["How It Connects", "workflow"],
+                    ["Use Cases", "use-cases"],
+                    ["Capabilities", "capabilities"],
+                    ["FAQ", "faq"],
+                  ] as const).map(([label, sectionId]) => (
                     <button
-                      key={app.id}
+                      key={sectionId}
                       type="button"
-                      onClick={() => selectApp(app.id)}
-                      className="flex items-center gap-2.5 rounded-md px-3 py-2 text-left text-sm font-medium transition-colors hover:bg-accent"
+                      onClick={() => scrollToSection(sectionId)}
+                      className="flex items-center justify-between rounded-lg px-3 py-2.5 text-left text-sm font-medium transition-colors hover:bg-accent"
                     >
-                      <Icon className={cn("size-4", app.iconColor)} />
-                      {app.name}
+                      <span>{label}</span>
+                      <ArrowRight className="size-3.5 text-muted-foreground" />
                     </button>
-                  );
-                })}
-                <div className="my-3 h-px bg-border" />
-                <button
-                  type="button"
-                  onClick={() => scrollToSection("workflow")}
-                  className="flex items-center gap-2.5 rounded-md px-3 py-2 text-left text-sm font-medium transition-colors hover:bg-accent"
-                >
-                  How It Connects
-                </button>
-                <button
-                  type="button"
-                  onClick={() => scrollToSection("capabilities")}
-                  className="flex items-center gap-2.5 rounded-md px-3 py-2 text-left text-sm font-medium transition-colors hover:bg-accent"
-                >
-                  Capabilities
-                </button>
-                <MobileLink href="/docs" onNavigate={() => setMobileOpen(false)}>
-                  <BookOpen className="size-4 text-muted-foreground" />
-                  Documentation
-                </MobileLink>
-                <div className="mt-4 flex flex-col gap-2">
-                  {viewer ? (
-                    <Button asChild>
-                      <Link href={viewer.workspaceHref} onClick={() => setMobileOpen(false)}>
-                        Open Workspace
+                  ))}
+                  <Link
+                    href="/docs"
+                    onClick={() => setMobileOpen(false)}
+                    className="flex items-center justify-between rounded-lg px-3 py-2.5 text-sm font-medium transition-colors hover:bg-accent"
+                  >
+                    <span className="inline-flex items-center gap-2">
+                      <BookOpen className="size-4 text-indigo-500" />
+                      Documentation
+                    </span>
+                    <ArrowRight className="size-3.5 text-muted-foreground" />
+                  </Link>
+                </nav>
+              </div>
+
+              <div className="shrink-0 border-t bg-muted/20 p-4">
+                {viewer ? (
+                  <Button asChild className="w-full">
+                    <Link href={viewer.workspaceHref} onClick={() => setMobileOpen(false)}>
+                      Open {viewer.workspaceName ?? "Workspace"}
+                      <ArrowRight className="size-4" />
+                    </Link>
+                  </Button>
+                ) : (
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button asChild variant="outline">
+                      <Link href="/login" onClick={() => setMobileOpen(false)}>
+                        Log In
                       </Link>
                     </Button>
-                  ) : (
-                    <>
-                      <Button asChild>
-                        <Link href="/signup" onClick={() => setMobileOpen(false)}>
-                          Sign Up Free
-                        </Link>
-                      </Button>
-                      <Button asChild variant="outline">
-                        <Link href="/login" onClick={() => setMobileOpen(false)}>
-                          Log In
-                        </Link>
-                      </Button>
-                    </>
-                  )}
-                </div>
-              </nav>
+                    <Button asChild>
+                      <Link href="/signup" onClick={() => setMobileOpen(false)}>
+                        Sign Up Free
+                      </Link>
+                    </Button>
+                  </div>
+                )}
+              </div>
             </SheetContent>
           </Sheet>
         </div>
       </div>
     </header>
-  );
-}
-
-function MobileLink({
-  href,
-  onNavigate,
-  children,
-}: {
-  href: string;
-  onNavigate: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <Link
-      href={href}
-      onClick={onNavigate}
-      className="flex items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium transition-colors hover:bg-accent"
-    >
-      {children}
-    </Link>
   );
 }

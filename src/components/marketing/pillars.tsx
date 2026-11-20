@@ -41,10 +41,16 @@ export function Pillars({ viewer }: { viewer: MarketingViewer | null }) {
     };
   }, []);
 
-  const chooseApp = (appId: SuiteAppId) => {
+  const chooseApp = (appId: SuiteAppId, scrollToSpotlight = false) => {
     setSelectedApp(appId);
     window.history.replaceState(null, "", `/#${appId}`);
     window.dispatchEvent(new CustomEvent("tq-select-app", { detail: appId }));
+    if (scrollToSpotlight) {
+      document.getElementById("app-spotlight")?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }
   };
 
   const previewInShowcase = () => {
@@ -62,7 +68,7 @@ export function Pillars({ viewer }: { viewer: MarketingViewer | null }) {
     : "/signup";
 
   return (
-    <section id="features" className="scroll-mt-20 border-t py-20 sm:py-28">
+    <section id="features" className="scroll-mt-20 border-t py-16 sm:py-24">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <SectionHeading
           eyebrow="Three connected apps"
@@ -70,7 +76,37 @@ export function Pillars({ viewer }: { viewer: MarketingViewer | null }) {
           description="Select any app below to explore its modules. Together they share one data model — so nothing gets re-typed, lost, or out of sync."
         />
 
-        <div className="mt-14 grid gap-5 lg:grid-cols-3">
+        {/* Quick mobile switcher pill bar */}
+        <div
+          className="mx-auto mt-8 grid max-w-md grid-cols-3 gap-1.5 rounded-xl border bg-muted/40 p-1 lg:hidden"
+          role="tablist"
+          aria-label="Quick switch application overview"
+        >
+          {SUITE_APPS.map((app) => {
+            const Icon = app.icon;
+            const isSelected = app.id === selectedApp;
+            return (
+              <button
+                key={app.id}
+                type="button"
+                role="tab"
+                aria-selected={isSelected}
+                onClick={() => chooseApp(app.id, true)}
+                className={cn(
+                  "flex items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-semibold transition-all",
+                  isSelected
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                <Icon className={cn("size-3.5", isSelected && app.iconColor)} />
+                {app.name}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="mt-8 grid gap-5 lg:mt-14 lg:grid-cols-3">
           {SUITE_APPS.map((app) => {
             const Icon = app.icon;
             const isSelected = app.id === selectedApp;
@@ -141,21 +177,23 @@ export function Pillars({ viewer }: { viewer: MarketingViewer | null }) {
         {/* Selected App Deep Dive */}
         <div
           id="app-spotlight"
-          className="mt-8 scroll-mt-24 overflow-hidden rounded-2xl border bg-card p-6 sm:p-8 dark:bg-white/[0.02]"
+          className="mt-8 scroll-mt-24 overflow-hidden rounded-2xl border bg-card p-5 sm:p-8 dark:bg-white/[0.02]"
         >
           <div className="flex flex-col gap-5 border-b pb-6 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex items-start gap-4">
+            <div className="flex items-start gap-3.5 sm:gap-4">
               <span
                 className={cn(
-                  "flex size-12 shrink-0 items-center justify-center rounded-xl ring-1",
+                  "flex size-11 shrink-0 items-center justify-center rounded-xl ring-1 sm:size-12",
                   active.accent,
                 )}
               >
-                <ActiveIcon className="size-6" />
+                <ActiveIcon className="size-5 sm:size-6" />
               </span>
-              <div>
+              <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
-                  <h3 className="text-xl font-semibold tracking-tight">{active.name} Modules</h3>
+                  <h3 className="text-lg font-semibold tracking-tight sm:text-xl">
+                    {active.name} Modules
+                  </h3>
                   <Badge variant="outline" className="text-[11px]">
                     {active.tagline}
                   </Badge>
@@ -184,7 +222,7 @@ export function Pillars({ viewer }: { viewer: MarketingViewer | null }) {
             </div>
           </div>
 
-          <div className="mt-6 grid gap-4 sm:grid-cols-2">
+          <div className="mt-6 grid gap-3.5 sm:grid-cols-2 sm:gap-4">
             {active.modules.map((mod) =>
               viewer?.workspaceSlug ? (
                 <Link
@@ -199,10 +237,7 @@ export function Pillars({ viewer }: { viewer: MarketingViewer | null }) {
                   <ExternalLink className="mt-0.5 size-4 shrink-0 text-muted-foreground opacity-60 transition-opacity group-hover:opacity-100" />
                 </Link>
               ) : (
-                <div
-                  key={mod.name}
-                  className="rounded-xl border bg-background/60 p-4"
-                >
+                <div key={mod.name} className="rounded-xl border bg-background/60 p-4">
                   <p className="text-sm font-semibold">{mod.name}</p>
                   <p className="mt-1 text-sm text-muted-foreground">{mod.description}</p>
                 </div>
