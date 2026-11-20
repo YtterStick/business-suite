@@ -5,8 +5,8 @@ const OAUTH_COOKIE = "tq_google_oauth";
 
 export async function GET(req: NextRequest) {
   const mode = req.nextUrl.searchParams.get("mode") === "signup" ? "signup" : "login";
-  const clientId = process.env.GOOGLE_CLIENT_ID;
-  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+  const clientId = process.env.GOOGLE_CLIENT_ID?.trim();
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim();
   const origin = (process.env.NEXT_PUBLIC_APP_URL || req.nextUrl.origin).replace(/\/+$/, "");
 
   if (!clientId || !clientSecret) {

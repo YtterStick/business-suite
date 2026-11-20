@@ -109,8 +109,8 @@ export async function GET(req: NextRequest) {
     return redirectError("google_state");
   }
 
-  const clientId = process.env.GOOGLE_CLIENT_ID;
-  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+  const clientId = process.env.GOOGLE_CLIENT_ID?.trim();
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim();
   if (!clientId || !clientSecret) {
     return redirectError("google_not_configured");
   }
@@ -155,7 +155,7 @@ export async function GET(req: NextRequest) {
     const avatarUrl = typeof profile.picture === "string" ? profile.picture : null;
 
     let userId: string;
-    let redirectSlug: string;
+    let redirectPath: string;
 
     const existingUser = await db.user.findUnique({
       where: { email },
@@ -181,30 +181,20 @@ export async function GET(req: NextRequest) {
 
       const orgs = await listUserOrganizations(existingUser.id);
       const preferred = orgs.find((o) => o.id === existingUser.lastActiveOrgId) ?? orgs[0];
-      if (preferred) {
-        redirectSlug = preferred.slug;
-      } else {
-        redirectSlug = await db.$transaction((tx) =>
-          provisionWorkspace(tx, existingUser.id, displayName),
-        );
-      }
+      redirectPath = preferred ? `/${preferred.slug}/projects` : "/onboarding";
     } else {
-      const created = await db.$transaction(async (tx) => {
-        const user = await tx.user.create({
-          data: {
-            name: displayName,
-            email,
-            avatarUrl,
-            passwordHash: null,
-            emailVerifiedAt: new Date(),
-          },
-          select: { id: true },
-        });
-        const orgSlug = await provisionWorkspace(tx, user.id, displayName);
-        return { userId: user.id, orgSlug };
+      const user = await db.user.create({
+        data: {
+          name: displayName,
+          email,
+          avatarUrl,
+          passwordHash: null,
+          emailVerifiedAt: new Date(),
+        },
+        select: { id: true },
       });
-      userId = created.userId;
-      redirectSlug = created.orgSlug;
+      userId = user.id;
+      redirectPath = "/onboarding";
     }
 
     cookieStore.delete(OAUTH_COOKIE);
@@ -213,7 +203,7 @@ export async function GET(req: NextRequest) {
       ipAddress: req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
     });
 
-    return NextResponse.redirect(new URL(`/${redirectSlug}/projects`, origin));
+    return NextResponse.redirect(new URL(redirectPath, origin));
   } catch {
     return redirectError("google_failed");
   }
