@@ -1,3 +1,5 @@
+import { redirect } from "next/navigation";
+
 import { isClientUser } from "@/lib/rbac";
 import { ProjectsHomeDashboard } from "@/modules/projects/components/projects-home-dashboard";
 import { getProjectsHome } from "@/modules/projects/projects-suite.service";
@@ -10,6 +12,11 @@ export default async function ProjectsHomePage({
 }) {
   const { orgSlug } = await params;
   const tenant = await requireTenant(orgSlug);
+
+  if (!isClientUser(tenant)) {
+    redirect(`/${orgSlug}/home`);
+  }
+
   const home = await getProjectsHome(tenant);
 
   return (
@@ -17,7 +24,7 @@ export default async function ProjectsHomePage({
       orgSlug={orgSlug}
       orgName={tenant.organization.name}
       firstName={tenant.user.name.split(" ")[0] ?? tenant.user.name}
-      isClient={isClientUser(tenant)}
+      isClient
       home={home}
     />
   );

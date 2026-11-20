@@ -4,6 +4,7 @@ import * as React from "react";
 import type { MembershipRole, PortalProfile, UserType } from "@prisma/client";
 import {
   BookOpen,
+  Briefcase,
   Bug,
   Building2,
   CalendarClock,
@@ -26,6 +27,7 @@ import {
   UserCog,
   UserPlus,
   Users,
+  Wallet,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -208,7 +210,12 @@ export function GlobalTopBar({
   const canWriteInvoices = can(access, "finance.invoice.write");
   const canWriteDeals = can(access, "crm.deal.write");
   const showQuickCreate =
-    canManageProjects || canWriteTasks || canWriteIssues || canInvite;
+    canManageProjects ||
+    canWriteTasks ||
+    canWriteIssues ||
+    canWriteDeals ||
+    canWriteInvoices ||
+    canInvite;
 
   const subPageBreadcrumb = React.useMemo(() => {
     const prefix = `/${orgSlug}`;
@@ -313,7 +320,7 @@ export function GlobalTopBar({
             className="hidden items-center gap-1.5 text-sm whitespace-nowrap sm:flex"
           >
             <Link
-              href={getModuleHref(orgSlug, activeModule.defaultPath)}
+              href={isClient ? `/${orgSlug}/projects` : `/${orgSlug}/home`}
               className="font-semibold text-foreground hover:text-primary"
             >
               {activeOrg.name}
@@ -344,31 +351,13 @@ export function GlobalTopBar({
 
         {/* Right: Universal Quick-Create (+), Notifications Bell, Theme, Setup Gear, Profile */}
         <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
-          {/* Contextual Shortcut for CRM & Finance + Universal Quick-Create for Projects */}
-          {activeModule.id === "finance" && canWriteInvoices && (
-            <Button asChild size="sm" variant="outline" className="hidden sm:inline-flex">
-              <Link href={getModuleHref(orgSlug, "/finance/invoices?new=1")}>
-                <Plus className="size-4" />
-                <span>New Invoice</span>
-              </Link>
-            </Button>
-          )}
-          {activeModule.id === "crm" && canWriteDeals && (
-            <Button asChild size="sm" variant="outline" className="hidden sm:inline-flex">
-              <Link href={getModuleHref(orgSlug, "/crm/deals?new=1")}>
-                <Plus className="size-4" />
-                <span>New Deal</span>
-              </Link>
-            </Button>
-          )}
-
-          {/* Universal Quick-Create (+) Dropdown Menu */}
+          {/* Universal Cross-App Quick-Create (+) Dropdown Menu */}
           {showQuickCreate && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
                   size="sm"
-                  variant={activeModule.id === "projects" ? "default" : "outline"}
+                  variant="outline"
                   aria-label="Quick create item"
                   className="gap-1.5"
                 >
@@ -377,9 +366,27 @@ export function GlobalTopBar({
                   <ChevronDown className="size-3.5 opacity-80" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuContent align="end" className="w-60">
                 <DropdownMenuLabel>Quick Create</DropdownMenuLabel>
                 <DropdownMenuSeparator />
+                {canWriteDeals && (
+                  <>
+                    <DropdownMenuItem
+                      onSelect={() => router.push(`/${orgSlug}/crm/deals?new=1`)}
+                      className="gap-2"
+                    >
+                      <Briefcase className="size-4 text-blue-600" />
+                      <span>CRM Deal</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onSelect={() => router.push(`/${orgSlug}/crm/contacts`)}
+                      className="gap-2"
+                    >
+                      <Users className="size-4 text-sky-600" />
+                      <span>CRM Contact</span>
+                    </DropdownMenuItem>
+                  </>
+                )}
                 {canManageProjects && (
                   <DropdownMenuItem
                     onSelect={() => triggerQuickCreate("projects", "/projects?new=1")}
@@ -394,7 +401,7 @@ export function GlobalTopBar({
                     onSelect={() => triggerQuickCreate("tasks", "/projects/tasks?new=1")}
                     className="gap-2"
                   >
-                    <CheckSquare className="size-4 text-blue-600" />
+                    <CheckSquare className="size-4 text-indigo-600" />
                     <span>Task</span>
                   </DropdownMenuItem>
                 )}
@@ -427,17 +434,24 @@ export function GlobalTopBar({
                       <Clock className="size-4 text-emerald-600" />
                       <span>Time Log</span>
                     </DropdownMenuItem>
+                  </>
+                )}
+                {canWriteInvoices && (
+                  <>
+                    <DropdownMenuSeparator />
                     <DropdownMenuItem
-                      onSelect={() =>
-                        triggerQuickCreate(
-                          "expense-claim",
-                          "/projects/approvals?tab=expenses&new=1",
-                        )
-                      }
+                      onSelect={() => router.push(`/${orgSlug}/finance/invoices?new=1`)}
                       className="gap-2"
                     >
-                      <Receipt className="size-4 text-orange-600" />
-                      <span>Expense Claim</span>
+                      <Receipt className="size-4 text-emerald-600" />
+                      <span>Finance Invoice</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onSelect={() => router.push(`/${orgSlug}/finance/expenses`)}
+                      className="gap-2"
+                    >
+                      <Wallet className="size-4 text-orange-600" />
+                      <span>Finance Expense</span>
                     </DropdownMenuItem>
                   </>
                 )}

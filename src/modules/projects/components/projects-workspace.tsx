@@ -19,7 +19,6 @@ import {
   FolderKanban,
   GripVertical,
   Layers,
-  Loader2,
   Lock,
   MoreHorizontal,
   MoreVertical,
@@ -43,6 +42,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
+import { GettingStartedBanner } from "@/components/ui/getting-started-banner";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -93,6 +93,7 @@ import {
 import {
   bulkArchiveProjectsAction,
   bulkUpdateProjectsStatusAction,
+  clearSampleWorkspaceAction,
   cloneProjectAction,
   deleteProjectsAction,
   seedSampleWorkspaceAction,
@@ -258,7 +259,6 @@ export function ProjectsWorkspace({
   const [viewMode, setViewMode] = React.useState<ProjectViewMode>("list");
   const [savedView, setSavedView] = React.useState<SavedProjectView>("all");
   const [density, setDensity] = React.useState<TableDensity>("comfortable");
-  const [onboardingDismissed, setOnboardingDismissed] = React.useState(false);
   const [isSeeding, setIsSeeding] = React.useState(false);
 
   // Multi-criteria advanced filters
@@ -300,9 +300,6 @@ export function ProjectsWorkspace({
   React.useEffect(() => {
     setCustomTemplates(loadCustomTemplates(orgSlug));
     try {
-      setOnboardingDismissed(
-        window.localStorage.getItem(`bs_onboarding_banner_dismissed_${orgSlug}`) === "1",
-      );
       const savedOrder = window.localStorage.getItem(`bs_proj_col_order_v2_${orgSlug}`);
       if (savedOrder) {
         const parsed = JSON.parse(savedOrder) as ColumnKey[];
@@ -606,14 +603,10 @@ export function ProjectsWorkspace({
     );
   };
 
-  const handleDismissOnboarding = () => {
-    setOnboardingDismissed(true);
-    try {
-      window.localStorage.setItem(`bs_onboarding_banner_dismissed_${orgSlug}`, "1");
-    } catch {
-      // Ignore
-    }
-  };
+  const hasSampleProjects = React.useMemo(
+    () => workspace.projects.some((p) => p.tags.includes("sample-data")),
+    [workspace.projects],
+  );
 
   const handleLoadSampleData = () => {
     setIsSeeding(true);
@@ -627,6 +620,23 @@ export function ProjectsWorkspace({
         toast.success(`Sample workspace loaded`, {
           description: `Created "${res.data.projectName}" and invoice ${res.data.invoiceNumber}.`,
         });
+        router.refresh();
+      } finally {
+        setIsSeeding(false);
+      }
+    });
+  };
+
+  const handleClearSampleData = () => {
+    setIsSeeding(true);
+    startTransition(async () => {
+      try {
+        const res = await clearSampleWorkspaceAction({ orgSlug });
+        if (!res.ok) {
+          toast.error(res.error.message);
+          return;
+        }
+        toast.success(`Cleared sample workspace data`);
         router.refresh();
       } finally {
         setIsSeeding(false);
@@ -1580,45 +1590,23 @@ export function ProjectsWorkspace({
 
       {/* Tab Body */}
       <div className="space-y-4 p-4 lg:p-6">
-        {workspace.projects.length === 0 && canWrite && !onboardingDismissed && (
-          <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border bg-gradient-to-r from-indigo-500/10 via-violet-500/5 to-cyan-400/10 p-4 dark:border-zinc-800">
-            <div className="flex items-start gap-3">
-              <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg bg-indigo-500/15 text-indigo-600 dark:text-indigo-400">
-                <Sparkles className="size-4" />
-              </span>
-              <div>
-                <p className="text-sm font-semibold">Start faster with sample connected data</p>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  Load 1 CRM deal → 1 active project (with phases, tasks &amp; time log) → 1 linked Finance invoice to explore how Tactiq connects end to end.
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                type="button"
-                size="sm"
-                disabled={isSeeding}
-                onClick={handleLoadSampleData}
-                className="gap-1.5"
-              >
-                {isSeeding ? (
-                  <Loader2 className="size-3.5 animate-spin" />
-                ) : (
-                  <Sparkles className="size-3.5" />
-                )}
-                Load Sample Data
-              </Button>
-              <Button
-                type="button"
-                size="icon-sm"
-                variant="ghost"
-                aria-label="Dismiss onboarding banner"
-                onClick={handleDismissOnboarding}
-              >
-                <X className="size-4" />
-              </Button>
-            </div>
-          </div>
+        {(workspace.projects.length === 0 || hasSampleProjects) && canWrite && (
+          <GettingStartedBanner
+            orgSlug={orgSlug}
+            progress={{
+              hasClientOrDeal:
+                workspace.companies.length > 0 || workspace.deals.length > 0,
+              hasWonDeal: workspace.projects.some(
+                (p) => p.deal !== null || p.source === "AUTOMATION",
+              ),
+              hasTaskOrInvoice: workspace.projects.some((p) => p.taskCount > 0),
+            }}
+            hasSampleData={hasSampleProjects}
+            canManage={canWrite}
+            isBusy={isSeeding}
+            onSeedSample={handleLoadSampleData}
+            onClearSample={handleClearSampleData}
+          />
         )}
 
         {isSeeding ? (

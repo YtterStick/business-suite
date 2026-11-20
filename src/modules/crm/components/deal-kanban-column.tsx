@@ -24,8 +24,12 @@ interface DealKanbanColumnProps {
   stage: KanbanStageColumnDTO;
   allStages: KanbanStageColumnDTO[];
   canWrite: boolean;
+  isFirstStage?: boolean;
+  isBoardEmpty?: boolean;
+  seedingSample?: boolean;
   onQuickMove: (dealId: string, targetStageId: string) => void;
   onAddDealInStage: (stageId: string) => void;
+  onLoadSampleData?: () => void;
 }
 
 export function DealKanbanColumn({
@@ -34,8 +38,12 @@ export function DealKanbanColumn({
   stage,
   allStages,
   canWrite,
+  isFirstStage = false,
+  isBoardEmpty = false,
+  seedingSample = false,
   onQuickMove,
   onAddDealInStage,
+  onLoadSampleData,
 }: DealKanbanColumnProps) {
   const { setNodeRef, isOver } = useDroppable({
     id: stageDroppableId(stage.id),
@@ -117,16 +125,55 @@ export function DealKanbanColumn({
           strategy={verticalListSortingStrategy}
         >
           {stage.deals.length === 0 ? (
-            <div
-              className={cn(
-                "flex min-h-24 items-center justify-center rounded-lg border border-dashed p-4 text-center text-xs text-muted-foreground",
-                isWonColumn && "border-emerald-500/40 text-emerald-700/80 dark:text-emerald-300/80",
-              )}
-            >
-              {isWonColumn
-                ? "Drop a deal here to mark Closed Won and auto-create an Invoice & Project"
-                : "Drop a deal here"}
-            </div>
+            isBoardEmpty && isFirstStage ? (
+              <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-blue-500/40 bg-blue-500/[0.04] p-5 text-center">
+                <span className="flex size-9 items-center justify-center rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400">
+                  <Sparkles className="size-4" />
+                </span>
+                <p className="mt-3 text-sm font-semibold text-foreground">Create your first deal</p>
+                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                  Add a prospective deal here, then drag it to Closed Won to auto-create a Project &amp; Draft Invoice.
+                </p>
+                {canWrite && (
+                  <div className="mt-4 flex w-full flex-col gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => onAddDealInStage(stage.id)}
+                      className="w-full gap-1.5"
+                    >
+                      <Plus className="size-3.5" />
+                      Create First Deal
+                    </Button>
+                    {onLoadSampleData && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={seedingSample}
+                        onClick={onLoadSampleData}
+                        className="w-full gap-1.5 text-xs"
+                      >
+                        <Sparkles className="size-3.5 text-violet-600" />
+                        {seedingSample ? "Loading Sample..." : "Load Sample Data"}
+                      </Button>
+                    )}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div
+                className={cn(
+                  "flex min-h-24 items-center justify-center rounded-lg border border-dashed p-4 text-center text-xs text-muted-foreground",
+                  isWonColumn &&
+                    "border-emerald-500/40 text-emerald-700/80 dark:text-emerald-300/80",
+                )}
+              >
+                {isWonColumn
+                  ? "Drop a deal here to mark Closed Won and auto-create an Invoice & Project"
+                  : "Drop a deal here"}
+              </div>
+            )
           ) : (
             stage.deals.map((deal) => (
               <SortableDealCard

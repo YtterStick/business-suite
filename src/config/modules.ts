@@ -78,7 +78,7 @@ export const SUITE_MODULES: SuiteModuleConfig[] = [
     accentClass: "bg-violet-600 text-white",
     defaultPath: "/projects",
     items: [
-      { id: "home", label: "Home", path: "/projects/home", icon: "home", section: "main" },
+      { id: "home", label: "Home", path: "/home", icon: "home", section: "main" },
       { id: "reports", label: "Reports", path: "/projects/reports", icon: "bar-chart", section: "main" },
       {
         id: "projects",
@@ -164,7 +164,7 @@ export function resolveActiveModule(pathname: string, orgSlug: string): SuiteMod
   if (relativePath.startsWith("/finance")) {
     return SUITE_MODULES[1]!;
   }
-  if (relativePath.startsWith("/projects")) {
+  if (relativePath.startsWith("/projects") || relativePath.startsWith("/home")) {
     return SUITE_MODULES[2]!;
   }
   return SUITE_MODULES[0]!;

@@ -50,7 +50,7 @@ const PRODUCT_ITEMS = [
   },
 ] as const;
 
-export function Navbar({ viewer }: { viewer: MarketingViewer | null }) {
+export function PublicNavbar({ viewer }: { viewer: MarketingViewer | null }) {
   const pathname = usePathname();
   const router = useRouter();
   const [scrolled, setScrolled] = React.useState(false);
@@ -410,3 +410,5 @@ export function Navbar({ viewer }: { viewer: MarketingViewer | null }) {
     </header>
   );
 }
+
+export { PublicNavbar as Navbar };

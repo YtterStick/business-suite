@@ -3,6 +3,7 @@
 import {
   ContactLifecycleStage,
   DealStatus,
+  ExpenseStatus,
   IssueSeverity,
   IssueStatus,
   MilestoneStatus,
@@ -21,6 +22,7 @@ import { ValidationError } from "@/lib/errors";
 import { sanitizeRichHtml } from "@/lib/sanitize-html";
 import { provisionDealWonResources } from "@/modules/crm/deal-won.automation";
 import { ensureDefaultPipeline } from "@/modules/crm/deals.service";
+import { recordAudit } from "@/server/audit";
 import {
   bulkArchiveProjects,
   bulkUpdateProjectsStatus,
@@ -622,7 +624,8 @@ export async function deleteTaskMetaCommentAction(input: {
 }
 
 /**
- * Seeds one complete, realistic CRM Deal -> Active Project (+ Phases/Tasks/TimeLog) -> Finance Invoice flow.
+ * Seeds one complete, realistic CRM Deal -> Active Project (+ Phases/Tasks/TimeLog) -> Finance Invoice & Expense flow,
+ * cleanly tagged with `[Sample]` and `sample-data` for 1-click removal via `clearSampleWorkspaceAction`.
  */
 export async function seedSampleWorkspaceAction(input: {
   orgSlug: string;
@@ -650,12 +653,16 @@ export async function seedSampleWorkspaceAction(input: {
       });
       const wonStage =
         stages.find((s) => s.type === StageType.WON) ?? stages[stages.length - 1];
-      if (!wonStage) {
+      const openStage =
+        stages.find((s) => s.type === StageType.OPEN && s.position >= 2) ??
+        stages.find((s) => s.type === StageType.OPEN) ??
+        wonStage;
+      if (!wonStage || !openStage) {
         throw new ValidationError("No CRM pipeline stage found for this workspace.");
       }
 
       const existingCompany = await tx.company.findFirst({
-        where: { organizationId, name: "Northstar Studio" },
+        where: { organizationId, name: "Northstar Studio [Sample]" },
         select: { id: true },
       });
       const company =
@@ -664,7 +671,7 @@ export async function seedSampleWorkspaceAction(input: {
           data: {
             organizationId,
             ownerId: ctx.user.id,
-            name: "Northstar Studio",
+            name: "Northstar Studio [Sample]",
             industry: "Creative & Digital Agency",
             website: "https://northstar.example.com",
           },
@@ -698,7 +705,7 @@ export async function seedSampleWorkspaceAction(input: {
           companyId: company.id,
           contactId: contact.id,
           ownerId: ctx.user.id,
-          title: "Website Redesign & Client Portal",
+          title: "Website Redesign & Client Portal [Sample]",
           amount: 250000,
           currency: ctx.organization.defaultCurrency,
           status: DealStatus.CLOSED_WON,
@@ -708,6 +715,24 @@ export async function seedSampleWorkspaceAction(input: {
           closedAt: now,
         },
         select: { id: true },
+      });
+
+      await tx.deal.create({
+        data: {
+          organizationId,
+          pipelineId: pipeline.id,
+          stageId: openStage.id,
+          companyId: company.id,
+          contactId: contact.id,
+          ownerId: ctx.user.id,
+          title: "Q3 Retainer Expansion [Sample]",
+          amount: 120000,
+          currency: ctx.organization.defaultCurrency,
+          status: DealStatus.OPEN,
+          probability: openStage.probability,
+          position: 1024,
+          expectedCloseDate: startOfUtcDay(addDays(now, 14)),
+        },
       });
 
       const provisioned = await provisionDealWonResources(tx, {
@@ -721,7 +746,7 @@ export async function seedSampleWorkspaceAction(input: {
         data: {
           status: ProjectStatus.ACTIVE,
           dueDate: startOfUtcDay(addDays(now, 30)),
-          tags: ["retainer", "client-portal"],
+          tags: ["retainer", "sample-data"],
         },
       });
 
@@ -757,6 +782,24 @@ export async function seedSampleWorkspaceAction(input: {
         },
       });
 
+      await tx.expense.create({
+        data: {
+          organizationId,
+          projectId: provisioned.project.id,
+          companyId: company.id,
+          createdById: ctx.user.id,
+          title: "Cloud Staging & Domain Setup [Sample]",
+          category: "Software & Cloud",
+          vendor: "Cloudflare",
+          amount: 12500,
+          currency: ctx.organization.defaultCurrency,
+          billable: true,
+          status: ExpenseStatus.UNBILLED,
+          expenseDate: today,
+          notes: "Sample billable project expense ready for invoicing.",
+        },
+      });
+
       return {
         projectId: provisioned.project.id,
         projectName: provisioned.project.name,
@@ -767,5 +810,125 @@ export async function seedSampleWorkspaceAction(input: {
 
     revalidatePath(`/${input.orgSlug}`, "layout");
     return seeded;
+  });
+}
+
+/**
+ * Removes all sample records (`[Sample]` / `sample-data`) created by `seedSampleWorkspaceAction`.
+ */
+export async function clearSampleWorkspaceAction(input: {
+  orgSlug: string;
+}): Promise<
+  ActionResult<{
+    deletedProjects: number;
+    deletedDeals: number;
+    deletedInvoices: number;
+  }>
+> {
+  return runAction(async () => {
+    const ctx = await assertTenant(input.orgSlug);
+    authorize(ctx, "projects.project.manage");
+
+    const organizationId = ctx.organization.id;
+
+    const summary = await db.$transaction(async (tx) => {
+      const sampleCompanies = await tx.company.findMany({
+        where: { organizationId, name: { in: ["Northstar Studio [Sample]", "Northstar Studio"] } },
+        select: { id: true, name: true },
+      });
+      const sampleCompanyIds = sampleCompanies
+        .filter((c) => c.name === "Northstar Studio [Sample]")
+        .map((c) => c.id);
+
+      const sampleDeals = await tx.deal.findMany({
+        where: {
+          organizationId,
+          OR: [
+            { title: { endsWith: "[Sample]" } },
+            ...(sampleCompanyIds.length > 0 ? [{ companyId: { in: sampleCompanyIds } }] : []),
+          ],
+        },
+        select: { id: true },
+      });
+      const sampleDealIds = sampleDeals.map((d) => d.id);
+
+      const sampleProjects = await tx.project.findMany({
+        where: {
+          organizationId,
+          OR: [
+            { tags: { has: "sample-data" } },
+            ...(sampleDealIds.length > 0 ? [{ dealId: { in: sampleDealIds } }] : []),
+          ],
+        },
+        select: { id: true },
+      });
+      const sampleProjectIds = sampleProjects.map((p) => p.id);
+
+      await tx.expense.deleteMany({
+        where: {
+          organizationId,
+          OR: [
+            { title: { endsWith: "[Sample]" } },
+            ...(sampleProjectIds.length > 0 ? [{ projectId: { in: sampleProjectIds } }] : []),
+            ...(sampleCompanyIds.length > 0 ? [{ companyId: { in: sampleCompanyIds } }] : []),
+          ],
+        },
+      });
+
+      const deletedInvoices = await tx.invoice.deleteMany({
+        where: {
+          organizationId,
+          OR: [
+            ...(sampleDealIds.length > 0 ? [{ dealId: { in: sampleDealIds } }] : []),
+            ...(sampleCompanyIds.length > 0 ? [{ companyId: { in: sampleCompanyIds } }] : []),
+          ],
+        },
+      });
+
+      const deletedProjects = await tx.project.deleteMany({
+        where: {
+          organizationId,
+          id: { in: sampleProjectIds.length > 0 ? sampleProjectIds : ["__none__"] },
+        },
+      });
+
+      const deletedDeals = await tx.deal.deleteMany({
+        where: {
+          organizationId,
+          id: { in: sampleDealIds.length > 0 ? sampleDealIds : ["__none__"] },
+        },
+      });
+
+      if (sampleCompanyIds.length > 0) {
+        await tx.contact.deleteMany({
+          where: { organizationId, companyId: { in: sampleCompanyIds } },
+        });
+        await tx.company.deleteMany({
+          where: { organizationId, id: { in: sampleCompanyIds } },
+        });
+      }
+
+      await recordAudit(tx, {
+        organizationId,
+        actorId: ctx.user.id,
+        entityType: "Workspace",
+        entityId: organizationId,
+        action: "workspace.sample_cleared",
+        metadata: {
+          deletedProjects: deletedProjects.count,
+          deletedDeals: deletedDeals.count,
+          deletedInvoices: deletedInvoices.count,
+        },
+      });
+
+      return {
+        deletedProjects: deletedProjects.count,
+        deletedDeals: deletedDeals.count,
+        deletedInvoices: deletedInvoices.count,
+      };
+    });
+
+    revalidatePath(`/${input.orgSlug}`, "layout");
+    return summary;
   });
 }

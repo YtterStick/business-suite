@@ -97,7 +97,7 @@ const FOOTER_COLUMNS = [
   },
 ];
 
-export function Footer({ viewer: _viewer = null }: { viewer?: MarketingViewer | null }) {
+export function PublicFooter({ viewer: _viewer = null }: { viewer?: MarketingViewer | null }) {
   void _viewer;
   return (
     <footer className="border-t">
@@ -140,3 +140,5 @@ export function Footer({ viewer: _viewer = null }: { viewer?: MarketingViewer | 
     </footer>
   );
 }
+
+export { PublicFooter as Footer };

@@ -2,6 +2,8 @@ import {
   ArrowDownLeft,
   ArrowUpRight,
   CreditCard,
+  FileText,
+  HelpCircle,
   Receipt,
   TrendingUp,
   Wallet,
@@ -11,6 +13,7 @@ import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatCurrency, formatCurrencyTotals, formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { getFinanceDashboard } from "@/modules/finance/finance-suite.service";
@@ -59,7 +62,23 @@ export default async function FinanceDashboardPage({
         <Card>
           <CardHeader className="pb-2">
             <CardDescription className="flex items-center justify-between">
-              <span>Total Receivables</span>
+              <span className="inline-flex items-center gap-1.5">
+                Total Receivables
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      aria-label="What is Total Receivables?"
+                      className="text-muted-foreground/70 hover:text-foreground"
+                    >
+                      <HelpCircle className="size-3.5" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-60">
+                    Unpaid money owed to you by clients across Sent, Partially Paid, and Overdue invoices.
+                  </TooltipContent>
+                </Tooltip>
+              </span>
               <ArrowDownLeft className="size-4 text-emerald-600" />
             </CardDescription>
             <CardTitle className="text-2xl tabular-nums">
@@ -75,7 +94,23 @@ export default async function FinanceDashboardPage({
         <Card>
           <CardHeader className="pb-2">
             <CardDescription className="flex items-center justify-between">
-              <span>Total Payables</span>
+              <span className="inline-flex items-center gap-1.5">
+                Total Payables
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      aria-label="What is Total Payables?"
+                      className="text-muted-foreground/70 hover:text-foreground"
+                    >
+                      <HelpCircle className="size-3.5" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-60">
+                    Outgoing project expenses and approved team reimbursement claims waiting to be settled.
+                  </TooltipContent>
+                </Tooltip>
+              </span>
               <ArrowUpRight className="size-4 text-amber-600" />
             </CardDescription>
             <CardTitle className="text-2xl tabular-nums">
@@ -181,9 +216,43 @@ export default async function FinanceDashboardPage({
           </CardHeader>
           <CardContent className="space-y-2.5">
             {data.recentActivity.length === 0 ? (
-              <p className="py-8 text-center text-sm text-muted-foreground">
-                No billing activity recorded yet.
-              </p>
+              <div className="space-y-3 py-2">
+                <p className="text-xs text-muted-foreground">
+                  No billing activity yet. Start your ledger with one of these actions:
+                </p>
+                <div className="grid gap-2.5 sm:grid-cols-3">
+                  <Link
+                    href={`/${orgSlug}/finance/quotes`}
+                    className="group rounded-xl border bg-muted/20 p-3.5 transition-colors hover:border-primary/40 hover:bg-accent/40"
+                  >
+                    <FileText className="size-4 text-blue-600" />
+                    <p className="mt-2.5 text-sm font-semibold">Create a Quote</p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      Draft a client estimate ready to convert.
+                    </p>
+                  </Link>
+                  <Link
+                    href={`/${orgSlug}/finance/invoices?new=1`}
+                    className="group rounded-xl border bg-muted/20 p-3.5 transition-colors hover:border-primary/40 hover:bg-accent/40"
+                  >
+                    <Receipt className="size-4 text-emerald-600" />
+                    <p className="mt-2.5 text-sm font-semibold">Send an Invoice</p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      Bill a client or link a CRM deal.
+                    </p>
+                  </Link>
+                  <Link
+                    href={`/${orgSlug}/finance/expenses`}
+                    className="group rounded-xl border bg-muted/20 p-3.5 transition-colors hover:border-primary/40 hover:bg-accent/40"
+                  >
+                    <Wallet className="size-4 text-amber-600" />
+                    <p className="mt-2.5 text-sm font-semibold">Log an Expense</p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      Record billable or team costs.
+                    </p>
+                  </Link>
+                </div>
+              </div>
             ) : (
               data.recentActivity.map((item) => (
                 <div

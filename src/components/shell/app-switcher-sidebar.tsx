@@ -358,7 +358,7 @@ export function AppSwitcherSidebar({
                 return (
                   <DropdownMenuItem key={org.id} asChild>
                     <Link
-                      href={getModuleHref(org.slug, activeModule.defaultPath)}
+                      href={isClient ? `/${org.slug}/projects` : `/${org.slug}/home`}
                       onClick={onNavigate}
                       className="flex items-center justify-between gap-2"
                     >
@@ -394,10 +394,45 @@ export function AppSwitcherSidebar({
 
           <Separator className="w-8 bg-zinc-800" />
 
-          {/* Core Suite Module Icons (CRM / Finance / Projects) */}
+          {/* Core Suite Module Icons (Home + CRM / Finance / Projects) */}
           <nav className="flex flex-col items-center gap-2" aria-label="Suite apps">
+            {!isClient && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Link
+                    href={`/${orgSlug}/home`}
+                    onClick={onNavigate}
+                    aria-current={pathname === `/${orgSlug}/home` ? "page" : undefined}
+                    className={cn(
+                      "group relative flex size-11 flex-col items-center justify-center rounded-xl transition-all",
+                      pathname === `/${orgSlug}/home`
+                        ? "bg-white/15 text-white shadow-sm"
+                        : "text-zinc-400 hover:bg-zinc-800/80 hover:text-zinc-100",
+                    )}
+                  >
+                    {pathname === `/${orgSlug}/home` && (
+                      <span
+                        aria-hidden="true"
+                        className="absolute -left-2.5 h-5 w-1 rounded-r-full bg-white"
+                      />
+                    )}
+                    <Home className="size-5" />
+                    <span className="mt-0.5 text-[9px] font-medium leading-none tracking-tight">
+                      Home
+                    </span>
+                  </Link>
+                </TooltipTrigger>
+                <TooltipContent side="right" className="max-w-56">
+                  <p className="font-semibold">Workspace Home</p>
+                  <p className="text-xs text-muted-foreground">
+                    Unified CRM, Projects &amp; Finance overview
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+            )}
             {SUITE_MODULES.filter((mod) => !isClient || mod.id === "projects").map((mod) => {
-              const isActive = mod.id === activeModule.id;
+              const isOnHome = pathname === `/${orgSlug}/home`;
+              const isActive = !isOnHome && mod.id === activeModule.id;
               return (
                 <Tooltip key={mod.id}>
                   <TooltipTrigger asChild>

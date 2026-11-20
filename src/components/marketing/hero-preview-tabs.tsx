@@ -117,65 +117,41 @@ export function HeroPreviewTabs({
           <div className="hidden w-12 shrink-0 sm:block" />
         </div>
 
-        <div className="flex min-h-[380px]">
-          {/* Desktop app switcher rail (hidden on mobile phones for full-width clarity) */}
-          <div className="hidden w-16 shrink-0 flex-col items-center gap-2 border-r bg-zinc-950 py-3 sm:flex">
-            <TactiqMark className="mb-2 size-7" />
-            {SUITE_APPS.map((app) => {
-              const Icon = app.icon;
-              const isActive = app.id === active;
-              return (
-                <button
-                  key={app.id}
-                  type="button"
-                  onClick={() => select(app.id)}
-                  aria-pressed={isActive}
-                  aria-label={`Preview ${app.name}`}
-                  className={cn(
-                    "group flex w-12 flex-col items-center gap-1 rounded-lg py-2 text-[10px] font-medium transition-all",
-                    isActive
-                      ? "bg-white/10 text-white"
-                      : "text-zinc-500 hover:bg-white/5 hover:text-zinc-200",
-                  )}
-                >
-                  <Icon className={cn("size-4", isActive && app.iconColor)} />
-                  {app.name}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Main preview body */}
-          <div className="min-w-0 flex-1">
+        <div className="min-h-[380px]">
+          {/* Single unified app switcher + main preview body */}
+          <div className="min-w-0">
             {/* Switcher tab bar */}
-            <div className="flex items-center justify-between gap-2 border-b px-3 py-2.5 sm:px-4">
-              <div
-                className="grid w-full grid-cols-3 gap-1 rounded-lg bg-muted/60 p-0.5 sm:flex sm:w-auto"
-                role="tablist"
-                aria-label="Preview application tab"
-              >
-                {SUITE_APPS.map((app) => {
-                  const Icon = app.icon;
-                  const isActive = app.id === active;
-                  return (
-                    <button
-                      key={app.id}
-                      type="button"
-                      role="tab"
-                      aria-selected={isActive}
-                      onClick={() => select(app.id)}
-                      className={cn(
-                        "inline-flex items-center justify-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-all sm:py-1",
-                        isActive
-                          ? "bg-background text-foreground shadow-sm"
-                          : "text-muted-foreground hover:text-foreground",
-                      )}
-                    >
-                      <Icon className={cn("size-3.5 sm:hidden", isActive && app.iconColor)} />
-                      {app.name}
-                    </button>
-                  );
-                })}
+            <div className="flex items-center justify-between gap-3 border-b px-3 py-2.5 sm:px-4">
+              <div className="flex min-w-0 flex-1 items-center gap-2.5">
+                <TactiqMark className="hidden size-6 shrink-0 sm:block" />
+                <div
+                  className="grid w-full grid-cols-3 gap-1 rounded-lg bg-muted/60 p-0.5 sm:flex sm:w-auto"
+                  role="tablist"
+                  aria-label="Preview application tab"
+                >
+                  {SUITE_APPS.map((app) => {
+                    const Icon = app.icon;
+                    const isActive = app.id === active;
+                    return (
+                      <button
+                        key={app.id}
+                        type="button"
+                        role="tab"
+                        aria-selected={isActive}
+                        onClick={() => select(app.id)}
+                        className={cn(
+                          "inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-all sm:py-1",
+                          isActive
+                            ? "bg-background text-foreground shadow-sm"
+                            : "text-muted-foreground hover:text-foreground",
+                        )}
+                      >
+                        <Icon className={cn("size-3.5", isActive && app.iconColor)} />
+                        {app.name}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
               <div className="hidden items-center gap-2 rounded-md border px-2.5 py-1 text-[11px] text-muted-foreground md:flex">
                 <Search className="size-3" />

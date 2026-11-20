@@ -13,7 +13,16 @@ import {
   type DragStartEvent,
 } from "@dnd-kit/core";
 import { sortableKeyboardCoordinates } from "@dnd-kit/sortable";
-import { CheckCircle2, Filter, Plus, Search, Sparkles, TrendingUp } from "lucide-react";
+import {
+  CheckCircle2,
+  Filter,
+  HelpCircle,
+  Plus,
+  Search,
+  Sparkles,
+  Trash2,
+  TrendingUp,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
@@ -21,6 +30,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { addToTotals, formatCurrencyTotals } from "@/lib/format";
 import { CreateDealDialog } from "@/modules/crm/components/create-deal-dialog";
 import { DealCardSurface } from "@/modules/crm/components/deal-kanban-card";
@@ -29,6 +39,10 @@ import {
   STAGE_DROPPABLE_PREFIX,
 } from "@/modules/crm/components/deal-kanban-column";
 import { moveDealStageAction } from "@/modules/crm/deals.actions";
+import {
+  clearSampleWorkspaceAction,
+  seedSampleWorkspaceAction,
+} from "@/modules/projects/projects.actions";
 import type {
   CreateDealResultDTO,
   KanbanBoardDTO,
@@ -122,6 +136,7 @@ export function DealKanbanBoard({
   const [showLostColumn, setShowLostColumn] = React.useState(true);
   const [createOpen, setCreateOpen] = React.useState(openCreateInitially);
   const [createStageId, setCreateStageId] = React.useState(initialBoard.stages[0]?.id ?? "");
+  const [seedingSample, setSeedingSample] = React.useState(false);
 
   React.useEffect(() => {
     setBoardStages(initialBoard.stages);
@@ -370,33 +385,101 @@ export function DealKanbanBoard({
     setCreateOpen(true);
   };
 
+  const totalBoardDeals = React.useMemo(
+    () => optimisticStages.reduce((sum, st) => sum + st.deals.length, 0),
+    [optimisticStages],
+  );
+  const isBoardEmpty = totalBoardDeals === 0;
+  const hasSampleDeals = React.useMemo(
+    () =>
+      optimisticStages.some((st) =>
+        st.deals.some((d) => d.title.endsWith("[Sample]")),
+      ),
+    [optimisticStages],
+  );
+
+  const handleLoadSampleData = async () => {
+    setSeedingSample(true);
+    try {
+      const res = await seedSampleWorkspaceAction({ orgSlug });
+      if (!res.ok) {
+        toast.error(res.error.message);
+        return;
+      }
+      toast.success("Sample CRM + Project + Invoice data loaded");
+      router.refresh();
+    } finally {
+      setSeedingSample(false);
+    }
+  };
+
+  const handleClearSampleData = async () => {
+    setSeedingSample(true);
+    try {
+      const res = await clearSampleWorkspaceAction({ orgSlug });
+      if (!res.ok) {
+        toast.error(res.error.message);
+        return;
+      }
+      toast.success("Sample records cleared");
+      router.refresh();
+    } finally {
+      setSeedingSample(false);
+    }
+  };
+
   return (
     <div className="flex h-full flex-col">
       {/* Pipeline Header & KPIs */}
       <div className="flex flex-col gap-4 border-b bg-background px-4 py-4 lg:px-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <h1 className="text-xl font-bold tracking-tight">{initialBoard.pipeline.name}</h1>
-              <Badge variant="outline" className="gap-1 text-xs font-medium">
-                <Sparkles className="size-3 text-emerald-600" />
-                Closed Won → Draft Invoice &amp; Project
-              </Badge>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Badge variant="outline" className="cursor-help gap-1 text-xs font-medium">
+                    <Sparkles className="size-3 text-emerald-600" />
+                    Closed Won → Draft Invoice &amp; Project
+                    <HelpCircle className="size-3 text-muted-foreground" />
+                  </Badge>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-72">
+                  Idempotent Auto-Provisioning: Moving any deal to Closed Won automatically creates
+                  its delivery Project, Milestones, Kickoff Tasks, and Draft Invoice once—never
+                  creating duplicates.
+                </TooltipContent>
+              </Tooltip>
             </div>
             <p className="mt-0.5 text-sm text-muted-foreground">
               Drag deals across stages to forecast revenue and trigger post-sale provisioning.
             </p>
           </div>
 
-          {canWrite && (
-            <Button
-              type="button"
-              onClick={() => openCreateInStage(initialBoard.stages[0]?.id ?? "")}
-            >
-              <Plus className="size-4" />
-              New Deal
-            </Button>
-          )}
+          <div className="flex items-center gap-2">
+            {canWrite && hasSampleDeals && (
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                disabled={seedingSample}
+                onClick={handleClearSampleData}
+                className="gap-1.5 text-xs text-rose-600 hover:bg-rose-500/10 hover:text-rose-600"
+              >
+                <Trash2 className="size-3.5" />
+                Clear Sample Data
+              </Button>
+            )}
+            {canWrite && (
+              <Button
+                type="button"
+                onClick={() => openCreateInStage(initialBoard.stages[0]?.id ?? "")}
+              >
+                <Plus className="size-4" />
+                New Deal
+              </Button>
+            )}
+          </div>
         </div>
 
         {/* Metrics + Toolbar */}
@@ -412,7 +495,24 @@ export function DealKanbanBoard({
             </div>
 
             <div className="flex items-center gap-2 rounded-lg border bg-muted/30 px-3 py-1.5 text-xs">
-              <span className="text-muted-foreground">Weighted Forecast:</span>
+              <span className="inline-flex items-center gap-1 text-muted-foreground">
+                Weighted Forecast:
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      aria-label="How is Weighted Forecast calculated?"
+                      className="text-muted-foreground/70 hover:text-foreground"
+                    >
+                      <HelpCircle className="size-3" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-60">
+                    Sum of each open deal&apos;s amount multiplied by its pipeline stage win
+                    probability percentage.
+                  </TooltipContent>
+                </Tooltip>
+              </span>
               <span className="font-semibold tabular-nums">
                 {formatCurrencyTotals(metrics.weightedTotals, defaultCurrency)}
               </span>
@@ -455,27 +555,14 @@ export function DealKanbanBoard({
 
       {/* Kanban Columns Canvas */}
       <div className="flex-1 overflow-x-auto overflow-y-hidden p-4 lg:p-6">
-        {visibleStages.every((stage) => stage.deals.length === 0) && (
+        {searchQuery.trim() && visibleStages.every((stage) => stage.deals.length === 0) && (
           <EmptyState
             icon={TrendingUp}
-            title={searchQuery.trim() ? "No deals match your search" : "No deals in this pipeline yet"}
-            description="Create a CRM deal to track pipeline forecasts and auto-generate a Project and Draft Invoice when closed won."
+            title="No deals match your search"
+            description="Try a different keyword or clear the search filter."
             compact
             className="mb-4"
-            action={
-              canWrite
-                ? {
-                    label: "New Deal",
-                    icon: <Plus className="size-3.5" />,
-                    onClick: () => openCreateInStage(initialBoard.stages[0]?.id ?? ""),
-                  }
-                : undefined
-            }
-            secondaryAction={
-              searchQuery.trim()
-                ? { label: "Clear search", onClick: () => setSearchQuery("") }
-                : undefined
-            }
+            secondaryAction={{ label: "Clear search", onClick: () => setSearchQuery("") }}
           />
         )}
         <DndContext
@@ -487,7 +574,7 @@ export function DealKanbanBoard({
           onDragCancel={() => setActiveDealId(null)}
         >
           <div className="flex h-full min-h-[480px] items-stretch gap-4">
-            {visibleStages.map((stage) => (
+            {visibleStages.map((stage, idx) => (
               <DealKanbanColumn
                 key={stage.id}
                 orgSlug={orgSlug}
@@ -495,8 +582,12 @@ export function DealKanbanBoard({
                 stage={stage}
                 allStages={optimisticStages}
                 canWrite={canWrite}
+                isFirstStage={idx === 0}
+                isBoardEmpty={isBoardEmpty && !searchQuery.trim()}
+                seedingSample={seedingSample}
                 onQuickMove={handleQuickMove}
                 onAddDealInStage={openCreateInStage}
+                onLoadSampleData={handleLoadSampleData}
               />
             ))}
           </div>

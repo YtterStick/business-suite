@@ -66,6 +66,11 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { formatDateTimeUtc, formatTime, initials } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { createTimeLogAction, postCommentAction } from "@/modules/projects/projects.actions";
@@ -660,73 +665,105 @@ export function SuiteBottomBar({
         className="flex h-9 shrink-0 items-center justify-between gap-2 overflow-x-auto border-t bg-background px-2.5 text-xs whitespace-nowrap text-muted-foreground lg:px-4"
       >
         <div className="flex shrink-0 items-center gap-0.5 sm:gap-1">
-          <button
-            type="button"
-            title="My Pins"
-            onClick={() => setActivePanel(activePanel === "pins" ? null : "pins")}
-            className={cn(
-              "inline-flex shrink-0 items-center gap-1 rounded px-2 py-1 font-medium whitespace-nowrap transition hover:bg-accent hover:text-foreground",
-              activePanel === "pins" && "bg-accent text-foreground",
-            )}
-          >
-            <Pin className="size-3.5 shrink-0 text-amber-600" />
-            <span className="hidden sm:inline">My Pins</span>
-            <Badge variant="secondary" className="h-4 px-1 text-[10px] tabular-nums">
-              {pins.length}
-            </Badge>
-          </button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                aria-label="My Pins"
+                onClick={() => setActivePanel(activePanel === "pins" ? null : "pins")}
+                className={cn(
+                  "inline-flex shrink-0 items-center gap-1 rounded px-2 py-1 font-medium whitespace-nowrap transition hover:bg-accent hover:text-foreground",
+                  activePanel === "pins" && "bg-accent text-foreground",
+                )}
+              >
+                <Pin className="size-3.5 shrink-0 text-amber-600" />
+                <span className="hidden sm:inline">My Pins</span>
+                <Badge variant="secondary" className="h-4 px-1 text-[10px] tabular-nums">
+                  {pins.length}
+                </Badge>
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="top">
+              <p className="font-medium">My Pins ({pins.length})</p>
+              <p className="text-[11px] opacity-80">Pin favorite pages across CRM, Finance &amp; Projects.</p>
+            </TooltipContent>
+          </Tooltip>
 
-          <button
-            type="button"
-            title="Team Chats"
-            onClick={() => setActivePanel(activePanel === "chats" ? null : "chats")}
-            className={cn(
-              "inline-flex shrink-0 items-center gap-1 rounded px-2 py-1 font-medium whitespace-nowrap transition hover:bg-accent hover:text-foreground",
-              activePanel === "chats" && "bg-accent text-foreground",
-            )}
-          >
-            <MessageSquare className="size-3.5 shrink-0 text-violet-600" />
-            <span className="hidden md:inline">Chats</span>
-            {localChats.length > 0 && (
-              <Badge variant="secondary" className="h-4 px-1 text-[10px] tabular-nums">
-                {localChats.length}
-              </Badge>
-            )}
-          </button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                aria-label="Team Chats"
+                onClick={() => setActivePanel(activePanel === "chats" ? null : "chats")}
+                className={cn(
+                  "inline-flex shrink-0 items-center gap-1 rounded px-2 py-1 font-medium whitespace-nowrap transition hover:bg-accent hover:text-foreground",
+                  activePanel === "chats" && "bg-accent text-foreground",
+                )}
+              >
+                <MessageSquare className="size-3.5 shrink-0 text-violet-600" />
+                <span className="hidden md:inline">Team Chats</span>
+                {localChats.length > 0 && (
+                  <Badge variant="secondary" className="h-4 px-1 text-[10px] tabular-nums">
+                    {localChats.length}
+                  </Badge>
+                )}
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="top">
+              <p className="font-medium">Team Chats</p>
+              <p className="text-[11px] opacity-80">Internal project &amp; workspace team channels.</p>
+            </TooltipContent>
+          </Tooltip>
 
-          <button
-            type="button"
-            title="Live Chat"
-            onClick={() => setActivePanel(activePanel === "live-chat" ? null : "live-chat")}
-            className={cn(
-              "inline-flex shrink-0 items-center gap-1 rounded px-2 py-1 font-medium whitespace-nowrap transition hover:bg-accent hover:text-foreground",
-              activePanel === "live-chat" && "bg-accent text-foreground",
-            )}
-          >
-            <span className="relative flex size-2 shrink-0">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-              <span className="relative inline-flex size-2 rounded-full bg-emerald-500" />
-            </span>
-            <MessageCircle className="size-3.5 shrink-0 text-emerald-600" />
-            <span className="hidden lg:inline">Live Chat</span>
-          </button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                aria-label="Client Live Chat"
+                onClick={() => setActivePanel(activePanel === "live-chat" ? null : "live-chat")}
+                className={cn(
+                  "inline-flex shrink-0 items-center gap-1 rounded px-2 py-1 font-medium whitespace-nowrap transition hover:bg-accent hover:text-foreground",
+                  activePanel === "live-chat" && "bg-accent text-foreground",
+                )}
+              >
+                <span className="relative flex size-2 shrink-0">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                  <span className="relative inline-flex size-2 rounded-full bg-emerald-500" />
+                </span>
+                <MessageCircle className="size-3.5 shrink-0 text-emerald-600" />
+                <span className="hidden lg:inline">Client Live Chat</span>
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="top">
+              <p className="font-medium">Client Live Chat</p>
+              <p className="text-[11px] opacity-80">External client &amp; stakeholder support chat channel.</p>
+            </TooltipContent>
+          </Tooltip>
 
           {canViewContacts && (
-            <button
-              type="button"
-              title="CRM Contacts"
-              onClick={() => setActivePanel(activePanel === "contacts" ? null : "contacts")}
-              className={cn(
-                "inline-flex shrink-0 items-center gap-1 rounded px-2 py-1 font-medium whitespace-nowrap transition hover:bg-accent hover:text-foreground",
-                activePanel === "contacts" && "bg-accent text-foreground",
-              )}
-            >
-              <Users className="size-3.5 shrink-0 text-blue-600" />
-              <span className="hidden lg:inline">Contacts</span>
-              <Badge variant="secondary" className="h-4 px-1 text-[10px] tabular-nums">
-                {contacts.length}
-              </Badge>
-            </button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  aria-label="CRM Contacts"
+                  onClick={() => setActivePanel(activePanel === "contacts" ? null : "contacts")}
+                  className={cn(
+                    "inline-flex shrink-0 items-center gap-1 rounded px-2 py-1 font-medium whitespace-nowrap transition hover:bg-accent hover:text-foreground",
+                    activePanel === "contacts" && "bg-accent text-foreground",
+                  )}
+                >
+                  <Users className="size-3.5 shrink-0 text-blue-600" />
+                  <span className="hidden lg:inline">Contacts</span>
+                  <Badge variant="secondary" className="h-4 px-1 text-[10px] tabular-nums">
+                    {contacts.length}
+                  </Badge>
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top">
+                <p className="font-medium">CRM Contacts ({contacts.length})</p>
+                <p className="text-[11px] opacity-80">Quick lookup across workspace clients &amp; stakeholders.</p>
+              </TooltipContent>
+            </Tooltip>
           )}
 
           {/* Sticky Notes Quick-Pad Popover */}
@@ -1073,28 +1110,38 @@ export function SuiteBottomBar({
             <HelpCircle className="size-3.5" />
           </button>
 
-          {/* Background Task / Export Progress (0%) Indicator */}
+          {/* Background Task / Export Progress Indicator */}
           <Popover>
-            <PopoverTrigger asChild>
-              <button
-                type="button"
-                aria-label="Background tasks and export progress"
-                title="Background Tasks & Exports"
-                className={cn(
-                  "inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 font-mono text-[11px] font-semibold tabular-nums transition hover:bg-accent hover:text-foreground",
-                  activeRunningTask
-                    ? "border-primary/40 bg-primary/10 text-primary"
-                    : "border-border bg-muted/40 text-muted-foreground",
-                )}
-              >
-                {activeRunningTask ? (
-                  <Loader2 className="size-3 animate-spin text-primary" />
-                ) : (
-                  <Activity className="size-3" />
-                )}
-                <span>{dockProgressPercent}%</span>
-              </button>
-            </PopoverTrigger>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label="Background jobs and export progress"
+                    className={cn(
+                      "inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 font-mono text-[11px] font-semibold tabular-nums transition hover:bg-accent hover:text-foreground",
+                      activeRunningTask
+                        ? "border-primary/40 bg-primary/10 text-primary"
+                        : "border-border bg-muted/40 text-muted-foreground",
+                    )}
+                  >
+                    {activeRunningTask ? (
+                      <Loader2 className="size-3 animate-spin text-primary" />
+                    ) : (
+                      <Activity className="size-3" />
+                    )}
+                    <span className="hidden sm:inline font-sans font-medium">Jobs</span>
+                    <span>{dockProgressPercent}%</span>
+                  </button>
+                </PopoverTrigger>
+              </TooltipTrigger>
+              <TooltipContent side="top">
+                <p className="font-medium">Background Jobs ({dockProgressPercent}%)</p>
+                <p className="text-[11px] opacity-80">
+                  Tracks CSV exports, imports &amp; background tasks (0% when idle).
+                </p>
+              </TooltipContent>
+            </Tooltip>
             <PopoverContent side="top" align="end" className="w-80 p-3">
               <div className="space-y-2.5">
                 <div className="flex items-center justify-between border-b pb-2">
@@ -1164,46 +1211,59 @@ export function SuiteBottomBar({
           </Popover>
 
           {allowTimer && (
-            <div
-              title={timerTaskLabel ? `Tracking: ${timerTaskLabel}` : "Quick Timer"}
-              className={cn(
-                "flex shrink-0 items-center gap-1.5 rounded-md border px-2 py-0.5 whitespace-nowrap",
-                timerRunning
-                  ? "border-emerald-500/40 bg-emerald-500/10"
-                  : "border-border bg-muted/40",
-              )}
-            >
-              <Clock
-                className={cn(
-                  "size-3.5 shrink-0",
-                  timerRunning ? "animate-pulse text-emerald-600" : "text-muted-foreground",
-                )}
-              />
-              {timerTaskKey && (
-                <span className="rounded bg-emerald-600 px-1 py-0 font-mono text-[9px] font-bold text-white">
-                  {timerTaskKey}
-                </span>
-              )}
-              <span className="font-mono text-xs font-semibold tabular-nums text-foreground">
-                {formatElapsed(elapsedSeconds)}
-              </span>
-              <button
-                type="button"
-                title={timerRunning ? "Pause timer" : "Start timer"}
-                onClick={() => setTimerRunning((prev) => !prev)}
-                className="rounded p-0.5 text-foreground hover:bg-background"
-              >
-                {timerRunning ? <Pause className="size-3" /> : <Play className="size-3" />}
-              </button>
-              <button
-                type="button"
-                title="Log tracked time"
-                onClick={() => setActivePanel("timer")}
-                className="rounded px-1 text-[11px] font-medium text-primary hover:bg-background"
-              >
-                Log
-              </button>
-            </div>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div
+                  className={cn(
+                    "flex shrink-0 items-center gap-1.5 rounded-md border px-2 py-0.5 whitespace-nowrap",
+                    timerRunning
+                      ? "border-emerald-500/40 bg-emerald-500/10"
+                      : "border-border bg-muted/40",
+                  )}
+                >
+                  <Clock
+                    className={cn(
+                      "size-3.5 shrink-0",
+                      timerRunning ? "animate-pulse text-emerald-600" : "text-muted-foreground",
+                    )}
+                  />
+                  {timerTaskKey && (
+                    <span className="rounded bg-emerald-600 px-1 py-0 font-mono text-[9px] font-bold text-white">
+                      {timerTaskKey}
+                    </span>
+                  )}
+                  <span className="font-mono text-xs font-semibold tabular-nums text-foreground">
+                    {formatElapsed(elapsedSeconds)}
+                  </span>
+                  <button
+                    type="button"
+                    aria-label={timerRunning ? "Pause timer" : "Start timer"}
+                    title={timerRunning ? "Pause timer" : "Start timer"}
+                    onClick={() => setTimerRunning((prev) => !prev)}
+                    className="rounded p-0.5 text-foreground hover:bg-background"
+                  >
+                    {timerRunning ? <Pause className="size-3" /> : <Play className="size-3" />}
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Log tracked time"
+                    title="Log tracked time"
+                    onClick={() => setActivePanel("timer")}
+                    className="rounded px-1 text-[11px] font-medium text-primary hover:bg-background"
+                  >
+                    Log
+                  </button>
+                </div>
+              </TooltipTrigger>
+              <TooltipContent side="top">
+                <p className="font-medium">Quick Time Tracker</p>
+                <p className="text-[11px] opacity-80">
+                  {timerTaskLabel
+                    ? `Tracking "${timerTaskLabel}" — click Log to save hours.`
+                    : "Start the live timer and click Log to record billable hours."}
+                </p>
+              </TooltipContent>
+            </Tooltip>
           )}
         </div>
       </footer>
@@ -1340,7 +1400,7 @@ export function SuiteBottomBar({
                   {activePanel === "live-chat" ? (
                     <>
                       <MessageCircle className="size-4 text-emerald-600" />
-                      Live Chat
+                      Client Live Chat
                       <Badge className="bg-emerald-600 text-[10px] text-white">Online</Badge>
                     </>
                   ) : (
@@ -1351,7 +1411,9 @@ export function SuiteBottomBar({
                   )}
                 </SheetTitle>
                 <SheetDescription>
-                  Select a project channel and chat in real time with Collaboration.
+                  {activePanel === "live-chat"
+                    ? "External client support & stakeholder conversation thread."
+                    : "Internal team channels synchronized with Projects Collaboration."}
                 </SheetDescription>
                 <div className="flex items-center justify-between gap-2 pt-2">
                   <select

@@ -10,5 +10,5 @@ export default async function OrgRootPage({
 }) {
   const { orgSlug } = await params;
   const tenant = await requireTenant(orgSlug);
-  redirect(isClientUser(tenant) ? `/${orgSlug}/projects` : `/${orgSlug}/crm/deals`);
+  redirect(isClientUser(tenant) ? `/${orgSlug}/projects` : `/${orgSlug}/home`);
 }
