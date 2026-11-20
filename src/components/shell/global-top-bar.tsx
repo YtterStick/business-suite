@@ -75,7 +75,10 @@ import type { TopBarNotificationItem } from "@/lib/notifications";
 import { can, getZohoRoleLabel, isClientUser } from "@/lib/rbac";
 import { cn } from "@/lib/utils";
 import { InviteUsersDialog } from "@/modules/org/components/invite-users-dialog";
-import { updateMyProfileAction } from "@/modules/org/team.actions";
+import {
+  createAdditionalWorkspaceAction,
+  updateMyProfileAction,
+} from "@/modules/org/team.actions";
 
 export type { NotificationKind, TopBarNotificationItem } from "@/lib/notifications";
 
@@ -135,6 +138,12 @@ export function GlobalTopBar({
   const [inviteOpen, setInviteOpen] = React.useState(false);
   const [setupOpen, setSetupOpen] = React.useState(false);
   const [profileOpen, setProfileOpen] = React.useState(false);
+  const [newWorkspaceOpen, setNewWorkspaceOpen] = React.useState(false);
+  const [newWorkspaceName, setNewWorkspaceName] = React.useState("");
+  const [newWorkspaceCurrency, setNewWorkspaceCurrency] = React.useState<
+    "PHP" | "USD" | "EUR" | "GBP" | "SGD"
+  >("PHP");
+  const [creatingWorkspace, startCreateWorkspaceTransition] = React.useTransition();
   const [presence, setPresence] = React.useState<PresenceStatus>("available");
 
   // Profile edit form state
@@ -142,6 +151,14 @@ export function GlobalTopBar({
   const [profileJobTitle, setProfileJobTitle] = React.useState(user.jobTitle ?? "");
   const [profileAvatarUrl, setProfileAvatarUrl] = React.useState(user.avatarUrl ?? "");
   const [savingProfile, startProfileTransition] = React.useTransition();
+
+  React.useEffect(() => {
+    const handleOpenCreateWorkspace = () => setNewWorkspaceOpen(true);
+    window.addEventListener("tq-open-create-workspace", handleOpenCreateWorkspace);
+    return () => {
+      window.removeEventListener("tq-open-create-workspace", handleOpenCreateWorkspace);
+    };
+  }, []);
 
   React.useEffect(() => {
     setProfileName(user.name);
@@ -233,6 +250,26 @@ export function GlobalTopBar({
       }
       toast.success("Profile updated");
       setProfileOpen(false);
+      router.refresh();
+    });
+  };
+
+  const handleCreateWorkspace = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    startCreateWorkspaceTransition(async () => {
+      const res = await createAdditionalWorkspaceAction({
+        name: newWorkspaceName,
+        defaultCurrency: newWorkspaceCurrency,
+      });
+      if (!res.ok) {
+        toast.error(res.error.message);
+        return;
+      }
+      toast.success(`Workspace "${res.data.name}" created`);
+      setNewWorkspaceOpen(false);
+      setNewWorkspaceName("");
+      setNewWorkspaceCurrency("PHP");
+      router.push(`/${res.data.slug}/projects`);
       router.refresh();
     });
   };
@@ -613,11 +650,12 @@ export function GlobalTopBar({
                     </DropdownMenuItem>
                   );
                 })}
-                <DropdownMenuItem asChild>
-                  <Link href="/signup" className="gap-2 text-xs text-muted-foreground">
-                    <Plus className="size-3.5" />
-                    <span>Create New Workspace</span>
-                  </Link>
+                <DropdownMenuItem
+                  onSelect={() => setNewWorkspaceOpen(true)}
+                  className="gap-2 text-xs text-muted-foreground"
+                >
+                  <Plus className="size-3.5" />
+                  <span>Create New Workspace</span>
                 </DropdownMenuItem>
               </div>
 
@@ -717,6 +755,71 @@ export function GlobalTopBar({
               <Button type="submit" disabled={savingProfile}>
                 {savingProfile && <Loader2 className="size-4 animate-spin" />}
                 Save Profile
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create New Workspace Modal */}
+      <Dialog open={newWorkspaceOpen} onOpenChange={setNewWorkspaceOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Building2 className="size-4 text-primary" />
+              Create New Workspace
+            </DialogTitle>
+            <DialogDescription>
+              Add another isolated workspace to your account. You can switch between workspaces
+              anytime.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleCreateWorkspace} className="space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="new-workspace-name">Workspace Name</Label>
+              <Input
+                id="new-workspace-name"
+                value={newWorkspaceName}
+                onChange={(e) => setNewWorkspaceName(e.target.value)}
+                placeholder="e.g. Client Studio, Personal Projects"
+                required
+                minLength={2}
+                maxLength={60}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="new-workspace-currency">Default Currency</Label>
+              <select
+                id="new-workspace-currency"
+                value={newWorkspaceCurrency}
+                onChange={(e) =>
+                  setNewWorkspaceCurrency(
+                    e.target.value as "PHP" | "USD" | "EUR" | "GBP" | "SGD",
+                  )
+                }
+                className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:border-zinc-800 dark:bg-zinc-950"
+              >
+                <option value="PHP">PHP (₱)</option>
+                <option value="USD">USD ($)</option>
+                <option value="EUR">EUR (€)</option>
+                <option value="GBP">GBP (£)</option>
+                <option value="SGD">SGD (S$)</option>
+              </select>
+            </div>
+
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setNewWorkspaceOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={creatingWorkspace}>
+                {creatingWorkspace && <Loader2 className="size-4 animate-spin" />}
+                Create Workspace
               </Button>
             </DialogFooter>
           </form>

@@ -17,10 +17,12 @@ import {
   setMembersActiveStatus,
   updateMemberRole,
 } from "@/modules/org/team.service";
+import { ensureDefaultPipeline } from "@/modules/crm/deals.service";
 import { db } from "@/lib/db";
 import { recordAudit } from "@/server/audit";
+import { requireUser } from "@/server/auth/session";
 import { runAction } from "@/server/action";
-import { assertTenant, authorize } from "@/server/tenancy";
+import { assertTenant, authorize, RESERVED_ORG_SLUGS } from "@/server/tenancy";
 
 const inviteSchema = z.object({
   orgSlug: z.string().min(1),
@@ -286,5 +288,84 @@ export async function updateMyProfileAction(
 
     revalidatePath(`/${orgSlug}`, "layout");
     return { name, jobTitle: cleanJobTitle, avatarUrl: cleanAvatarUrl };
+  });
+}
+
+const createWorkspaceSchema = z.object({
+  name: z.string().trim().min(2, "Workspace name must be at least 2 characters.").max(60),
+  defaultCurrency: z.enum(["PHP", "USD", "EUR", "GBP", "SGD"]).default("PHP"),
+});
+
+function toWorkspaceSlug(name: string): string {
+  const base = name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40);
+  return base || "workspace";
+}
+
+export async function createAdditionalWorkspaceAction(
+  rawInput: z.input<typeof createWorkspaceSchema>,
+): Promise<ActionResult<{ slug: string; name: string }>> {
+  return runAction(async () => {
+    const user = await requireUser();
+    const parsed = createWorkspaceSchema.safeParse(rawInput);
+    if (!parsed.success) {
+      throw new ValidationError(parsed.error.issues[0]?.message ?? "Invalid workspace name.");
+    }
+
+    const baseSlug = toWorkspaceSlug(parsed.data.name);
+    let slug = RESERVED_ORG_SLUGS.has(baseSlug) ? `${baseSlug}-org` : baseSlug;
+
+    const created = await db.$transaction(async (tx) => {
+      const slugTaken = await tx.organization.findUnique({
+        where: { slug },
+        select: { id: true },
+      });
+      if (slugTaken) {
+        slug = `${slug}-${Math.random().toString(36).slice(2, 6)}`;
+      }
+
+      const org = await tx.organization.create({
+        data: {
+          name: parsed.data.name,
+          slug,
+          defaultCurrency: parsed.data.defaultCurrency,
+          timezone: "Asia/Manila",
+        },
+        select: { id: true, slug: true, name: true },
+      });
+
+      await tx.membership.create({
+        data: {
+          organizationId: org.id,
+          userId: user.id,
+          role: MembershipRole.OWNER,
+          portalProfile: PortalProfile.PORTAL_OWNER,
+        },
+      });
+
+      await tx.user.update({
+        where: { id: user.id },
+        data: { lastActiveOrgId: org.id },
+      });
+
+      await ensureDefaultPipeline(tx, org.id);
+
+      await recordAudit(tx, {
+        organizationId: org.id,
+        actorId: user.id,
+        entityType: "Organization",
+        entityId: org.id,
+        action: "organization.created",
+        metadata: { name: org.name, slug: org.slug, defaultCurrency: parsed.data.defaultCurrency },
+      });
+
+      return { slug: org.slug, name: org.name };
+    });
+
+    revalidatePath("/", "layout");
+    return created;
   });
 }

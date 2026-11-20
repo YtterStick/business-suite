@@ -8,16 +8,15 @@ import { listUserOrganizations } from "@/server/tenancy";
 export default async function OnboardingPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; new?: string }>;
 }) {
   const user = await requireUser();
+  const { error, new: isNew } = await searchParams;
   const orgs = await listUserOrganizations(user.id);
-  if (orgs.length > 0) {
+  if (orgs.length > 0 && isNew !== "1") {
     const preferred = orgs.find((o) => o.id === user.lastActiveOrgId) ?? orgs[0]!;
     redirect(`/${preferred.slug}/projects`);
   }
-
-  const { error } = await searchParams;
 
   return (
     <AuthShell>

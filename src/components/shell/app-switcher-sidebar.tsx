@@ -378,6 +378,17 @@ export function AppSwitcherSidebar({
                   </DropdownMenuItem>
                 );
               })}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onSelect={() => {
+                  onNavigate?.();
+                  window.dispatchEvent(new CustomEvent("tq-open-create-workspace"));
+                }}
+                className="gap-2 text-xs font-medium text-primary"
+              >
+                <Plus className="size-3.5" />
+                <span>Create New Workspace</span>
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
 
